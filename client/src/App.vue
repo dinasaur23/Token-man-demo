@@ -1,9 +1,13 @@
 <template>
   <v-app class="bg-black">
-    <RegisterPage />
+    <router-view></router-view>
   </v-app>
 </template>
 
-<script setup lang="ts">
-import RegisterPage from './components/RegisterPage.vue'
-</script>
+<script setup lang="ts"></script>
+<style>
+a {
+  text-decoration: none;
+  color: inherit;
+}
+</style>
