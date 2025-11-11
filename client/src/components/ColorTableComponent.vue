@@ -1,223 +1,160 @@
 <template>
-  <v-container>
-    <v-text-field
-      v-model="search"
-      placeholder="Search name…"
-      density="compact"
-      class="mb-3"
-      @keyup.enter="refresh"
-      clearable
-    />
-
-    <v-data-table-server
-      :headers="headers"
-      :items="items"
-      :items-length="total"
-      v-model:options="options"
-      :loading="loading"
-      item-key="id"
-      class="elevation-1"
-    >
-      <!-- Name cell (editable inline, purely frontend) -->
-      <template v-slot:[`item.name`]="{ item }">
-        <v-text-field
-          v-model="item.name"
-          variant="plain"
-          density="compact"
-          hide-details
-          style="min-width: 180px"
-        />
-      </template>
-
-      <!-- Color cell: swatch + hex + picker menu -->
-      <template v-slot:[`item.hex`]="{ item }">
-        <div class="d-flex align-center" style="gap: 12px">
-          <!-- Swatch opens picker menu -->
-          <v-menu v-model="rowPicker[item.id]" :close-on-content-click="false">
-            <template #activator="{ props }">
-              <v-btn
-                v-bind="props"
-                :style="{
-                  background: item.hex,
-                  width: '28px',
-                  height: '28px',
-                  borderRadius: '6px',
-                }"
-                variant="text"
-                :aria-label="`Edit color ${item.name}`"
-              />
-            </template>
-            <v-card>
-              <v-color-picker v-model="item.hex" mode="hexa" show-swatches hide-inputs />
-              <v-card-actions class="justify-end">
-                <v-btn variant="text" @click="rowPicker[item.id] = false">Close</v-btn>
-              </v-card-actions>
-            </v-card>
-          </v-menu>
-
-          <!-- Hex text (editable) -->
-          <v-text-field
-            v-model="item.hex"
-            density="compact"
-            variant="outlined"
-            hide-details
-            style="max-width: 120px"
-          />
-        </div>
-      </template>
-
-      <!-- Actions -->
-      <template v-slot:[`item.actions`]="{ item }">
-        <v-btn icon variant="text" @click="removeRow(item.id)">
-          <v-icon>mdi-delete</v-icon>
-        </v-btn>
-      </template>
-    </v-data-table-server>
-
-    <div class="mt-4 d-flex justify-end" style="gap: 8px">
-      <v-btn @click="addRow" prepend-icon="mdi-plus">Add color</v-btn>
-      <v-btn @click="refresh" prepend-icon="mdi-refresh">Refresh</v-btn>
-    </div>
-  </v-container>
+  <v-row>
+    <v-col cols="4">
+      <v-file-input
+        accept=".json, application/json"
+        label="File input"
+        variant="outlined"
+        multiple
+        v-model="files"
+        @update:model-value="onFileChange"
+      ></v-file-input>
+    </v-col>
+  </v-row>
+  <v-data-table :headers="headers" :items="rows">
+    <template #[`item.color`]="{ item }">
+      <input
+        type="color"
+        v-model="item.value"
+        style="width: 32px; height: 32px; padding: 0; border: none; background: transparent"
+      />
+    </template>
+  </v-data-table>
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, watch } from 'vue'
-import type { DataTableHeader } from 'vuetify'
-type Row = { id: number; name: string; hex: string }
+import { ref } from 'vue'
 
-// ------- Table headers -------
+const files = ref<File[] | File | null>(null)
+const rows = ref<ColorRow[]>([])
 const headers = [
-  { title: 'Name', key: 'name', sortable: true },
-  { title: 'Color', key: 'hex', sortable: true },
-  { title: 'Actions', key: 'actions', sortable: false, align: 'end' },
-] satisfies DataTableHeader<Row>[]
-
-// ------- Reactive state -------
-const items = ref<Row[]>([])
-const total = ref(0)
-const loading = ref(false)
-const search = ref('')
-
-// v-data-table-server options it controls
-const options = ref<{
-  page: number
-  itemsPerPage: number
-  sortBy: { key: string; order: 'asc' | 'desc' }[]
-}>({
-  page: 1,
-  itemsPerPage: 10,
-  sortBy: [],
-})
-
-// open/close state for each row’s picker menu
-const rowPicker = reactive<Record<number, boolean>>({})
-
-// ------- MOCK SERVER (local data only) -------
-let seedId = 6
-const ALL_ROWS: Row[] = [
-  { id: 1, name: 'Primary', hex: '#3f51b5' },
-  { id: 2, name: 'Accent', hex: '#ff4081' },
-  { id: 3, name: 'Success', hex: '#4caf50' },
-  { id: 4, name: 'Warning', hex: '#ff9800' },
-  { id: 5, name: 'Neutral', hex: '#9e9e9e' },
+  { title: 'Name', key: 'name' },
+  { title: 'Value', key: 'value' },
+  { title: 'Color', key: 'color' },
 ]
 
-type FetchResult = { items: Row[]; total: number }
+//types
+type ColorRow = { name: string; value: string }
 
-/** Simulate server: filter, sort, paginate in-memory */
-async function mockFetch({
-  page,
-  perPage,
-  search,
-  sort,
-  order,
-}: {
-  page: number
-  perPage: number
-  search: string
-  sort?: string
-  order?: 'asc' | 'desc'
-}): Promise<FetchResult> {
-  // simulate latency
-  await new Promise((r) => setTimeout(r, 200))
-
-  let rows = [...ALL_ROWS]
-
-  // search
-  if (search?.trim()) {
-    const q = search.toLowerCase()
-    rows = rows.filter((r) => r.name.toLowerCase().includes(q) || r.hex.toLowerCase().includes(q))
-  }
-
-  // sort
-  if (sort) {
-    rows.sort((a, b) => {
-      // constrain sort key to Row
-      const key = sort as keyof Row
-
-      const av = a[key]
-      const bv = b[key]
-
-      if (av < bv) return order === 'desc' ? 1 : -1
-      if (av > bv) return order === 'desc' ? -1 : 1
-      return 0
-    })
-  }
-
-  const total = rows.length
-  const start = (page - 1) * perPage
-  const end = start + perPage
-  return { items: rows.slice(start, end), total }
+type DTCGNode = {
+  [key: string]: unknown
 }
 
-// ------- Fetch hook -------
-watch([options, search], () => fetchRows(), { deep: true })
-watch(search, () => {
-  options.value.page = 1
-})
+type ColorTokenEntry = {
+  path: string
+  value: string
+}
 
-async function fetchRows() {
-  loading.value = true
+//helpers
+function isObject(value: unknown): value is DTCGNode {
+  return typeof value === 'object' && value !== null
+}
+
+function isAlias(value: string): boolean {
+  return value.startsWith('{') && value.endsWith('}')
+}
+
+function aliasTarget(value: string): string {
+  return value.slice(1, -1) // "{colors.font.base}" -> "colors.font.base"
+}
+
+//main function
+function collectColorTokensWithPath(
+  node: unknown,
+  prefix: string,
+  inheritedType?: string,
+): ColorTokenEntry[] {
+  const result: ColorTokenEntry[] = []
+
+  if (!isObject(node)) return result
+
+  // type on this level (overrides inherited if present)
+  const ownType = typeof node.$type === 'string' ? (node.$type as string) : inheritedType
+
+  for (const [key, value] of Object.entries(node)) {
+    if (key.startsWith('$')) continue // skip $type, $description, etc.
+
+    if (!isObject(value)) continue
+
+    const child = value as DTCGNode
+    const childType = typeof child.$type === 'string' ? (child.$type as string) : ownType
+    const path = prefix ? `${prefix}.${key}` : key
+
+    // Token: has $value
+    if (typeof child.$value === 'string') {
+      if (childType === 'color') {
+        result.push({
+          path,
+          value: child.$value,
+        })
+      }
+      // if not 'color', ignore (could be other token types)
+      continue
+    }
+
+    // Group: no $value → recurse
+    const nested = collectColorTokensWithPath(child, path, childType)
+    result.push(...nested)
+  }
+
+  return result
+}
+//resolve alias
+function resolveAlias(
+  path: string,
+  map: Record<string, ColorTokenEntry>,
+  stack: string[] = [],
+): string | null {
+  const entry = map[path]
+  if (!entry) return null
+
+  const raw = entry.value
+  if (!isAlias(raw)) return raw
+
+  const target = aliasTarget(raw)
+  if (stack.includes(target)) return null // cycle protection
+
+  return resolveAlias(target, map, [...stack, target])
+}
+
+//use in onFileChange
+
+async function onFileChange(newFiles: File[] | File) {
+  const list = Array.isArray(newFiles) ? newFiles : [newFiles]
+  if (list.length === 0) return
+
   try {
-    const { page, itemsPerPage, sortBy } = options.value
-    const sort = sortBy[0]?.key
-    const order = sortBy[0]?.order ?? 'asc'
+    const text = await list[0].text()
+    const parsed = JSON.parse(text)
 
-    const res = await mockFetch({
-      page,
-      perPage: itemsPerPage,
-      search: search.value,
-      sort,
-      order,
+    const entries = collectColorTokensWithPath(parsed, '', undefined)
+
+    if (entries.length === 0) {
+      console.error('❌ No DTCG color tokens found')
+      rows.value = []
+      return
+    }
+
+    // Build lookup map for alias resolution
+    const map: Record<string, ColorTokenEntry> = {}
+    for (const e of entries) {
+      map[e.path] = e
+    }
+
+    // Final rows: resolved aliases
+    rows.value = entries.map((e): ColorRow => {
+      const resolved = resolveAlias(e.path, map) ?? e.value
+      return {
+        // if you only want the last segment ("base", "secondary", ...)
+        name: e.path.split('.').pop() ?? e.path,
+        value: resolved,
+      }
     })
-    items.value = res.items
-    total.value = res.total
-  } finally {
-    loading.value = false
+
+    console.log('✅ DTCG colors:', rows.value)
+  } catch (err) {
+    console.error('Error reading/parsing file:', err)
+    rows.value = []
   }
 }
-
-function refresh() {
-  fetchRows()
-}
-
-// ------- Row actions (frontend only) -------
-function addRow() {
-  ALL_ROWS.push({
-    id: seedId++,
-    name: 'Untitled',
-    hex: '#000000',
-  })
-  refresh()
-}
-
-function removeRow(id: number) {
-  const i = ALL_ROWS.findIndex((r) => r.id === id)
-  if (i !== -1) ALL_ROWS.splice(i, 1)
-  refresh()
-}
-
-// initial load
-fetchRows()
 </script>
