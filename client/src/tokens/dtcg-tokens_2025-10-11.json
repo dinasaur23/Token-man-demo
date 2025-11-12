@@ -1,0 +1,21 @@
+{
+  "colors": {
+    "$type": "color",
+    "font": {
+      "base": {
+        "$value": "#111111"
+      },
+      "secondary": {
+        "$value": "#333333"
+      },
+      "tertiary": {
+        "$value": "#666666"
+      },
+      "inverse": {
+        "base": {
+          "$value": "#ffffff"
+        }
+      }
+    }
+  }
+}

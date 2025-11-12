@@ -17,11 +17,15 @@
     "format": "prettier --write src/"
   },
   "dependencies": {
+    "@standard-schema/spec": "^1.0.0",
+    "ajv": "^8.17.1",
     "axios": "^1.12.2",
     "pinia": "^3.0.3",
     "vue": "^3.5.18",
     "vue-router": "^4.5.1",
-    "vuetify": "^3.10.3"
+    "vuetify": "^3.10.3",
+    "w3c-design-tokens-standard-schema": "^0.0.7",
+    "zod": "^3.25.7"
   },
   "devDependencies": {
     "@tsconfig/node22": "^22.0.2",
