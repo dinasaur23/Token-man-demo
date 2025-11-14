@@ -71,8 +71,8 @@ async function onFileChange(newFiles: File[] | File) {
 
       return {
         name: t.path.split('.').pop() ?? t.path,
-        value: resolved, // <- resolved hex goes into .value
-        raw: t.value, // <- keep the original for display
+        value: resolved,
+        raw: t.value,
       } satisfies ColorRow & { raw: unknown }
     })
 

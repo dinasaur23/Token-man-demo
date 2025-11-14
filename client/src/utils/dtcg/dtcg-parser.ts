@@ -1,75 +1,11 @@
-// export type ColorRow = { name: string; value: string }
-
-// export type ColorTokenEntry = {
-//   path: string
-//   value: string
-// }
-
-// type DTCGNode = { [key: string]: unknown }
-
-// function isObject(value: unknown): value is DTCGNode {
-//   return typeof value === 'object' && value !== null
-// }
-
-// function isAlias(value: string): boolean {
-//   return value.startsWith('{') && value.endsWith('}')
-// }
-
-// function aliasTarget(value: string): string {
-//   return value.slice(1, -1) // "{a.b}" -> "a.b"
-// }
-
-// export function collectColorTokensWithPath(
-//   node: unknown,
-//   prefix: string,
-//   inheritedType?: string,
-// ): ColorTokenEntry[] {
-//   const result: ColorTokenEntry[] = []
-//   if (!isObject(node)) return result
-
-//   const ownType = typeof node.$type === 'string' ? (node.$type as string) : inheritedType
-
-//   for (const [key, value] of Object.entries(node)) {
-//     if (key.startsWith('$')) continue
-//     if (!isObject(value)) continue
-
-//     const child = value as DTCGNode
-//     const childType = typeof child.$type === 'string' ? (child.$type as string) : ownType
-//     const path = prefix ? `${prefix}.${key}` : key
-
-//     if (typeof child.$value === 'string') {
-//       if (childType === 'color') {
-//         result.push({ path, value: child.$value })
-//       }
-//       continue
-//     }
-
-//     const nested = collectColorTokensWithPath(child, path, childType)
-//     result.push(...nested)
-//   }
-
-//   return result
-// }
-
-// export function resolveAlias(
-//   path: string,
-//   map: Record<string, ColorTokenEntry>,
-//   stack: string[] = [],
-// ): string | null {
-//   const entry = map[path]
-//   if (!entry) return null
-
-//   const raw = entry.value
-//   if (!isAlias(raw)) return raw
-
-//   const target = aliasTarget(raw)
-//   if (stack.includes(target)) return null
-
-//   return resolveAlias(target, map, [...stack, target])
-// }
-
-export type ColorRow = { name: string; value: string; raw?: unknown }
 export type ColorTokenEntry = { path: string; value: string }
+export type ColorRow = {
+  name: string
+  value: string // resolved hex
+  raw: unknown // raw $value or alias
+  group: string // e.g. "brandRole.intent.success"
+  groupPath: string[] // e.g. ["brandRole", "intent", "success"]
+}
 
 type DTCGNode = { [key: string]: unknown }
 
@@ -118,34 +54,65 @@ export function collectColorTokensWithPath(
   return out
 }
 
-export function resolveValue(
-  valueOrAlias: unknown,
+function findEntryForTarget(
+  target: string,
   map: Record<string, ColorTokenEntry>,
-  seen: Set<string> = new Set(),
-): string | null {
-  if (isHex(valueOrAlias)) return valueOrAlias
+): ColorTokenEntry | null {
+  // 1) exact match
+  if (map[target]) return map[target]
 
-  if (valueOrAlias && typeof valueOrAlias === 'object') {
-    const obj = valueOrAlias as Record<string, unknown>
-    if (isHex(obj.hex)) return obj.hex
-    if (typeof obj.alias === 'string') return resolveValue(obj.alias, map, seen)
-    return null
-  }
+  // 2) suffix match: “…global.color.brandRole.intent.info.medium”
+  const suffix = '.' + target
 
-  if (isAlias(valueOrAlias)) {
-    const target = aliasTarget(valueOrAlias)
-    if (seen.has(target)) return null
-    seen.add(target)
-    const entry = map[target]
-    return entry ? resolveValue(entry.value, map, seen) : null
+  for (const entry of Object.values(map)) {
+    if (entry.path === target || entry.path.endsWith(suffix)) {
+      return entry
+    }
   }
 
   return null
 }
 
-/** Resolve "{a.b}" -> final value. Returns null if unresolved/cycle. */
+export function resolveValue(
+  valueOrAlias: unknown,
+  map: Record<string, ColorTokenEntry>,
+  seen: Set<string> = new Set(),
+): string | null {
+  // plain hex, e.g. "#0f172a"
+  if (isHex(valueOrAlias)) return valueOrAlias
+
+  // object form: { hex: "#xxxxxx" } or { alias: "{...}" }
+  if (valueOrAlias && typeof valueOrAlias === 'object') {
+    const obj = valueOrAlias as Record<string, unknown>
+    if (isHex(obj.hex)) return obj.hex
+    if (typeof obj.alias === 'string') {
+      return resolveValue(obj.alias, map, seen)
+    }
+    return null
+  }
+
+  // string alias "{foo.bar.baz}"
+  if (isAlias(valueOrAlias)) {
+    const target = aliasTarget(valueOrAlias) // e.g. "global.color.brandRole.intent.info.medium"
+
+    const entry = findEntryForTarget(target, map)
+    if (!entry) return null
+
+    if (seen.has(entry.path)) {
+      // avoid cycles
+      return null
+    }
+    seen.add(entry.path)
+
+    return resolveValue(entry.value, map, seen)
+  }
+
+  return null
+}
+
+/** Resolve the token at `path` (follows aliases until hex). */
 export function resolveAlias(path: string, map: Record<string, ColorTokenEntry>): string | null {
   const entry = map[path]
   if (!entry) return null
-  return resolveValue(entry.value, map)
+  return resolveValue(entry.value, map, new Set())
 }

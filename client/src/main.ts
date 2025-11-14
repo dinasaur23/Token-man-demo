@@ -7,6 +7,9 @@ import * as directives from 'vuetify/directives'
 import App from './App.vue'
 import router from './router/routes'
 
+import { ModuleRegistry, AllCommunityModule } from 'ag-grid-community'
+ModuleRegistry.registerModules([AllCommunityModule])
+
 const app = createApp(App)
 
 const vuetify = createVuetify({
@@ -14,7 +17,10 @@ const vuetify = createVuetify({
   directives,
 })
 app.use(vuetify)
-
 app.use(router)
 app.use(createPinia())
+
+import { AgGridVue } from 'ag-grid-vue3'
+app.component('ag-grid-vue', AgGridVue)
+
 app.mount('#app')
