@@ -4,11 +4,12 @@ import cors from "cors";
 import morgan from "morgan";
 import dotenv from "dotenv";
 import cookieParser from "cookie-parser";
-
+import path from "path";
 import { connectDB } from "../config/db.js";
 import TokenRoutes from "../src/routes/TokenRoutes.js";
 import AuthRoutes from "../src/routes/AuthRoutes.js";
 import { requireAuth } from "../src/middleware/authMiddleware.js";
+import { resolveTokensFromResolverFile } from "../src/token/resolver.js";
 dotenv.config();
 
 const app = express();
@@ -25,7 +26,24 @@ app.use("/api/token", TokenRoutes);
 app.get("/api/auth/check", requireAuth, (req, res) => {
   res.json({ ok: true, user: req.user });
 });
+app.get("/api/tokens", async (req, res, next) => {
+  try {
+    const theme = req.query.theme || "light";
 
+    const resolverPath = path.join(
+      process.cwd(),
+      "src",
+      "tokens",
+      "tokens.resolver.json"
+    );
+
+    const tokens = await resolveTokensFromResolverFile(resolverPath, { theme });
+
+    res.json(tokens);
+  } catch (err) {
+    next(err);
+  }
+});
 //cookies
 
 const PORT = process.env.PORT || 8081;

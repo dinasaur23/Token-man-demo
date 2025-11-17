@@ -1,0 +1,20 @@
+{
+  "version": "2025-10-01",
+  "name": "Example 4 – Brand modifier",
+  "sets": {
+    "foundation": {
+      "sources": [{ "$ref": "example4.foundation.colors.json" }]
+    }
+  },
+  "modifiers": {
+    "brand": {
+      "description": "Brand-specific primary colors",
+      "default": "brandA",
+      "contexts": {
+        "brandA": [{ "$ref": "example4.brandA.colors.json" }],
+        "brandB": [{ "$ref": "example4.brandB.colors.json" }]
+      }
+    }
+  },
+  "resolutionOrder": [{ "$ref": "#/sets/foundation" }, { "$ref": "#/modifiers/brand" }]
+}

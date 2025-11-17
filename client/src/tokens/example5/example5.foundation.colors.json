@@ -1,0 +1,14 @@
+{
+  "global": {
+    "color": {
+      "primary": {
+        "$type": "color",
+        "$value": "#0066CC"
+      },
+      "surface": {
+        "$type": "color",
+        "$value": "#F0F0F0"
+      }
+    }
+  }
+}

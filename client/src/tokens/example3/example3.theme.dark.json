@@ -1,0 +1,14 @@
+{
+  "alias": {
+    "color": {
+      "background": {
+        "$type": "color",
+        "$value": "#121212"
+      },
+      "onBackground": {
+        "$type": "color",
+        "$value": "#F5F5F5"
+      }
+    }
+  }
+}

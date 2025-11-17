@@ -1,67 +1,107 @@
-export type ColorTokenEntry = { path: string; value: string }
+//export type ColorTokenEntry = { path: string; value: string }
 export type ColorRow = {
   name: string
-  value: string // resolved hex
-  raw: unknown // raw $value or alias
-  group: string // e.g. "brandRole.intent.success"
-  groupPath: string[] // e.g. ["brandRole", "intent", "success"]
+  value: string
+  raw: unknown
+  group: string
+  groupPath: string[]
 }
 
-type DTCGNode = { [key: string]: unknown }
+// type DTCGNode = { [key: string]: unknown }
+type Json = unknown
+type JsonObject = Record<string, Json>
 
-function isObject(v: unknown): v is DTCGNode {
-  return typeof v === 'object' && v !== null
-}
-const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
-const ALIAS_RE = /^\{([^}]+)\}$/
-
-function isHex(v: unknown): v is string {
-  return typeof v === 'string' && HEX_RE.test(v)
-}
-function isAlias(v: unknown): v is string {
-  return typeof v === 'string' && ALIAS_RE.test(v)
-}
-function aliasTarget(v: string): string {
-  return v.match(ALIAS_RE)![1]
+export type ColorTokenEntry = {
+  path: string
+  value: Json
 }
 
-/** Walks JSON, supports group-level and token-level $type:"color", with nesting. */
-export function collectColorTokensWithPath(
-  node: unknown,
-  prefix: string,
-  inheritedType?: string,
-): ColorTokenEntry[] {
-  const out: ColorTokenEntry[] = []
-  if (!isObject(node)) return out
+const AliasPattern = /^\{([^}]+)\}$/
 
-  const ownType = typeof node.$type === 'string' ? (node.$type as string) : inheritedType
+const isObject = (v: Json): v is JsonObject =>
+  typeof v === 'object' && v !== null && !Array.isArray(v)
 
-  for (const [key, value] of Object.entries(node)) {
-    if (key.startsWith('$')) continue
-    if (!isObject(value)) continue
+// function isObject(v: unknown): v is DTCGNode {
+//   return typeof v === 'object' && v !== null
+// }
+// const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
+// const ALIAS_RE = /^\{([^}]+)\}$/
 
-    const child = value as DTCGNode
-    const childType = typeof child.$type === 'string' ? (child.$type as string) : ownType
-    const path = prefix ? `${prefix}.${key}` : key
+// function isHex(v: unknown): v is string {
+//   return typeof v === 'string' && HEX_RE.test(v)
+// }
+// function isAlias(v: unknown): v is string {
+//   return typeof v === 'string' && ALIAS_RE.test(v)
+// }
+// function aliasTarget(v: string): string {
+//   return v.match(ALIAS_RE)![1]
+// }
 
-    if (typeof child.$value === 'string') {
-      if (childType === 'color') out.push({ path, value: child.$value })
-      continue
+// export function collectColorTokensWithPath(
+//   node: unknown,
+//   prefix: string,
+//   inheritedType?: string,
+// ): ColorTokenEntry[] {
+//   const out: ColorTokenEntry[] = []
+//   if (!isObject(node)) return out
+
+//   const ownType = typeof node.$type === 'string' ? (node.$type as string) : inheritedType
+
+//   for (const [key, value] of Object.entries(node)) {
+//     if (key.startsWith('$')) continue
+//     if (!isObject(value)) continue
+
+//     const child = value as DTCGNode
+//     const childType = typeof child.$type === 'string' ? (child.$type as string) : ownType
+//     const path = prefix ? `${prefix}.${key}` : key
+
+//     if (typeof child.$value === 'string') {
+//       if (childType === 'color') out.push({ path, value: child.$value })
+//       continue
+//     }
+
+//     out.push(...collectColorTokensWithPath(child, path, childType))
+//   }
+//   return out
+// }
+export function collectColorTokensWithPath(root: Json): ColorTokenEntry[] {
+  const results: ColorTokenEntry[] = []
+
+  function visit(node: Json, pathParts: string[], inheritedType?: string): void {
+    if (!isObject(node)) return
+
+    const localType = typeof node['$type'] === 'string' ? String(node['$type']) : undefined
+    const effectiveType = localType ?? inheritedType
+
+    const hasValue = Object.prototype.hasOwnProperty.call(node, '$value')
+
+    if (effectiveType === 'color' && hasValue) {
+      results.push({
+        path: pathParts.join('.'),
+        value: (node as JsonObject)['$value'],
+      })
     }
 
-    out.push(...collectColorTokensWithPath(child, path, childType))
+    for (const [key, value] of Object.entries(node)) {
+      if (key.startsWith('$')) continue // skip $themes, $metadata, etc.
+      visit(value, [...pathParts, key], effectiveType)
+    }
   }
-  return out
-}
 
-function findEntryForTarget(
+  if (isObject(root)) {
+    for (const [key, value] of Object.entries(root)) {
+      visit(value, [key], undefined)
+    }
+  }
+
+  return results
+}
+export function findEntryForTarget(
   target: string,
   map: Record<string, ColorTokenEntry>,
 ): ColorTokenEntry | null {
-  // 1) exact match
   if (map[target]) return map[target]
 
-  // 2) suffix match: “…global.color.brandRole.intent.info.medium”
   const suffix = '.' + target
 
   for (const entry of Object.values(map)) {
@@ -73,46 +113,103 @@ function findEntryForTarget(
   return null
 }
 
-export function resolveValue(
-  valueOrAlias: unknown,
+// export function resolveValue(
+//   valueOrAlias: unknown,
+//   map: Record<string, ColorTokenEntry>,
+//   seen: Set<string> = new Set(),
+// ): string | null {
+//   if (isHex(valueOrAlias)) return valueOrAlias
+
+//   if (valueOrAlias && typeof valueOrAlias === 'object') {
+//     const obj = valueOrAlias as Record<string, unknown>
+//     if (isHex(obj.hex)) return obj.hex
+//     if (typeof obj.alias === 'string') {
+//       return resolveValue(obj.alias, map, seen)
+//     }
+//     return null
+//   }
+
+//   if (isAlias(valueOrAlias)) {
+//     const target = aliasTarget(valueOrAlias)
+
+//     const entry = findEntryForTarget(target, map)
+//     if (!entry) return null
+
+//     if (seen.has(entry.path)) {
+//       // avoid cycles
+//       return null
+//     }
+//     seen.add(entry.path)
+
+//     return resolveValue(entry.value, map, seen)
+//   }
+
+//   return null
+// }
+export function resolveValue(value: Json, map: Record<string, ColorTokenEntry>): Json | undefined {
+  // string alias
+  if (typeof value === 'string') {
+    const m = value.match(AliasPattern)
+    if (!m) return undefined
+    const targetPath = m[1]
+    return resolveAlias(targetPath, map)
+  }
+
+  // object alias: { alias: "{...}" }
+  if (isObject(value)) {
+    const aliasValue = value['alias']
+    if (typeof aliasValue === 'string') {
+      const m = aliasValue.match(AliasPattern)
+      if (!m) return undefined
+      const targetPath = m[1]
+      return resolveAlias(targetPath, map)
+    }
+  }
+
+  return undefined
+}
+// export function resolveAlias(path: string, map: Record<string, ColorTokenEntry>): string | null {
+//   const entry = map[path]
+//   if (!entry) return null
+//   return resolveValue(entry.value, map, new Set())
+// }
+export function resolveAlias(
+  path: string,
   map: Record<string, ColorTokenEntry>,
   seen: Set<string> = new Set(),
-): string | null {
-  // plain hex, e.g. "#0f172a"
-  if (isHex(valueOrAlias)) return valueOrAlias
-
-  // object form: { hex: "#xxxxxx" } or { alias: "{...}" }
-  if (valueOrAlias && typeof valueOrAlias === 'object') {
-    const obj = valueOrAlias as Record<string, unknown>
-    if (isHex(obj.hex)) return obj.hex
-    if (typeof obj.alias === 'string') {
-      return resolveValue(obj.alias, map, seen)
-    }
-    return null
-  }
-
-  // string alias "{foo.bar.baz}"
-  if (isAlias(valueOrAlias)) {
-    const target = aliasTarget(valueOrAlias) // e.g. "global.color.brandRole.intent.info.medium"
-
-    const entry = findEntryForTarget(target, map)
-    if (!entry) return null
-
-    if (seen.has(entry.path)) {
-      // avoid cycles
-      return null
-    }
-    seen.add(entry.path)
-
-    return resolveValue(entry.value, map, seen)
-  }
-
-  return null
-}
-
-/** Resolve the token at `path` (follows aliases until hex). */
-export function resolveAlias(path: string, map: Record<string, ColorTokenEntry>): string | null {
+): Json | undefined {
   const entry = map[path]
-  if (!entry) return null
-  return resolveValue(entry.value, map, new Set())
+  if (!entry) return undefined
+
+  const value = entry.value
+
+  // alias as string: "{path.to.token}"
+  if (typeof value === 'string') {
+    const m = value.match(AliasPattern)
+    if (!m) return value // not an alias string, treat as literal
+
+    const targetPath = m[1]
+    if (seen.has(targetPath)) return undefined // avoid cycles
+
+    seen.add(targetPath)
+    return resolveAlias(targetPath, map, seen) ?? map[targetPath]?.value
+  }
+
+  // alias as object: { alias: "{...}" }
+  if (isObject(value)) {
+    const aliasValue = value['alias']
+    if (typeof aliasValue === 'string') {
+      const m = aliasValue.match(AliasPattern)
+      if (!m) return value
+
+      const targetPath = m[1]
+      if (seen.has(targetPath)) return undefined
+
+      seen.add(targetPath)
+      return resolveAlias(targetPath, map, seen) ?? map[targetPath]?.value
+    }
+  }
+
+  // already a resolved value
+  return value
 }

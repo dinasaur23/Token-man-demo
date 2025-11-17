@@ -1,0 +1,10 @@
+{
+  "alias": {
+    "color": {
+      "focusRing": {
+        "$type": "color",
+        "$value": "#FFCC00"
+      }
+    }
+  }
+}

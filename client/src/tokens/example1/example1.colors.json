@@ -1,0 +1,18 @@
+{
+  "global": {
+    "color": {
+      "primary": {
+        "$type": "color",
+        "$value": "#3366FF"
+      },
+      "secondary": {
+        "$type": "color",
+        "$value": "#FF9900"
+      },
+      "background": {
+        "$type": "color",
+        "$value": "#FFFFFF"
+      }
+    }
+  }
+}

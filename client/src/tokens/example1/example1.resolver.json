@@ -1,0 +1,10 @@
+{
+  "version": "2025-10-01",
+  "name": "Example 1 – Simple",
+  "sets": {
+    "colors": {
+      "sources": [{ "$ref": "example1.colors.json" }]
+    }
+  },
+  "resolutionOrder": [{ "$ref": "#/sets/colors" }]
+}

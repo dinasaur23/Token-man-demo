@@ -9,50 +9,43 @@ export const DTCG_COLOR_SCHEMA = {
       type: 'object',
       required: ['$value'],
       properties: {
-        $type: { const: 'color' }, // optional here (inherited)
-        $value: { type: 'string' }, // "#RRGGBB", alias string, etc.
+        $type: { const: 'color' },
+        $value: { type: 'string' },
         $description: { type: 'string' },
         $extensions: { type: 'object' },
       },
       additionalProperties: true,
     },
-
-    // A color group that explicitly sets $type: "color"
     ColorGroup: {
       type: 'object',
       required: ['$type'],
       properties: { $type: { const: 'color' } },
       patternProperties: {
-        '^\\$': {}, // allow meta keys on the group
+        '^\\$': {},
         '^(?!\\$).*$': {
           anyOf: [
-            { $ref: '#/$defs/ColorToken' }, // leaf
-            { $ref: '#/$defs/ColorGroup' }, // nested explicit color group
-            { $ref: '#/$defs/ColorInheritingGroup' }, // nested inheriting group
+            { $ref: '#/$defs/ColorToken' },
+            { $ref: '#/$defs/ColorGroup' },
+            { $ref: '#/$defs/ColorInheritingGroup' },
           ],
         },
       },
       additionalProperties: true,
     },
-
-    // A group inside a color group that does NOT repeat $type
     ColorInheritingGroup: {
       type: 'object',
       patternProperties: {
         '^\\$': {}, // allow meta keys
         '^(?!\\$).*$': {
           anyOf: [
-            { $ref: '#/$defs/ColorToken' }, // leaf
-            { $ref: '#/$defs/ColorGroup' }, // explicit color group again
-            { $ref: '#/$defs/ColorInheritingGroup' }, // keep nesting
+            { $ref: '#/$defs/ColorToken' },
+            { $ref: '#/$defs/ColorGroup' },
+            { $ref: '#/$defs/ColorInheritingGroup' },
           ],
         },
       },
       additionalProperties: true,
     },
   },
-
-  // root: when you explicitly validate a color subtree,
-  // it can be either a group (with $type) or a single token.
   anyOf: [{ $ref: '#/$defs/ColorGroup' }, { $ref: '#/$defs/ColorToken' }],
 } as const

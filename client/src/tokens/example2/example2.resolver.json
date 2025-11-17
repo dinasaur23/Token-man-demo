@@ -1,0 +1,13 @@
+{
+  "version": "2025-10-01",
+  "name": "Example 2 – Sets and overrides",
+  "sets": {
+    "foundation": {
+      "sources": [{ "$ref": "example2.foundation.colors.json" }]
+    },
+    "components": {
+      "sources": [{ "$ref": "example2.button.colors.json" }]
+    }
+  },
+  "resolutionOrder": [{ "$ref": "#/sets/foundation" }, { "$ref": "#/sets/components" }]
+}

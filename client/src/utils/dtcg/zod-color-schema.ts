@@ -30,6 +30,15 @@ export const ExplicitObjectColorToken = z
   .catchall(z.unknown())
 
 // Inherited leaf inside a color group: { "$value":"#..." | "{...}" } or object with hex/alias
+const W3cColorObject = z
+  .object({
+    colorSpace: z.string(),
+    components: z.array(z.number()),
+    alpha: z.number(),
+    hex: Hex,
+  })
+  .catchall(z.unknown())
+
 export const InheritedColorToken = z
   .object({
     $value: z.union([
@@ -37,6 +46,7 @@ export const InheritedColorToken = z
       Alias,
       z.object({ hex: Hex }).catchall(z.unknown()),
       z.object({ alias: Alias }).catchall(z.unknown()),
+      W3cColorObject, // ✅ allow full W3C color object
     ]),
   })
   .catchall(z.unknown())

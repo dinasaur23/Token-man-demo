@@ -1,0 +1,14 @@
+{
+  "components": {
+    "button": {
+      "bg": {
+        "$type": "color",
+        "$value": "{global.color.primary}"
+      },
+      "bgHovered": {
+        "$type": "color",
+        "$value": "#004C99"
+      }
+    }
+  }
+}

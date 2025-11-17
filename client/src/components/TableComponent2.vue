@@ -1,20 +1,39 @@
 <template>
-  <v-row>
+  <v-row class="mt-3">
     <v-col cols="4">
       <v-file-input
         accept=".json, application/json"
         label="File input"
         variant="outlined"
         multiple
+        density="compact"
         v-model="files"
         @update:model-value="onFileChange"
       />
     </v-col>
+
+    <v-col v-for="mod in detectedModifiers" :key="mod.name" cols="3">
+      <v-select
+        :label="mod.name"
+        :items="mod.values"
+        :model-value="selectedModifiers[mod.name]"
+        @update:model-value="(value) => onModifierChange(mod.name, value)"
+        variant="outlined"
+        density="compact"
+      />
+    </v-col>
   </v-row>
 
-  <v-row v-if="rows.length" class="mt-4">
-    <!-- Sidebar tree -->
-    <v-col cols="12" md="3">
+  <v-row v-if="errorMessage" class="mt-2">
+    <v-col cols="12">
+      <v-alert type="error" variant="tonal" closable @click:close="errorMessage = null">
+        <div class="font-weight-medium mb-1">Invalid DTCG file</div>
+        <div>{{ errorMessage }}</div>
+      </v-alert>
+    </v-col>
+  </v-row>
+  <v-row v-if="rows.length" class="mt-4 ml-4">
+    <v-col cols="12" md="2">
       <div style="max-height: 600px; overflow-y: auto">
         <v-treeview
           v-model:activated="activeNodeIds"
@@ -29,7 +48,6 @@
       </div>
     </v-col>
 
-    <!-- Grid -->
     <v-col cols="12" md="9">
       <ag-grid-vue
         :theme="gridTheme"
@@ -47,10 +65,8 @@ import { ref, computed } from 'vue'
 import { AgGridVue } from 'ag-grid-vue3'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { themeQuartz } from 'ag-grid-community'
-const myTheme = themeQuartz.withParams({ accentColor: 'red' })
-const gridTheme = ref(myTheme)
-
-import { validateColorSubtree } from '@/utils/dtcg/dtcg-validator'
+import { validateTokensStrict } from '@/utils/dtcg/dtcg-validator'
+import { convertHexColorsInDocument, HEX_PATTERN } from '@/utils/dtcg/color-conversion'
 import {
   collectColorTokensWithPath,
   resolveAlias,
@@ -58,17 +74,46 @@ import {
   type ColorRow,
   type ColorTokenEntry,
 } from '@/utils/dtcg/dtcg-parser'
+import {
+  resolveUploadedDocuments,
+  extractModifiersFromDocs,
+  type DetectedModifier,
+  type JsonValue,
+} from '@/utils/dtcg/resolver'
 
-// ───── State ─────
-const files = ref<File[] | File | null>(null)
-const rows = ref<(ColorRow & { raw?: unknown })[]>([])
-
+const myTheme = themeQuartz.withParams({ accentColor: 'red' })
+const gridTheme = ref(myTheme)
+const files = ref<File[] | null>(null)
+const rows = ref<TableRow[]>([])
+const errorMessage = ref<string | null>(null)
 const activeNodeIds = ref<string[]>([])
-// ───── Build group tree from groupPath ─────
+const uploadedDocs = ref<Record<string, JsonValue>>({})
+const detectedModifiers = ref<DetectedModifier[]>([])
+const selectedModifiers = ref<Record<string, string>>({})
+
 type GroupNode = {
   id: string
   title: string
   children?: GroupNode[]
+}
+type SrgbObject = {
+  colorSpace?: unknown
+  components?: unknown
+  alpha?: unknown
+  hex?: unknown
+}
+type TableRow = ColorRow & {
+  raw?: unknown
+  hex: string
+}
+function onModifierChange(name: string, value: string | null): void {
+  if (!value) {
+    delete selectedModifiers.value[name]
+  } else {
+    selectedModifiers.value[name] = value
+  }
+
+  void resolveAndPopulateFromUploadedDocs()
 }
 
 function buildGroupTree(allRows: ColorRow[]): GroupNode[] {
@@ -83,7 +128,7 @@ function buildGroupTree(allRows: ColorRow[]): GroupNode[] {
 
     for (const segment of row.groupPath) {
       pathSoFar.push(segment)
-      const id = pathSoFar.join('.') // "palette.blue" / "component.sectionMessage.success"
+      const id = pathSoFar.join('.')
 
       let node = lookup.get(id)
       if (!node) {
@@ -102,25 +147,20 @@ function buildGroupTree(allRows: ColorRow[]): GroupNode[] {
 const groupTreeItems = computed(() => buildGroupTree(rows.value))
 
 const filteredRows = computed(() => {
-  const g = activeNodeIds.value[0] // current active node id
+  const g = activeNodeIds.value[0]
   if (!g) return rows.value
 
   return rows.value.filter((r) => {
-    const id = r.groupPath.join('.') // e.g. "global/brand-a.palette.green"
+    const id = r.groupPath.join('.')
     return id === g || id.startsWith(g + '.')
   })
 })
-// ───── Helpers for grouping ─────
+
 function extractGroupPath(path: string): string[] {
   const dot = path.indexOf('.')
   if (dot === -1) return []
 
-  // token set path before first dot, e.g.:
-  // "global/brand-a/color" or "alias/mode/color-dark"
   const tokenSetPart = path.slice(0, dot)
-
-  // rest after the token-set, e.g.:
-  // "global.color.palette.green.50"
   const rest = path.slice(dot + 1)
 
   const tsSegments = tokenSetPart.split('/')
@@ -142,8 +182,7 @@ function extractGroupPath(path: string): string[] {
   return collection ? [collection, ...cleaned] : cleaned
 }
 
-// ───── AG Grid column definitions ─────
-const columnDefs = ref<ColDef<ColorRow & { raw?: unknown }>[]>([
+const columnDefs = ref<ColDef<TableRow>[]>([
   { headerName: 'Group', field: 'group', flex: 1 },
   {
     headerName: 'Name',
@@ -158,33 +197,43 @@ const columnDefs = ref<ColDef<ColorRow & { raw?: unknown }>[]>([
   },
   {
     headerName: 'Color',
-    field: 'value',
+    field: 'hex',
     width: 120,
-    // simple color picker that writes back into the row
-    cellRenderer: (params: ICellRendererParams<ColorRow>) => {
+    cellRenderer: (params: ICellRendererParams<TableRow>) => {
       const eInput = document.createElement('input')
       eInput.type = 'color'
-      eInput.value = (params.value as string) || '#000000'
+
+      const hex = params.data?.hex ?? '#000000'
+      eInput.value = HEX_PATTERN.test(hex) ? hex : '#000000'
+
       eInput.style.width = '32px'
       eInput.style.height = '32px'
       eInput.style.border = 'none'
       eInput.style.padding = '0'
       eInput.style.background = 'transparent'
 
-      eInput.addEventListener('input', (event: Event) => {
+      eInput.addEventListener('mousedown', (ev) => {
+        ev.stopPropagation()
+      })
+
+      eInput.addEventListener('change', (event: Event) => {
         const newColor = (event.target as HTMLInputElement).value
-        params.node.setDataValue('value', newColor)
+
+        params.node.setDataValue('hex', newColor)
+
+        const srgb = srgbFromHex(newColor)
+        params.node.setDataValue('value', srgb)
       })
 
       return eInput
     },
   },
-  {
-    headerName: 'Alias',
-    field: 'raw',
-    flex: 1,
-    valueFormatter: (p) => (typeof p.value === 'string' ? p.value : JSON.stringify(p.value)),
-  },
+  //   {
+  //     headerName: 'Alias',
+  //     field: 'raw',
+  //     flex: 1,
+  //     valueFormatter: (p) => (typeof p.value === 'string' ? p.value : JSON.stringify(p.value)),
+  //   },
 ])
 
 const defaultColDef: ColDef = {
@@ -193,61 +242,153 @@ const defaultColDef: ColDef = {
   resizable: true,
 }
 
-// ───── File → parse → rows ─────
-async function onFileChange(newFiles: File[] | File) {
-  const list = Array.isArray(newFiles) ? newFiles : [newFiles]
-  if (list.length === 0) return
+function srgbFromHex(hex: string): string {
+  if (!HEX_PATTERN.test(hex)) return hex
+
+  const r = parseInt(hex.slice(1, 3), 16) / 255
+  const g = parseInt(hex.slice(3, 5), 16) / 255
+  const b = parseInt(hex.slice(5, 7), 16) / 255
+
+  return `srgb(${r.toFixed(3)}, ${g.toFixed(3)}, ${b.toFixed(3)})`
+}
+
+async function resolveAndPopulateFromUploadedDocs(): Promise<void> {
+  const docs = uploadedDocs.value
+  if (Object.keys(docs).length === 0) return
 
   try {
-    const text = await list[0].text()
-    const json = JSON.parse(text)
+    const input: Record<string, string> = { ...selectedModifiers.value }
 
-    const result = validateColorSubtree(json)
-    if (!result.ok) {
-      console.error('❌ Invalid DTCG format:', result.errors)
-      rows.value = []
+    const resolvedDoc = resolveUploadedDocuments(docs, input)
+    await populateTableFromDocument(resolvedDoc)
+    errorMessage.value = null
+  } catch (err) {
+    console.error('Error resolving tokens:', err)
+    errorMessage.value =
+      err instanceof Error ? err.message : 'Error resolving tokens with current modifier values.'
+    rows.value = []
+  }
+}
+
+async function onFileChange(newFiles: File[] | File | null) {
+  rows.value = []
+  errorMessage.value = null
+  activeNodeIds.value = []
+
+  if (!newFiles) {
+    uploadedDocs.value = {}
+    detectedModifiers.value = []
+    selectedModifiers.value = {}
+    return
+  }
+  const fileList: File[] = Array.isArray(newFiles) ? newFiles : [newFiles]
+  if (fileList.length === 0) {
+    uploadedDocs.value = {}
+    detectedModifiers.value = []
+    selectedModifiers.value = {}
+    return
+  }
+  const docs: Record<string, JsonValue> = {}
+  for (const file of fileList) {
+    try {
+      const text = await file.text()
+      const json = JSON.parse(text) as JsonValue
+      docs[file.name] = json
+    } catch (err) {
+      console.error('Error parsing file', file.name, err)
+      errorMessage.value = `File "${file.name}" is not valid JSON.`
       return
     }
+  }
+  uploadedDocs.value = docs
+  detectedModifiers.value = extractModifiersFromDocs(docs)
+  selectedModifiers.value = {}
+  for (const mod of detectedModifiers.value) {
+    const initial = mod.defaultValue ?? (mod.values.length > 0 ? mod.values[0] : '')
+    if (initial) {
+      selectedModifiers.value[mod.name] = initial
+    }
+  }
+  await resolveAndPopulateFromUploadedDocs()
+}
 
-    const tokens = collectColorTokensWithPath(json, '', undefined)
-
-    const map: Record<string, ColorTokenEntry> = {}
-    for (const t of tokens) {
-      map[t.path] = t
-
-      const match = t.path.match(/((?:global|alias)\.color\..+)$/)
-      if (match) {
-        const shortKey = match[1]
-        if (!map[shortKey]) {
-          map[shortKey] = t
-        }
+async function populateTableFromDocument(doc: unknown) {
+  const convertedDoc = convertHexColorsInDocument(doc)
+  console.log('Converted DTCG document:', convertedDoc)
+  const validation = await validateTokensStrict(convertedDoc)
+  if (!validation.ok) {
+    console.error('❌ Invalid DTCG format:', validation.errors)
+    const count = validation.errors.length
+    errorMessage.value =
+      `The uploaded JSON is not valid DTCG (${validation.kind} errors: ${count}). ` +
+      `Open the browser console for details.`
+    rows.value = []
+    return
+  }
+  const tokens = collectColorTokensWithPath(convertedDoc)
+  console.log('Collected color tokens:', tokens)
+  const map: Record<string, ColorTokenEntry> = {}
+  for (const t of tokens) {
+    map[t.path] = t
+    const match = t.path.match(/((?:global|alias)\.color\..+)$/)
+    if (match) {
+      const shortKey = match[1]
+      if (!map[shortKey]) {
+        map[shortKey] = t
       }
     }
+  }
+  rows.value = tokens.map((t) => {
+    const resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? t.value
+    const display = makeDisplayColor(resolved)
+    const groupPath = extractGroupPath(t.path)
+    const groupLabel = groupPath.length ? groupPath[groupPath.length - 1] : ''
+    const name = t.path.split('.').pop() ?? t.path
+    return {
+      name,
+      value: display.srgb,
+      hex: display.hex,
+      raw: t.value,
+      group: groupLabel,
+      groupPath,
+    } satisfies TableRow
+  })
+  activeNodeIds.value = []
+  console.log('✅ Valid DTCG colors:', rows.value)
+}
 
-    rows.value = tokens.map((t) => {
-      const resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? '#000000'
-
-      const groupPath = extractGroupPath(t.path)
-      const groupLabel = groupPath.length ? groupPath[groupPath.length - 1] : ''
-
-      const name = t.path.split('.').pop() ?? t.path
-
-      return {
-        name,
-        value: resolved,
-        raw: t.value,
-        group: groupLabel,
-        groupPath,
-      } satisfies ColorRow
-    })
-
-    // reset selection when new file is loaded
-    activeNodeIds.value = []
-    console.log('✅ DTCG colors:', rows.value)
-    //console.log('activeNodeIds', activeNodeIds.value)
-    //console.log('first row groupPath', rows.value[0]?.groupPath.join('.'))
-  } catch (err) {
-    console.error('Error reading/parsing file:', err)
+function makeDisplayColor(value: unknown): { srgb: string; hex: string } {
+  if (typeof value === 'string' && HEX_PATTERN.test(value)) {
+    return { srgb: value, hex: value }
+  }
+  if (value && typeof value === 'object' && !Array.isArray(value)) {
+    const obj = value as SrgbObject
+    if (
+      obj.colorSpace === 'srgb' &&
+      Array.isArray(obj.components) &&
+      obj.components.length === 3 &&
+      obj.components.every((c) => typeof c === 'number')
+    ) {
+      const comps = obj.components as number[]
+      const compStr = comps.map((c) => c.toFixed(3)).join(', ')
+      const alphaStr = typeof obj.alpha === 'number' ? `, ${obj.alpha.toFixed(3)}` : ''
+      const srgb = `srgb(${compStr}${alphaStr})`
+      if (typeof obj.hex === 'string' && HEX_PATTERN.test(obj.hex)) {
+        return { srgb, hex: obj.hex }
+      }
+      const toByteHex = (c: number): string => {
+        const clamped = Math.max(0, Math.min(1, c))
+        const v = Math.round(clamped * 255)
+        return v.toString(16).padStart(2, '0')
+      }
+      const [r, g, b] = comps
+      const hex = `#${toByteHex(r)}${toByteHex(g)}${toByteHex(b)}`
+      return { srgb, hex }
+    }
+  }
+  return {
+    srgb: typeof value === 'string' ? value : JSON.stringify(value),
+    hex: '#000000',
   }
 }
 </script>

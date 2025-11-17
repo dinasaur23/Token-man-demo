@@ -1,0 +1,14 @@
+{
+  "global": {
+    "color": {
+      "primary": {
+        "$type": "color",
+        "$value": "#3366FF"
+      },
+      "onPrimary": {
+        "$type": "color",
+        "$value": "#FFFFFF"
+      }
+    }
+  }
+}

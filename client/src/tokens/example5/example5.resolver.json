@@ -1,0 +1,31 @@
+{
+  "version": "2025-10-01",
+  "name": "Example 5 – Theme + density + direct file",
+  "sets": {
+    "foundation": {
+      "sources": [{ "$ref": "example5.foundation.colors.json" }]
+    }
+  },
+  "modifiers": {
+    "theme": {
+      "default": "light",
+      "contexts": {
+        "light": [{ "$ref": "example5.theme.light.json" }],
+        "dark": [{ "$ref": "example5.theme.dark.json" }]
+      }
+    },
+    "density": {
+      "default": "comfortable",
+      "contexts": {
+        "comfortable": [{ "$ref": "example5.density.comfortable.json" }],
+        "compact": [{ "$ref": "example5.density.compact.json" }]
+      }
+    }
+  },
+  "resolutionOrder": [
+    { "$ref": "#/sets/foundation" },
+    { "$ref": "example5.components.button.json" },
+    { "$ref": "#/modifiers/density" },
+    { "$ref": "#/modifiers/theme" }
+  ]
+}

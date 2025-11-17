@@ -1,0 +1,14 @@
+{
+  "global": {
+    "color": {
+      "primary": {
+        "$type": "color",
+        "$value": "#3366FF"
+      },
+      "accent": {
+        "$type": "color",
+        "$value": "#FF4081"
+      }
+    }
+  }
+}

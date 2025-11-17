@@ -1,0 +1,10 @@
+{
+  "global": {
+    "color": {
+      "primary": {
+        "$type": "color",
+        "$value": "#FF0000"
+      }
+    }
+  }
+}

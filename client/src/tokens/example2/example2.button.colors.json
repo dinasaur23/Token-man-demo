@@ -1,0 +1,18 @@
+{
+  "components": {
+    "button": {
+      "background": {
+        "$type": "color",
+        "$value": "{global.color.primary}"
+      },
+      "backgroundHover": {
+        "$type": "color",
+        "$value": "#0033AA"
+      },
+      "label": {
+        "$type": "color",
+        "$value": "{global.color.onPrimary}"
+      }
+    }
+  }
+}

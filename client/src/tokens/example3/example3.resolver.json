@@ -1,0 +1,20 @@
+{
+  "version": "2025-10-01",
+  "name": "Example 3 – Theme modifier",
+  "sets": {
+    "foundation": {
+      "sources": [{ "$ref": "example3.foundation.colors.json" }]
+    }
+  },
+  "modifiers": {
+    "theme": {
+      "description": "Light vs dark theme",
+      "default": "light",
+      "contexts": {
+        "light": [{ "$ref": "example3.theme.light.json" }],
+        "dark": [{ "$ref": "example3.theme.dark.json" }]
+      }
+    }
+  },
+  "resolutionOrder": [{ "$ref": "#/sets/foundation" }, { "$ref": "#/modifiers/theme" }]
+}

@@ -1,37 +1,178 @@
-import { ColorLeafSchema } from './zod-color-schema'
+// client/src/utils/dtcg/dtcg-validator.ts
 
-type J = unknown
-type Obj = Record<string, unknown>
-const isObj = (x: unknown): x is Obj => typeof x === 'object' && x !== null && !Array.isArray(x)
+import { createSchema } from 'w3c-design-tokens-standard-schema/zod'
+import { z } from 'zod'
+import type { Json } from './color-conversion'
 
-/**
- * Walk the document; enter "color mode" when a node has $type:"color".
- * In color mode, any object with $value is validated as a color token.
- */
-export function validateColorSubtree(doc: J): { ok: true } | { ok: false; errors: string[] } {
+// ---------- shared helpers -----------------------------------------
+
+type JsonObject = Record<string, Json>
+
+const isObject = (value: Json): value is JsonObject =>
+  typeof value === 'object' && value !== null && !Array.isArray(value)
+
+// ---------- 1) Structural DTCG validation (W3C schema) --------------
+
+const schema = createSchema()
+
+type RawValidateResult = {
+  issues?: readonly unknown[]
+  value?: unknown
+}
+
+export type DtcgStructuralResult = { ok: true } | { ok: false; errors: readonly unknown[] }
+
+export async function validateDtcgDocument(doc: Json): Promise<DtcgStructuralResult> {
+  const errors: unknown[] = []
+  let tokenCount = 0
+
+  async function visit(node: Json, inheritedType?: string): Promise<void> {
+    if (!isObject(node)) return
+
+    const localType = typeof node['$type'] === 'string' ? String(node['$type']) : undefined
+    const effectiveType = localType ?? inheritedType
+
+    const hasValue = Object.prototype.hasOwnProperty.call(node, '$value')
+
+    if (effectiveType && hasValue) {
+      tokenCount += 1
+
+      if (effectiveType !== 'color') {
+        const tokenNode: JsonObject = localType != null ? node : { ...node, $type: effectiveType }
+        let result = schema.DesignToken['~standard'].validate(tokenNode) as
+          | RawValidateResult
+          | Promise<RawValidateResult>
+        if (result instanceof Promise) {
+          result = await result
+        }
+        if (Array.isArray(result.issues) && result.issues.length > 0) {
+          errors.push(...result.issues)
+        }
+      }
+      // if effectiveType === 'color', skip library validation
+    }
+
+    for (const child of Object.values(node)) {
+      await visit(child, effectiveType)
+    }
+  }
+
+  await visit(doc, undefined)
+
+  if (tokenCount === 0) {
+    errors.push(
+      'Document contains no DTCG tokens (no nodes with an effective "$type" and "$value"). It is not a valid DTCG token file.',
+    )
+  }
+
+  return errors.length > 0 ? { ok: false, errors } : { ok: true }
+}
+
+// ---------- 2) Color subtree validation (all color tokens) ----------
+
+// Alias like "{path.to.token}"
+const AliasPattern = /^\{[^}]+\}$/
+
+// Strict W3C color object
+const StrictColorObject = z
+  .object({
+    colorSpace: z.string(),
+    components: z.array(z.number()).length(3),
+    alpha: z.number().min(0).max(1).optional(),
+    hex: z
+      .string()
+      .regex(/^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i)
+      .optional(),
+  })
+  .refine((v) => v.hex !== undefined || v.components !== undefined, {
+    message: 'Color object must have hex or components',
+  })
+
+// Allowed $value when effective type is "color"
+const ColorValueSchema = z.union([
+  StrictColorObject,
+  z.string().regex(AliasPattern, 'Expected alias like {path.to.token}'),
+])
+
+export type ColorValidationResult = { ok: true } | { ok: false; errors: string[] }
+
+export function validateColorSubtree(doc: Json): ColorValidationResult {
   const errors: string[] = []
 
-  function visit(n: J, inColor: boolean, path: string): void {
-    if (!isObj(n)) return
+  const visit = (
+    node: Json,
+    inheritedType: string | undefined,
+    path: (string | number)[],
+  ): void => {
+    if (!isObject(node)) return
 
-    const nextInColor = inColor || n.$type === 'color'
+    const localType = typeof node['$type'] === 'string' ? String(node['$type']) : undefined
+    const effectiveType = localType ?? inheritedType
 
-    if (nextInColor && '$value' in n) {
-      const res = ColorLeafSchema.safeParse(n)
-      if (!res.success) {
-        for (const issue of res.error.issues) {
-          const p = issue.path.length ? `${path}.${issue.path.join('.')}` : path || '/'
-          errors.push(`${p} ${issue.message}`.trim())
+    const hasValue = Object.prototype.hasOwnProperty.call(node, '$value')
+
+    if (effectiveType === 'color' && hasValue) {
+      const parseResult = ColorValueSchema.safeParse(node['$value'])
+
+      if (!parseResult.success) {
+        for (const issue of parseResult.error.issues) {
+          const fullPath = [...path, '$value', ...issue.path].join('.')
+          errors.push(`${fullPath}: ${issue.message}`)
         }
       }
     }
 
-    for (const [k, v] of Object.entries(n)) {
-      if (k.startsWith('$')) continue
-      visit(v, nextInColor, path ? `${path}.${k}` : k)
+    for (const [key, value] of Object.entries(node)) {
+      if (key.startsWith('$')) continue // skip $themes, $metadata, $description etc.
+      visit(value, effectiveType, [...path, key])
     }
   }
 
-  visit(doc, false, '')
-  return errors.length ? { ok: false, errors } : { ok: true }
+  visit(doc, undefined, [])
+
+  return errors.length > 0 ? { ok: false, errors } : { ok: true }
+}
+
+// ---------- 3) Combined helper -------------------------------------
+
+export type CombinedValidationResult =
+  | { ok: true }
+  | { ok: false; kind: 'structural' | 'color'; errors: string[] }
+
+function formatStructuralIssue(issue: unknown): string {
+  if (typeof issue === 'string') return issue
+
+  if (typeof issue === 'object' && issue !== null) {
+    const maybe = issue as { path?: unknown; message?: unknown }
+
+    const pathArray = Array.isArray(maybe.path) ? maybe.path : undefined
+    const msg = typeof maybe.message === 'string' ? maybe.message : JSON.stringify(issue)
+
+    const path = pathArray && pathArray.length > 0 ? pathArray.join('.') : ''
+    return path ? `${path}: ${msg}` : msg
+  }
+
+  return String(issue)
+}
+
+export async function validateTokensStrict(doc: Json): Promise<CombinedValidationResult> {
+  const structural = await validateDtcgDocument(doc)
+  if (!structural.ok) {
+    return {
+      ok: false,
+      kind: 'structural',
+      errors: structural.errors.map(formatStructuralIssue),
+    }
+  }
+
+  const color = validateColorSubtree(doc)
+  if (!color.ok) {
+    return {
+      ok: false,
+      kind: 'color',
+      errors: color.errors,
+    }
+  }
+
+  return { ok: true }
 }
