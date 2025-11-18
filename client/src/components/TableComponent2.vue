@@ -61,7 +61,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { AgGridVue } from 'ag-grid-vue3'
 import type { ColDef, ICellRendererParams } from 'ag-grid-community'
 import { themeQuartz } from 'ag-grid-community'
@@ -80,6 +80,8 @@ import {
   type DetectedModifier,
   type JsonValue,
 } from '@/utils/dtcg/resolver'
+import { useTokenWorkspaceStore } from '../stores/TokenWorkspace'
+import type { TokenFileDto } from '../stores/TokenWorkspace'
 
 const myTheme = themeQuartz.withParams({ accentColor: 'red' })
 const gridTheme = ref(myTheme)
@@ -90,6 +92,7 @@ const activeNodeIds = ref<string[]>([])
 const uploadedDocs = ref<Record<string, JsonValue>>({})
 const detectedModifiers = ref<DetectedModifier[]>([])
 const selectedModifiers = ref<Record<string, string>>({})
+const workspaceStore = useTokenWorkspaceStore()
 
 type GroupNode = {
   id: string
@@ -105,14 +108,19 @@ type SrgbObject = {
 type TableRow = ColorRow & {
   raw?: unknown
   hex: string
+  path: string
 }
+
 function onModifierChange(name: string, value: string | null): void {
   if (!value) {
     delete selectedModifiers.value[name]
+    delete workspaceStore.modifiers[name]
   } else {
     selectedModifiers.value[name] = value
+    workspaceStore.modifiers[name] = value
   }
 
+  void workspaceStore.saveToServer()
   void resolveAndPopulateFromUploadedDocs()
 }
 
@@ -223,6 +231,15 @@ const columnDefs = ref<ColDef<TableRow>[]>([
 
         const srgb = srgbFromHex(newColor)
         params.node.setDataValue('value', srgb)
+
+        const row = params.data
+        if (row && row.path) {
+          workspaceStore.overrides = {
+            ...workspaceStore.overrides,
+            [row.path]: newColor,
+          }
+          void workspaceStore.saveToServer()
+        }
       })
 
       return eInput
@@ -279,6 +296,9 @@ async function onFileChange(newFiles: File[] | File | null) {
     uploadedDocs.value = {}
     detectedModifiers.value = []
     selectedModifiers.value = {}
+    workspaceStore.files = []
+    workspaceStore.modifiers = {}
+    await workspaceStore.saveToServer()
     return
   }
   const fileList: File[] = Array.isArray(newFiles) ? newFiles : [newFiles]
@@ -286,29 +306,44 @@ async function onFileChange(newFiles: File[] | File | null) {
     uploadedDocs.value = {}
     detectedModifiers.value = []
     selectedModifiers.value = {}
+    workspaceStore.files = []
+    workspaceStore.modifiers = {}
+    await workspaceStore.saveToServer()
     return
   }
   const docs: Record<string, JsonValue> = {}
+  const dtoFiles: TokenFileDto[] = []
+
   for (const file of fileList) {
     try {
       const text = await file.text()
       const json = JSON.parse(text) as JsonValue
       docs[file.name] = json
+      dtoFiles.push({ name: file.name, content: json })
     } catch (err) {
       console.error('Error parsing file', file.name, err)
       errorMessage.value = `File "${file.name}" is not valid JSON.`
       return
     }
   }
+
   uploadedDocs.value = docs
+  workspaceStore.files = dtoFiles
+  await workspaceStore.saveToServer()
+
   detectedModifiers.value = extractModifiersFromDocs(docs)
   selectedModifiers.value = {}
+
   for (const mod of detectedModifiers.value) {
     const initial = mod.defaultValue ?? (mod.values.length > 0 ? mod.values[0] : '')
     if (initial) {
       selectedModifiers.value[mod.name] = initial
     }
   }
+
+  workspaceStore.files = dtoFiles
+  await workspaceStore.saveToServer()
+
   await resolveAndPopulateFromUploadedDocs()
 }
 
@@ -340,10 +375,17 @@ async function populateTableFromDocument(doc: unknown) {
   }
   rows.value = tokens.map((t) => {
     const resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? t.value
-    const display = makeDisplayColor(resolved)
+    let display = makeDisplayColor(resolved)
+
+    const override = workspaceStore.overrides[t.path]
+    if (override) {
+      display = makeDisplayColor(override)
+    }
+
     const groupPath = extractGroupPath(t.path)
     const groupLabel = groupPath.length ? groupPath[groupPath.length - 1] : ''
     const name = t.path.split('.').pop() ?? t.path
+
     return {
       name,
       value: display.srgb,
@@ -351,6 +393,7 @@ async function populateTableFromDocument(doc: unknown) {
       raw: t.value,
       group: groupLabel,
       groupPath,
+      path: t.path,
     } satisfies TableRow
   })
   activeNodeIds.value = []
@@ -391,4 +434,31 @@ function makeDisplayColor(value: unknown): { srgb: string; hex: string } {
     hex: '#000000',
   }
 }
+
+onMounted(async () => {
+  await workspaceStore.loadFromServer()
+
+  if (workspaceStore.files.length > 0) {
+    const docs: Record<string, JsonValue> = {}
+
+    for (const file of workspaceStore.files) {
+      docs[file.name] = file.content as JsonValue
+    }
+    uploadedDocs.value = docs
+
+    detectedModifiers.value = extractModifiersFromDocs(docs)
+    selectedModifiers.value = { ...workspaceStore.modifiers }
+
+    if (Object.keys(selectedModifiers.value).length === 0) {
+      for (const mod of detectedModifiers.value) {
+        const initial = mod.defaultValue ?? (mod.values.length > 0 ? mod.values[0] : '')
+        if (initial) {
+          selectedModifiers.value[mod.name] = initial
+        }
+      }
+    }
+
+    await resolveAndPopulateFromUploadedDocs()
+  }
+})
 </script>

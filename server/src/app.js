@@ -9,7 +9,7 @@ import { connectDB } from "../config/db.js";
 import TokenRoutes from "../src/routes/TokenRoutes.js";
 import AuthRoutes from "../src/routes/AuthRoutes.js";
 import { requireAuth } from "../src/middleware/authMiddleware.js";
-import { resolveTokensFromResolverFile } from "../src/token/resolver.js";
+import { resolveTokensFromResolverFile } from "../src/tokens/resolver.js";
 dotenv.config();
 
 const app = express();
@@ -22,7 +22,8 @@ app.use(cookieParser());
 
 //routes
 app.use("/api/auth", AuthRoutes);
-app.use("/api/token", TokenRoutes);
+app.use("/api/tokens", TokenRoutes);
+
 app.get("/api/auth/check", requireAuth, (req, res) => {
   res.json({ ok: true, user: req.user });
 });
@@ -44,8 +45,8 @@ app.get("/api/tokens", async (req, res, next) => {
     next(err);
   }
 });
-//cookies
 
+//cookies
 const PORT = process.env.PORT || 8081;
 
 app.listen(PORT, () => {

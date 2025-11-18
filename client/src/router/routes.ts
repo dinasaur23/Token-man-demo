@@ -25,7 +25,12 @@ const router = createRouter({
       component: DefaultLayout,
       children: [
         { path: 'StartPage', name: 'start', component: StartPage, meta: { requiresAuth: true } },
-        { path: 'ColorContentPage', name: 'colors', component: ColorContentPage },
+        {
+          path: 'ColorContentPage',
+          name: 'colors',
+          component: ColorContentPage,
+          meta: { requiresAuth: true },
+        },
         { path: 'EditTokenPage', name: 'edit', component: EditTokenPage },
       ],
     },
@@ -35,10 +40,7 @@ const router = createRouter({
 
 async function isAuthed(): Promise<boolean> {
   try {
-    const res = await fetch('/api/auth/check', {
-      // If you’re NOT using the Vite proxy and are calling a different origin,
-      // add: credentials: "include"
-    })
+    const res = await fetch('/api/auth/check', {})
     return res.ok
   } catch {
     return false

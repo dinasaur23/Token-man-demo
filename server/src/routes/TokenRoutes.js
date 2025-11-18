@@ -1,17 +1,10 @@
 import express from "express";
-import { getAllTokens } from "../controllers/TokenController.js";
-import { createToken } from "../controllers/TokenController.js";
-import { deleteToken } from "../controllers/TokenController.js";
-import { updateToken } from "../controllers/TokenController.js";
+import { requireAuth } from "../middleware/authMiddleware.js";
+import { getWorkspace, saveWorkspace } from "../controllers/TokenController.js";
 
 const router = express.Router();
 
-router.get("/", getAllTokens);
-
-router.post("/", createToken);
-
-router.put("/:id", updateToken);
-
-router.delete("/:id", deleteToken);
+router.get("/workspace", requireAuth, getWorkspace);
+router.put("/workspace", requireAuth, saveWorkspace);
 
 export default router;

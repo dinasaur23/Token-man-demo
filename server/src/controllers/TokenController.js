@@ -1,15 +1,77 @@
-export const getAllTokens = (req, res) => {
-  res.status(200).send("you just fetched the tokens");
-};
+import TokenWorkspace from "../models/TokenWorkspace.js";
 
-export const createToken = (req, res) => {
-  res.status(201).json({ message: "your token has been created" });
-};
+function getUserIdFromReq(req) {
+  if (req.user?.id) return req.user.id;
+  if (req.user?._id) return req.user._id;
+  return null;
+}
 
-export const updateToken = (req, res) => {
-  res.status(200).json({ message: "you token has been updated" });
-};
+export async function getWorkspace(req, res, next) {
+  try {
+    const userId = getUserIdFromReq(req);
+    if (!userId) {
+      console.warn("getWorkspace: no user id in token", req.user);
+      return res.json({ files: [], modifiers: {}, overrides: {} });
+    }
 
-export const deleteToken = (req, res) => {
-  res.status(200).json({ message: "your tokens has been deleted" });
-};
+    const workspace = await TokenWorkspace.findOne({ user: userId }).lean();
+    console.log("getWorkspace: found?", !!workspace);
+
+    if (!workspace) {
+      return res.json({ files: [], modifiers: {}, overrides: {} });
+    }
+
+    // 🔥 just pass through plain objects
+    res.json({
+      files: workspace.files ?? [],
+      modifiers: workspace.modifiers ?? {},
+      overrides: workspace.overrides ?? {},
+    });
+  } catch (err) {
+    console.error("getWorkspace error", err);
+    next(err);
+  }
+}
+
+export async function saveWorkspace(req, res, next) {
+  try {
+    const userId = getUserIdFromReq(req);
+    if (!userId) {
+      console.error("saveWorkspace: no user id in token", req.user);
+      return res
+        .status(400)
+        .json({ ok: false, message: "No user id in token" });
+    }
+
+    const { files, modifiers, overrides } = req.body;
+
+    console.log(
+      "saveWorkspace user",
+      userId,
+      "files:",
+      Array.isArray(files) ? files.length : 0
+    );
+
+    const workspaceData = {
+      user: userId,
+      files: Array.isArray(files) ? files : [],
+      modifiers: modifiers ?? {},
+      overrides: overrides ?? {},
+    };
+
+    const workspace = await TokenWorkspace.findOneAndUpdate(
+      { user: userId },
+      workspaceData,
+      { upsert: true, new: true, setDefaultsOnInsert: true }
+    ).lean();
+
+    res.json({
+      files: workspace.files ?? [],
+      modifiers: workspace.modifiers ?? {},
+      overrides: workspace.overrides ?? {},
+    });
+  } catch (err) {
+    console.error("saveWorkspace error", err);
+    next(err);
+  }
+}
