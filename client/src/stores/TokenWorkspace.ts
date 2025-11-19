@@ -1,5 +1,7 @@
 import { defineStore } from 'pinia'
 
+export type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue }
+
 export interface TokenFileDto {
   name: string
   content: unknown
@@ -9,12 +11,14 @@ export interface TokenWorkspaceDto {
   files: TokenFileDto[]
   modifiers: Record<string, string>
   overrides: Record<string, unknown>
+  nameOverrides: Record<string, string>
 }
 
 interface TokenWorkspaceState {
   files: TokenFileDto[]
   modifiers: Record<string, string>
   overrides: Record<string, unknown>
+  nameOverrides: Record<string, string>
   loaded: boolean
 }
 
@@ -23,6 +27,7 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
     files: [] as TokenFileDto[],
     modifiers: {} as Record<string, string>,
     overrides: {} as Record<string, unknown>,
+    nameOverrides: {} as Record<string, string>,
     loaded: false,
   }),
 
@@ -46,6 +51,20 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
         this.files = data.files ?? []
         this.modifiers = data.modifiers ?? {}
         this.overrides = data.overrides ?? {}
+        this.nameOverrides = data.nameOverrides ?? {}
+
+        // 🔧 SANITIZE: drop anything that looks like a hex color from nameOverrides
+        const cleaned: Record<string, string> = {}
+        const hexPattern = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
+
+        for (const [key, value] of Object.entries(this.nameOverrides)) {
+          if (typeof value === 'string' && !hexPattern.test(value)) {
+            cleaned[key] = value
+          }
+        }
+
+        this.nameOverrides = cleaned
+
         this.loaded = true
       } catch (err) {
         console.error('loadFromServer failed', err)
@@ -59,6 +78,7 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
           files: this.files,
           modifiers: this.modifiers,
           overrides: this.overrides,
+          nameOverrides: this.nameOverrides,
         }
 
         const res = await fetch('/api/tokens/workspace', {

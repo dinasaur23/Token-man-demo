@@ -18,14 +18,18 @@ export async function getWorkspace(req, res, next) {
     console.log("getWorkspace: found?", !!workspace);
 
     if (!workspace) {
-      return res.json({ files: [], modifiers: {}, overrides: {} });
+      return res.json({
+        files: [],
+        modifiers: {},
+        overrides: {},
+        nameOverrides: {},
+      });
     }
-
-    // 🔥 just pass through plain objects
     res.json({
       files: workspace.files ?? [],
       modifiers: workspace.modifiers ?? {},
       overrides: workspace.overrides ?? {},
+      nameOverrides: workspace.nameOverrides ?? {},
     });
   } catch (err) {
     console.error("getWorkspace error", err);
@@ -43,7 +47,7 @@ export async function saveWorkspace(req, res, next) {
         .json({ ok: false, message: "No user id in token" });
     }
 
-    const { files, modifiers, overrides } = req.body;
+    const { files, modifiers, overrides, nameOverrides } = req.body;
 
     console.log(
       "saveWorkspace user",
@@ -57,6 +61,7 @@ export async function saveWorkspace(req, res, next) {
       files: Array.isArray(files) ? files : [],
       modifiers: modifiers ?? {},
       overrides: overrides ?? {},
+      nameOverrides: nameOverrides ?? {},
     };
 
     const workspace = await TokenWorkspace.findOneAndUpdate(
@@ -69,6 +74,7 @@ export async function saveWorkspace(req, res, next) {
       files: workspace.files ?? [],
       modifiers: workspace.modifiers ?? {},
       overrides: workspace.overrides ?? {},
+      nameOverrides: workspace.nameOverrides ?? {},
     });
   } catch (err) {
     console.error("saveWorkspace error", err);

@@ -22,7 +22,6 @@ const tokenWorkspaceSchema = new Schema(
       type: [fileSchema],
       default: [],
     },
-    // 👉 just plain objects, no Map magic
     modifiers: {
       type: Schema.Types.Mixed,
       default: {},
@@ -31,6 +30,7 @@ const tokenWorkspaceSchema = new Schema(
       type: Schema.Types.Mixed,
       default: {},
     },
+    nameOverrides: { type: Schema.Types.Mixed, default: {} },
   },
   { timestamps: true }
 );
