@@ -5,7 +5,7 @@ const { Schema } = mongoose;
 const fileSchema = new Schema(
   {
     name: { type: String, required: true },
-    content: Schema.Types.Mixed, // raw JSON
+    content: Schema.Types.Mixed,
   },
   { _id: false }
 );
@@ -31,7 +31,9 @@ const tokenWorkspaceSchema = new Schema(
       default: {},
     },
     nameOverrides: { type: Schema.Types.Mixed, default: {} },
+    rowOrder: { type: [String], default: [] },
   },
+
   { timestamps: true }
 );
 

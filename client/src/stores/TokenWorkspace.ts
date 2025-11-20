@@ -12,6 +12,9 @@ export interface TokenWorkspaceDto {
   modifiers: Record<string, string>
   overrides: Record<string, unknown>
   nameOverrides: Record<string, string>
+  addedRows: unknown[]
+  deletedPaths: string[]
+  rowOrder: string[]
 }
 
 interface TokenWorkspaceState {
@@ -19,6 +22,9 @@ interface TokenWorkspaceState {
   modifiers: Record<string, string>
   overrides: Record<string, unknown>
   nameOverrides: Record<string, string>
+  addedRows: unknown[]
+  deletedPaths: string[]
+  rowOrder: string[]
   loaded: boolean
 }
 
@@ -28,6 +34,9 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
     modifiers: {} as Record<string, string>,
     overrides: {} as Record<string, unknown>,
     nameOverrides: {} as Record<string, string>,
+    addedRows: [],
+    deletedPaths: [],
+    rowOrder: [],
     loaded: false,
   }),
 
@@ -52,6 +61,9 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
         this.modifiers = data.modifiers ?? {}
         this.overrides = data.overrides ?? {}
         this.nameOverrides = data.nameOverrides ?? {}
+        this.addedRows = data.addedRows ?? {}
+        this.deletedPaths = data.deletedPaths ?? {}
+        this.rowOrder = data.rowOrder ?? []
 
         // 🔧 SANITIZE: drop anything that looks like a hex color from nameOverrides
         const cleaned: Record<string, string> = {}
@@ -79,6 +91,9 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
           modifiers: this.modifiers,
           overrides: this.overrides,
           nameOverrides: this.nameOverrides,
+          addedRows: this.addedRows,
+          deletedPaths: this.deletedPaths,
+          rowOrder: this.rowOrder,
         }
 
         const res = await fetch('/api/tokens/workspace', {

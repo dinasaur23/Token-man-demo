@@ -23,6 +23,9 @@ export async function getWorkspace(req, res, next) {
         modifiers: {},
         overrides: {},
         nameOverrides: {},
+        addedRows: [],
+        deletedPaths: [],
+        rowOrder: [],
       });
     }
     res.json({
@@ -30,6 +33,9 @@ export async function getWorkspace(req, res, next) {
       modifiers: workspace.modifiers ?? {},
       overrides: workspace.overrides ?? {},
       nameOverrides: workspace.nameOverrides ?? {},
+      addedRows: workspace.addedRows,
+      deletedPaths: workspace.deletedPaths,
+      rowOrder: workspace.rowOrder ?? [],
     });
   } catch (err) {
     console.error("getWorkspace error", err);
@@ -47,7 +53,15 @@ export async function saveWorkspace(req, res, next) {
         .json({ ok: false, message: "No user id in token" });
     }
 
-    const { files, modifiers, overrides, nameOverrides } = req.body;
+    const {
+      files,
+      modifiers,
+      overrides,
+      nameOverrides,
+      addedRows,
+      deletedPaths,
+      rowOrder,
+    } = req.body;
 
     console.log(
       "saveWorkspace user",
@@ -62,6 +76,9 @@ export async function saveWorkspace(req, res, next) {
       modifiers: modifiers ?? {},
       overrides: overrides ?? {},
       nameOverrides: nameOverrides ?? {},
+      addedRows: Array.isArray(addedRows) ? addedRows : [],
+      deletedPaths: Array.isArray(deletedPaths) ? deletedPaths : [],
+      rowOrder: Array.isArray(rowOrder) ? rowOrder : [],
     };
 
     const workspace = await TokenWorkspace.findOneAndUpdate(
@@ -75,6 +92,8 @@ export async function saveWorkspace(req, res, next) {
       modifiers: workspace.modifiers ?? {},
       overrides: workspace.overrides ?? {},
       nameOverrides: workspace.nameOverrides ?? {},
+      addedRows: workspace.addedRows,
+      deletedPaths: workspace.deletedPaths,
     });
   } catch (err) {
     console.error("saveWorkspace error", err);

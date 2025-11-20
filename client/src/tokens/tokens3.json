@@ -177,7 +177,7 @@
       "default": { "$value": "{global.palette.neutral.50}" },
       "subtle": { "$value": "{global.palette.neutral.100}" },
       "muted": { "$value": "{global.palette.neutral.200}" },
-      "elevated": { "$value": "{global.palette.neutral.0}" },
+      "elevated": { "$value": "{global.palette.neutral.100}" },
       "inverse": { "$value": "{global.palette.neutral.900}" }
     },
 

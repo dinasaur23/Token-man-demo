@@ -19,11 +19,34 @@ import { makeDisplayColor } from '@/utils/dtcg/color-display'
 import type { GroupNode } from '@/utils/dtcg/token-table-types'
 import { convertHexColorsInDocument } from '@/utils/dtcg/color-conversion'
 import { pruneEmptyChildren } from '@/utils/dtcg/grouping'
+import { useTokenCrud } from './useTokenCrud'
 
 export type TableRow = ColorRow & {
   raw?: unknown
   hex: string
   path: string
+}
+
+function sortTokensByRowOrder(tokens: ColorTokenEntry[], rowOrder: string[]): ColorTokenEntry[] {
+  const order = rowOrder
+  const indexMap = new Map<string, number>()
+  order.forEach((path: string, idx: number) => indexMap.set(path, idx))
+
+  const withMeta = tokens.map((t, defaultIndex) => {
+    const idx = indexMap.get(t.path)
+    return {
+      token: t,
+      orderIndex: idx ?? Number.MAX_SAFE_INTEGER,
+      defaultIndex,
+    }
+  })
+
+  withMeta.sort((a, b) => {
+    if (a.orderIndex !== b.orderIndex) return a.orderIndex - b.orderIndex
+    return a.defaultIndex - b.defaultIndex
+  })
+
+  return withMeta.map((m) => m.token)
 }
 
 export function useTokenWorkspaceTable() {
@@ -33,11 +56,8 @@ export function useTokenWorkspaceTable() {
   const uploadedDocs = ref<Record<string, JsonValue>>({})
   const detectedModifiers = ref<DetectedModifier[]>([])
   const selectedModifiers = ref<Record<string, string>>({})
-
   const workspaceStore = useTokenWorkspaceStore()
-
   const groupTreeItems = computed<GroupNode[]>(() => pruneEmptyChildren(buildGroupTree(rows.value)))
-
   const filteredRows = computed<TableRow[]>(() => {
     const g = activeNodeIds.value[0]
     if (!g) return rows.value
@@ -47,6 +67,18 @@ export function useTokenWorkspaceTable() {
       return id === g || id.startsWith(g + '.')
     })
   })
+
+  // ---- persist helper used by CRUD composable -------------------------
+
+  async function persistUploadedDocsAndReload(): Promise<void> {
+    workspaceStore.files = Object.entries(uploadedDocs.value).map(([name, content]) => ({
+      name,
+      content,
+    }))
+
+    await workspaceStore.saveToServer()
+    await resolveAndPopulateFromUploadedDocs()
+  }
 
   async function populateTableFromDocument(doc: unknown): Promise<void> {
     const convertedDoc = convertHexColorsInDocument(doc)
@@ -63,6 +95,10 @@ export function useTokenWorkspaceTable() {
 
     const tokens = collectColorTokensWithPath(convertedDoc)
 
+    if (workspaceStore.rowOrder.length === 0) {
+      workspaceStore.rowOrder = tokens.map((t) => t.path)
+    }
+    const orderedTokens = sortTokensByRowOrder(tokens, workspaceStore.rowOrder)
     const map: Record<string, ColorTokenEntry> = {}
     for (const t of tokens) {
       map[t.path] = t
@@ -75,7 +111,7 @@ export function useTokenWorkspaceTable() {
       }
     }
 
-    rows.value = tokens.map((t) => {
+    const newRows: TableRow[] = orderedTokens.map((t) => {
       const resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? t.value
       let display = makeDisplayColor(resolved)
 
@@ -86,7 +122,6 @@ export function useTokenWorkspaceTable() {
 
       const groupPath = extractGroupPath(t.path)
       const groupLabel = groupPath.length ? groupPath[groupPath.length - 1] : ''
-      //const name = t.path.split('.').pop() ?? t.path
       const nameOverride = workspaceStore.nameOverrides[t.path]
       const fallbackName = t.path.split('.').pop() ?? t.path
       const name = nameOverride && nameOverride.trim().length > 0 ? nameOverride : fallbackName
@@ -99,10 +134,11 @@ export function useTokenWorkspaceTable() {
         group: groupLabel,
         groupPath,
         path: t.path,
-      } satisfies TableRow
+      }
     })
+    rows.value.splice(0, rows.value.length, ...newRows)
 
-    activeNodeIds.value = []
+    //activeNodeIds.value = []
   }
 
   async function resolveAndPopulateFromUploadedDocs(): Promise<void> {
@@ -221,6 +257,12 @@ export function useTokenWorkspaceTable() {
 
     await resolveAndPopulateFromUploadedDocs()
   }
+  const { updateTokenValue, updateTokenName, deleteToken, duplicateToken, addRowBelowToken } =
+    useTokenCrud({
+      uploadedDocs,
+      workspaceStore,
+      persistUploadedDocsAndReload,
+    })
 
   onMounted(() => {
     void initFromWorkspaceStore()
@@ -239,5 +281,12 @@ export function useTokenWorkspaceTable() {
     // handlers for the component
     onFileChange,
     onModifierChange,
+
+    // CRUD handlers (use these in ag-grid)
+    updateTokenValue,
+    updateTokenName,
+    deleteToken,
+    duplicateToken,
+    addRowBelowToken,
   }
 }

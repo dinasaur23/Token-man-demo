@@ -21,49 +21,6 @@ const AliasPattern = /^\{([^}]+)\}$/
 const isObject = (v: Json): v is JsonObject =>
   typeof v === 'object' && v !== null && !Array.isArray(v)
 
-// function isObject(v: unknown): v is DTCGNode {
-//   return typeof v === 'object' && v !== null
-// }
-// const HEX_RE = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
-// const ALIAS_RE = /^\{([^}]+)\}$/
-
-// function isHex(v: unknown): v is string {
-//   return typeof v === 'string' && HEX_RE.test(v)
-// }
-// function isAlias(v: unknown): v is string {
-//   return typeof v === 'string' && ALIAS_RE.test(v)
-// }
-// function aliasTarget(v: string): string {
-//   return v.match(ALIAS_RE)![1]
-// }
-
-// export function collectColorTokensWithPath(
-//   node: unknown,
-//   prefix: string,
-//   inheritedType?: string,
-// ): ColorTokenEntry[] {
-//   const out: ColorTokenEntry[] = []
-//   if (!isObject(node)) return out
-
-//   const ownType = typeof node.$type === 'string' ? (node.$type as string) : inheritedType
-
-//   for (const [key, value] of Object.entries(node)) {
-//     if (key.startsWith('$')) continue
-//     if (!isObject(value)) continue
-
-//     const child = value as DTCGNode
-//     const childType = typeof child.$type === 'string' ? (child.$type as string) : ownType
-//     const path = prefix ? `${prefix}.${key}` : key
-
-//     if (typeof child.$value === 'string') {
-//       if (childType === 'color') out.push({ path, value: child.$value })
-//       continue
-//     }
-
-//     out.push(...collectColorTokensWithPath(child, path, childType))
-//   }
-//   return out
-// }
 export function collectColorTokensWithPath(root: Json): ColorTokenEntry[] {
   const results: ColorTokenEntry[] = []
 

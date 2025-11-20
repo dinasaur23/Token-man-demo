@@ -14,17 +14,14 @@ function srgbComponentsToHex(rStr: string, gStr: string, bStr: string): string {
     const byte = Math.round(clamped * 255)
     return byte.toString(16).padStart(2, '0')
   }
-
   return `#${toByteHex(rStr)}${toByteHex(gStr)}${toByteHex(bStr)}`
 }
 
-export function useTokenGridColumns() {
+export function useTokenGridColumns(onActionButtonClick: (row: TableRow, ev: MouseEvent) => void) {
   const workspaceStore = useTokenWorkspaceStore()
 
   const columnDefs = ref<ColDef<TableRow>[]>([
-    { headerName: 'Group', field: 'group', flex: 1 },
-
-    // --- Name ----------------------------------------------------------
+    // --- Name ---
     {
       headerName: 'Name',
       field: 'name',
@@ -53,7 +50,7 @@ export function useTokenGridColumns() {
       },
     },
 
-    // --- sRGB column (always displayed as srgb(...)) -------------------
+    // --- sRGB column ---
     {
       headerName: 'sRGB',
       field: 'value',
@@ -65,11 +62,10 @@ export function useTokenGridColumns() {
         const row = params.data
         if (!node || !row || !row.path) return
 
-        // Case 1: user typed hex in sRGB column → convert to sRGB + persist hex
         if (HEX_PATTERN.test(newVal)) {
           const srgb = srgbFromHex(newVal)
           node.setDataValue('hex', newVal)
-          node.setDataValue('value', srgb) // always show srgb in this column
+          node.setDataValue('value', srgb)
 
           workspaceStore.overrides = {
             ...workspaceStore.overrides,
@@ -81,13 +77,12 @@ export function useTokenGridColumns() {
           return
         }
 
-        // Case 2: user typed srgb(...) → keep it as is, derive hex
         const match = newVal.match(SRGB_PATTERN)
         if (match) {
           const [, rStr, gStr, bStr] = match
           const hex = srgbComponentsToHex(rStr, gStr, bStr)
 
-          node.setDataValue('value', newVal) // keep the exact srgb text
+          node.setDataValue('value', newVal)
           node.setDataValue('hex', hex)
 
           workspaceStore.overrides = {
@@ -95,17 +90,15 @@ export function useTokenGridColumns() {
             [row.path]: hex,
           }
           void workspaceStore.saveToServer()
-
           params.api.refreshCells({ rowNodes: [node], columns: ['hex'] })
           return
         }
 
-        // Invalid input → revert to previous value
         node.setDataValue('value', params.oldValue ?? row.value)
       },
     },
 
-    // --- Hex column (optional editable; shows hex only) ----------------
+    // --- Hex column ---
     {
       headerName: 'Hex',
       field: 'hex',
@@ -118,12 +111,10 @@ export function useTokenGridColumns() {
         if (!node || !row || !row.path) return
 
         if (!HEX_PATTERN.test(newVal)) {
-          // not a valid hex → revert
           node.setDataValue('hex', params.oldValue ?? row.hex)
           return
         }
 
-        // Valid hex: update both hex + sRGB + overrides
         const srgb = srgbFromHex(newVal)
         node.setDataValue('hex', newVal)
         node.setDataValue('value', srgb)
@@ -133,12 +124,11 @@ export function useTokenGridColumns() {
           [row.path]: newVal,
         }
         void workspaceStore.saveToServer()
-
         params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
       },
     },
 
-    // --- Color picker (hex-based) -------------------------------------
+    // --- Color picker column ---
     {
       headerName: 'Color',
       field: 'hex',
@@ -164,7 +154,6 @@ export function useTokenGridColumns() {
           const newColor = (event.target as HTMLInputElement).value
 
           params.node.setDataValue('hex', newColor)
-
           const srgb = srgbFromHex(newColor)
           params.node.setDataValue('value', srgb)
 
@@ -180,6 +169,40 @@ export function useTokenGridColumns() {
 
         return eInput
       },
+    },
+
+    // --- Actions column with three-dots button ---
+    {
+      headerName: '',
+      colId: 'actions',
+      width: 60,
+      sortable: false,
+      filter: false,
+      cellRenderer: (params: ICellRendererParams<TableRow>) => {
+        const row = params.data
+        if (!row) {
+          const span = document.createElement('span')
+          return span
+        }
+
+        const btn = document.createElement('button')
+        btn.innerHTML = '⋮'
+        btn.classList.add('action-dots-btn')
+        btn.style.border = 'none'
+        btn.style.background = 'transparent'
+        btn.style.cursor = 'pointer'
+        btn.style.fontSize = '18px'
+        btn.style.padding = '0'
+
+        btn.addEventListener('click', (ev: MouseEvent) => {
+          ev.stopPropagation()
+          onActionButtonClick(row, ev) // ✅ row is definitely TableRow here
+        })
+
+        return btn
+      },
+      cellClass: 'actions-cell',
+      suppressKeyboardEvent: () => true,
     },
   ])
 
