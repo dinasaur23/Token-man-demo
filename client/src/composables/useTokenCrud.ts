@@ -10,6 +10,9 @@ import {
   findGroupContainer,
   isJsonRecord,
   type JsonRecord,
+  updateAliasReferencesInDocs,
+  removeAliasReferencesInDocs,
+  countAliasReferencesInDocs,
 } from '@/utils/dtcg/json-path-helpers'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 
@@ -91,6 +94,7 @@ export function useTokenCrud({
       workspaceStore.nameOverrides[newPath] = workspaceStore.nameOverrides[row.path]
       delete workspaceStore.nameOverrides[row.path]
     }
+    updateAliasReferencesInDocs(uploadedDocs.value, row.path, newPath)
 
     // update rowOrder entry
     const order = ensureRowOrder(workspaceStore)
@@ -104,6 +108,22 @@ export function useTokenCrud({
   }
 
   async function deleteToken(row: TableRow): Promise<void> {
+    // 1) Check how many other tokens reference this one
+    const refCount = countAliasReferencesInDocs(uploadedDocs.value, row.path)
+
+    if (refCount > 0 && typeof window !== 'undefined') {
+      const message =
+        refCount === 1
+          ? 'This token is referenced by 1 other token. If you delete it, that reference will also be removed. Do you want to continue?'
+          : `This token is referenced by ${refCount} other tokens. If you delete it, those references will also be removed. Do you want to continue?`
+
+      const confirmed = window.confirm(message)
+      if (!confirmed) {
+        // user cancelled – do nothing
+        return
+      }
+    }
+
     const segments = row.path.split('.')
     let changedFile: string | null = null
 
@@ -127,12 +147,8 @@ export function useTokenCrud({
     delete workspaceStore.overrides[row.path]
     delete workspaceStore.nameOverrides[row.path]
 
-    // remove from rowOrder
-    const order = ensureRowOrder(workspaceStore)
-    const idx = order.indexOf(row.path)
-    if (idx >= 0) {
-      order.splice(idx, 1)
-    }
+    // also clean up alias references to this token
+    removeAliasReferencesInDocs(uploadedDocs.value, row.path)
 
     await persistUploadedDocsAndReload()
   }

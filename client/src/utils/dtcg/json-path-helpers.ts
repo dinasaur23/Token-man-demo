@@ -49,9 +49,6 @@ export interface DocPathResult {
   key: string
 }
 
-/**
- * Find which uploaded document actually contains a given path.
- */
 export function findDocContainingPath(
   docs: Record<string, JsonValue>,
   segments: string[],
@@ -104,4 +101,96 @@ export function createDuplicateKey(obj: JsonRecord, baseName: string): string {
     candidate = `${baseName}-copy-${counter}`
   }
   return candidate
+}
+
+export function updateAliasReferencesInDocs(
+  docs: Record<string, JsonValue>,
+  oldPath: string,
+  newPath: string | null,
+): void {
+  const targetAlias = `{${oldPath}}`
+  const replacement = newPath ? `{${newPath}}` : null
+
+  function visit(parent: JsonValue): void {
+    if (Array.isArray(parent)) {
+      // iterate with index because we may splice
+      for (let i = 0; i < parent.length; i += 1) {
+        const value = parent[i]
+
+        if (typeof value === 'string') {
+          if (value === targetAlias) {
+            if (replacement === null) {
+              parent.splice(i, 1)
+              i -= 1
+            } else {
+              parent[i] = replacement
+            }
+          }
+        } else {
+          visit(value)
+        }
+      }
+    } else if (isJsonRecord(parent)) {
+      for (const key of Object.keys(parent)) {
+        const value = parent[key]
+
+        if (typeof value === 'string') {
+          if (value === targetAlias) {
+            if (replacement === null) {
+              delete parent[key]
+            } else {
+              parent[key] = replacement
+            }
+          }
+        } else {
+          visit(value)
+        }
+      }
+    }
+  }
+
+  for (const value of Object.values(docs)) {
+    visit(value)
+  }
+}
+
+export function removeAliasReferencesInDocs(
+  docs: Record<string, JsonValue>,
+  oldPath: string,
+): void {
+  updateAliasReferencesInDocs(docs, oldPath, null)
+}
+
+export function countAliasReferencesInDocs(
+  docs: Record<string, JsonValue>,
+  targetPath: string,
+): number {
+  const alias = `{${targetPath}}`
+  let count = 0
+
+  function visit(node: JsonValue): void {
+    if (typeof node === 'string') {
+      if (node === alias) count += 1
+      return
+    }
+
+    if (Array.isArray(node)) {
+      for (const item of node) {
+        visit(item)
+      }
+      return
+    }
+
+    if (isJsonRecord(node)) {
+      for (const value of Object.values(node)) {
+        visit(value)
+      }
+    }
+  }
+
+  for (const value of Object.values(docs)) {
+    visit(value)
+  }
+
+  return count
 }

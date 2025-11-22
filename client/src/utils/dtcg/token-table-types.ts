@@ -15,4 +15,6 @@ export type TableRow = ColorRow & {
   raw?: unknown
   hex: string
   path: string
+  aliasPath: string | null
+  isAlias: boolean
 }

@@ -1,4 +1,4 @@
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import {
   resolveUploadedDocuments,
@@ -10,22 +10,15 @@ import {
   collectColorTokensWithPath,
   resolveAlias,
   resolveValue,
-  type ColorRow,
   type ColorTokenEntry,
 } from '@/utils/dtcg/dtcg-parser'
 import { validateTokensStrict } from '@/utils/dtcg/dtcg-validator'
 import { buildGroupTree, extractGroupPath } from '@/utils/dtcg/grouping'
 import { makeDisplayColor } from '@/utils/dtcg/color-display'
-import type { GroupNode } from '@/utils/dtcg/token-table-types'
+import type { GroupNode, TableRow } from '@/utils/dtcg/token-table-types'
 import { convertHexColorsInDocument } from '@/utils/dtcg/color-conversion'
 import { pruneEmptyChildren } from '@/utils/dtcg/grouping'
 import { useTokenCrud } from './useTokenCrud'
-
-export type TableRow = ColorRow & {
-  raw?: unknown
-  hex: string
-  path: string
-}
 
 function sortTokensByRowOrder(tokens: ColorTokenEntry[], rowOrder: string[]): ColorTokenEntry[] {
   const order = rowOrder
@@ -67,6 +60,47 @@ export function useTokenWorkspaceTable() {
       return id === g || id.startsWith(g + '.')
     })
   })
+
+  function extractAliasPath(raw: unknown): string | null {
+    if (!raw) return null
+
+    // 1) Pure string: "{global.palette.neutral.900}"
+    if (typeof raw === 'string') {
+      // with or without curly braces
+      const braceMatch = raw.match(/^\{(.+)\}$/)
+      if (braceMatch) return braceMatch[1]
+      return raw.includes('.') ? raw : null
+    }
+
+    if (typeof raw === 'object') {
+      const obj = raw as Record<string, unknown>
+
+      // 2) DTCG-style: { alias: "global.palette.neutral.900" }
+      if (typeof obj.alias === 'string') {
+        return obj.alias
+      }
+
+      // 3) DTCG-style in $value: { $value: { alias: "..." } } or { $value: "{...}" }
+      if (obj.$value) {
+        const v = obj.$value as unknown
+
+        if (typeof v === 'string') {
+          const braceMatch = v.match(/^\{(.+)\}$/)
+          if (braceMatch) return braceMatch[1]
+          return v.includes('.') ? v : null
+        }
+
+        if (typeof v === 'object' && v !== null) {
+          const vObj = v as Record<string, unknown>
+          if (typeof vObj.alias === 'string') {
+            return vObj.alias
+          }
+        }
+      }
+    }
+
+    return null
+  }
 
   // ---- persist helper used by CRUD composable -------------------------
 
@@ -112,13 +146,23 @@ export function useTokenWorkspaceTable() {
     }
 
     const newRows: TableRow[] = orderedTokens.map((t) => {
-      const resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? t.value
-      let display = makeDisplayColor(resolved)
+      const aliasPath = extractAliasPath(t.value)
 
-      const override = workspaceStore.overrides[t.path]
-      if (override) {
-        display = makeDisplayColor(override)
+      if (aliasPath && workspaceStore.overrides[t.path]) {
+        delete workspaceStore.overrides[t.path]
       }
+
+      let resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? t.value
+
+      if (aliasPath && workspaceStore.overrides[aliasPath]) {
+        resolved = workspaceStore.overrides[aliasPath]
+      }
+
+      if (!aliasPath && workspaceStore.overrides[t.path]) {
+        resolved = workspaceStore.overrides[t.path]
+      }
+
+      const display = makeDisplayColor(resolved)
 
       const groupPath = extractGroupPath(t.path)
       const groupLabel = groupPath.length ? groupPath[groupPath.length - 1] : ''
@@ -134,11 +178,12 @@ export function useTokenWorkspaceTable() {
         group: groupLabel,
         groupPath,
         path: t.path,
+        isAlias: !!aliasPath,
+        aliasPath: aliasPath ?? '',
       }
     })
-    rows.value.splice(0, rows.value.length, ...newRows)
 
-    //activeNodeIds.value = []
+    rows.value.splice(0, rows.value.length, ...newRows)
   }
 
   async function resolveAndPopulateFromUploadedDocs(): Promise<void> {
@@ -157,6 +202,13 @@ export function useTokenWorkspaceTable() {
       rows.value = []
     }
   }
+  watch(
+    () => workspaceStore.overrides,
+    () => {
+      void resolveAndPopulateFromUploadedDocs()
+    },
+    { deep: true },
+  )
 
   function onModifierChange(name: string, value: string | null): void {
     if (!value) {

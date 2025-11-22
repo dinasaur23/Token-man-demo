@@ -55,7 +55,7 @@ export function useTokenGridColumns(onActionButtonClick: (row: TableRow, ev: Mou
       headerName: 'sRGB',
       field: 'value',
       flex: 1.4,
-      editable: true,
+      editable: (params) => !params.data?.isAlias,
       onCellValueChanged: (params: NewValueParams<TableRow, string>) => {
         const newVal = String(params.newValue ?? '').trim()
         const node = params.node
@@ -103,7 +103,7 @@ export function useTokenGridColumns(onActionButtonClick: (row: TableRow, ev: Mou
       headerName: 'Hex',
       field: 'hex',
       flex: 1,
-      editable: true,
+      editable: (params) => !params.data?.isAlias,
       onCellValueChanged: (params: NewValueParams<TableRow, string>) => {
         const newVal = String(params.newValue ?? '').trim()
         const node = params.node
@@ -126,6 +126,12 @@ export function useTokenGridColumns(onActionButtonClick: (row: TableRow, ev: Mou
         void workspaceStore.saveToServer()
         params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
       },
+    },
+    {
+      headerName: 'Alias path',
+      field: 'aliasPath',
+      filter: true,
+      valueFormatter: (p) => p.value ?? '',
     },
 
     // --- Color picker column ---

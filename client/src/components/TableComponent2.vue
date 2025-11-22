@@ -12,6 +12,11 @@
       />
     </v-col>
 
+    <v-col cols="4" class="d-flex align-center">
+      <!-- Export button -->
+      <TokenExportDialog />
+    </v-col>
+
     <v-col v-for="mod in detectedModifiers" :key="mod.name" cols="3">
       <v-select
         :label="mod.name"
@@ -89,7 +94,7 @@
 import { ref } from 'vue'
 import { AgGridVue } from 'ag-grid-vue3'
 import { themeQuartz, type GridApi, type GridReadyEvent } from 'ag-grid-community'
-
+import TokenExportDialog from './TokenExportDialog.vue'
 import type { TableRow } from '@/utils/dtcg/token-table-types'
 import { useTokenGridColumns } from '@/composables/useTokenGridColumns'
 import { useTokenWorkspaceTable } from '@/composables/useTokenWorkspaceTable'

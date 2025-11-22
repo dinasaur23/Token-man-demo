@@ -20,7 +20,7 @@
 
     <v-list density="compact" nav>
       <router-link to="/ColorContentPage">
-        <v-list-item prepend-icon="mdi mdi-palette" title="Color" value="home"></v-list-item>
+        <v-list-item prepend-icon="mdi mdi-palette" title="Color" value="color"></v-list-item>
       </router-link>
     </v-list>
   </v-navigation-drawer>
