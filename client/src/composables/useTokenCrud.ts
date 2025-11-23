@@ -108,7 +108,6 @@ export function useTokenCrud({
   }
 
   async function deleteToken(row: TableRow): Promise<void> {
-    // 1) Check how many other tokens reference this one
     const refCount = countAliasReferencesInDocs(uploadedDocs.value, row.path)
 
     if (refCount > 0 && typeof window !== 'undefined') {
@@ -119,7 +118,6 @@ export function useTokenCrud({
 
       const confirmed = window.confirm(message)
       if (!confirmed) {
-        // user cancelled – do nothing
         return
       }
     }
@@ -165,7 +163,6 @@ export function useTokenCrud({
     const original: JsonValue = parent[oldKey]
     const newKey = createDuplicateKey(parent, row.name || oldKey)
 
-    // copy underlying token but force $value to row.hex
     let newToken: JsonValue
     if (isJsonRecord(original)) {
       const originalRecord: JsonRecord = original
@@ -181,7 +178,6 @@ export function useTokenCrud({
     const newPathSegments = [...segments.slice(0, -1), newKey]
     const newPath = newPathSegments.join('.')
 
-    // insert newPath in rowOrder directly after row.path
     const order = ensureRowOrder(workspaceStore)
     const idx = order.indexOf(row.path)
     const insertIndex = idx >= 0 ? idx + 1 : order.length
@@ -206,7 +202,7 @@ export function useTokenCrud({
 
     const newToken: JsonValue = {
       $type: 'color',
-      $value: '#000000', // or row.hex if you want same color by default
+      $value: '#000000',
     }
 
     parent[newKey] = newToken
@@ -214,7 +210,6 @@ export function useTokenCrud({
     const newPathSegments = [...segments.slice(0, -1), newKey]
     const newPath = newPathSegments.join('.')
 
-    // insert newPath in rowOrder directly after row.path
     const order = ensureRowOrder(workspaceStore)
     const idx = order.indexOf(row.path)
     const insertIndex = idx >= 0 ? idx + 1 : order.length
@@ -253,7 +248,6 @@ export function useTokenCrud({
     const newPathSegments = [...groupPath, key]
     const newPath = newPathSegments.join('.')
 
-    // add at end of group in rowOrder
     const order = ensureRowOrder(workspaceStore)
     order.push(newPath)
 

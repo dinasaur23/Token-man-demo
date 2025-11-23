@@ -1,84 +1,186 @@
 <template>
-  <v-row>
+  <v-row class="mt-3">
     <v-col cols="4">
       <v-file-input
         accept=".json, application/json"
         label="File input"
         variant="outlined"
         multiple
+        density="compact"
         v-model="files"
         @update:model-value="onFileChange"
-      ></v-file-input>
+      />
+    </v-col>
+
+    <v-col cols="4" class="d-flex align-center">
+      <!-- Export button -->
+      <TokenExportDialog />
+    </v-col>
+
+    <v-col v-for="mod in detectedModifiers" :key="mod.name" cols="3">
+      <v-select
+        :label="mod.name"
+        :items="mod.values"
+        :model-value="selectedModifiers[mod.name]"
+        @update:model-value="(value) => onModifierChange(mod.name, value)"
+        variant="outlined"
+        density="compact"
+      />
     </v-col>
   </v-row>
-  <div style="max-height: 100vh; overflow-y: auto">
-    <v-data-table :headers="headers" :items="rows">
-      <template #[`item.color`]="{ item }">
-        <input
-          type="color"
-          v-model="item.value"
-          style="width: 32px; height: 32px; padding: 0; border: none; background: transparent"
+
+  <v-row v-if="errorMessage" class="mt-2">
+    <v-col cols="12">
+      <v-alert type="error" variant="tonal" closable @click:close="errorMessage = null">
+        <div class="font-weight-medium mb-1">Invalid DTCG file</div>
+        <div>{{ errorMessage }}</div>
+      </v-alert>
+    </v-col>
+  </v-row>
+  <v-row v-if="rows.length" class="mt-4 ml-4">
+    <v-col cols="12" md="3">
+      <div style="overflow-y: auto">
+        <v-treeview
+          v-model:activated="activeNodeIds"
+          :items="groupTreeItems"
+          item-title="title"
+          item-value="id"
+          density="compact"
+          activatable
+          open-all
+          rounded
+          style="height: 70vh"
         />
-      </template>
-      <template #[`item.raw`]="{ item }">
-        <code>{{ typeof item.raw === 'string' ? item.raw : JSON.stringify(item.raw) }}</code>
-      </template>
-    </v-data-table>
-  </div>
+      </div>
+    </v-col>
+
+    <v-col cols="12" md="9">
+      <ag-grid-vue
+        :theme="gridTheme"
+        :columnDefs="columnDefs"
+        :defaultColDef="defaultColDef"
+        :rowData="filteredRows"
+        rowSelection.mode="multiRow"
+        style="height: 70vh"
+        class="mr-5"
+        @grid-ready="onGridReady"
+        @model-updated="onModelUpdated"
+      />
+    </v-col>
+  </v-row>
+  <v-menu
+    v-model="menu.visible"
+    :target="[menu.x, menu.y]"
+    location-strategy="connected"
+    :close-on-content-click="false"
+    scrim="transparent"
+    @click:outside="closeMenu"
+  >
+    <v-list density="compact">
+      <v-list-item @click="duplicateRow">
+        <v-list-item-title>Duplicate row</v-list-item-title>
+      </v-list-item>
+      <v-list-item @click="addRowBelow">
+        <v-list-item-title>Add row below</v-list-item-title>
+      </v-list-item>
+      <v-list-item @click="deleteRow">
+        <v-list-item-title class="text-error">Delete row</v-list-item-title>
+      </v-list-item>
+    </v-list>
+  </v-menu>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
-//import { validateDtcgColorsInDoc } from '@/utils/dtcg/dtcg-validator'
-import { validateColorSubtree } from '@/utils/dtcg/dtcg-validator'
-import {
-  collectColorTokensWithPath,
-  resolveAlias,
-  resolveValue,
-  type ColorRow,
-  type ColorTokenEntry,
-} from '@/utils/dtcg/dtcg-parser'
-const files = ref<File[] | File | null>(null)
-const rows = ref<ColorRow[]>([])
-const headers = [
-  { title: 'Name', key: 'name' },
-  { title: 'Value', key: 'value' },
-  { title: 'Color', key: 'color' },
-]
+import { AgGridVue } from 'ag-grid-vue3'
+import { themeQuartz, type GridApi, type GridReadyEvent } from 'ag-grid-community'
+import TokenExportDialog from './TokenExportDialog.vue'
+import type { TableRow } from '@/utils/dtcg/token-table-types'
+import { useTokenGridColumns } from '@/composables/useTokenGridColumns'
+import { useTokenWorkspaceTable } from '@/composables/useTokenWorkspaceTable'
+import { useTokenGridContextMenu } from '@/composables/useTokenGridContextMenu'
 
-async function onFileChange(newFiles: File[] | File) {
-  const list = Array.isArray(newFiles) ? newFiles : [newFiles]
-  if (list.length === 0) return
+const myTheme = themeQuartz.withParams({ accentColor: 'red' })
+const gridTheme = ref(myTheme)
+const files = ref<File[] | null>(null)
 
-  try {
-    const text = await list[0].text()
-    const json = JSON.parse(text)
+const {
+  rows,
+  errorMessage,
+  activeNodeIds,
+  detectedModifiers,
+  selectedModifiers,
+  groupTreeItems,
+  filteredRows,
+  addRowBelowToken,
+  duplicateToken,
+  deleteToken,
+  onFileChange,
+  onModifierChange,
+} = useTokenWorkspaceTable()
 
-    // Step 1: Schema validation
-    const result = validateColorSubtree(json)
-    if (!result.ok) {
-      console.error('❌ Invalid DTCG format:', result.errors)
-      rows.value = []
-      return
+const gridApi = ref<GridApi<TableRow> | null>(null)
+const lastScrollPath = ref<string | null>(null)
+
+function onGridReady(event: GridReadyEvent<TableRow>): void {
+  gridApi.value = event.api
+}
+
+function onModelUpdated(): void {
+  const api = gridApi.value
+  const path = lastScrollPath.value
+  if (!api || !path) return
+
+  lastScrollPath.value = null
+
+  const rowCount = api.getDisplayedRowCount()
+  for (let i = 0; i < rowCount; i++) {
+    const node = api.getDisplayedRowAtIndex(i)
+    if (node?.data?.path === path) {
+      api.ensureIndexVisible(i, 'middle')
+      break
     }
-
-    // ✅ Step 2: Extract and resolve tokens
-    const tokens = collectColorTokensWithPath(json, '', undefined)
-    const map: Record<string, ColorTokenEntry> = Object.fromEntries(tokens.map((t) => [t.path, t]))
-
-    rows.value = tokens.map((t) => {
-      const resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? '#000000'
-
-      return {
-        name: t.path.split('.').pop() ?? t.path,
-        value: resolved,
-        raw: t.value,
-      } satisfies ColorRow & { raw: unknown }
-    })
-
-    console.log('✅ DTCG colors:', rows.value)
-  } catch (err) {
-    console.error('Error reading/parsing file:', err)
   }
 }
+
+const { menu, onActionButtonClick, addRowBelow, duplicateRow, deleteRow, closeMenu } =
+  useTokenGridContextMenu(rows, {
+    async addRowBelowToken(row) {
+      lastScrollPath.value = row.path
+      await addRowBelowToken(row)
+    },
+
+    async duplicateToken(row) {
+      lastScrollPath.value = row.path
+      await duplicateToken(row)
+    },
+
+    async deleteToken(row) {
+      const idx = rows.value.findIndex((r) => r.path === row.path)
+      if (idx > 0) {
+        lastScrollPath.value = rows.value[idx - 1]?.path ?? null
+      } else if (idx >= 0 && idx + 1 < rows.value.length) {
+        lastScrollPath.value = rows.value[idx + 1]?.path ?? null
+      } else {
+        lastScrollPath.value = null
+      }
+
+      await deleteToken(row)
+    },
+  })
+
+const { columnDefs, defaultColDef } = useTokenGridColumns(onActionButtonClick)
 </script>
+
+<style scoped>
+.actions-cell {
+  overflow: visible !important;
+}
+
+.action-dots-btn {
+  background: none;
+  border: none;
+  padding: 0;
+  cursor: pointer;
+}
+</style>

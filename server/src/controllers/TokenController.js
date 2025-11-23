@@ -4,38 +4,19 @@ import os from "os";
 import path from "path";
 import StyleDictionary from "style-dictionary";
 
+import { mergeWorkspaceFiles } from "../utils/dtcg/mergeWorkspaceFiles.js";
+import { applyOverridesToTokens } from "../utils/dtcg/applyOverrides.js";
+import { normalizeDtcgForCss } from "../utils/dtcg/normalizeDtcgForCss.js";
+import { createSdConfig } from "../utils/sd/index.js";
+import {
+  pruneDeletedTokens,
+  buildCleanOverrides,
+} from "../utils/dtcg/cleanupWorkspaceTokens.js";
+
 function getUserIdFromReq(req) {
   if (req.user?.id) return req.user.id;
   if (req.user?._id) return req.user._id;
   return null;
-}
-
-function applyOverridesToTokens(root, overrides = {}) {
-  if (!root || typeof root !== "object") return;
-  for (const [fullPath, newValue] of Object.entries(overrides)) {
-    if (!fullPath) continue;
-    const segments = fullPath.split(".");
-    let node = root;
-    for (let i = 0; i < segments.length - 1; i++) {
-      const key = segments[i];
-      if (!node[key] || typeof node[key] !== "object") {
-        node[key] = {};
-      }
-      node = node[key];
-    }
-    const leaf = segments[segments.length - 1];
-
-    // DTCG token object: { $type: 'color', $value: ... }
-    const existing = node[leaf];
-    if (existing && typeof existing === "object") {
-      node[leaf] = {
-        ...existing,
-        $value: newValue,
-      };
-    } else {
-      node[leaf] = { $value: newValue };
-    }
-  }
 }
 
 export async function getWorkspace(req, res, next) {
@@ -132,73 +113,6 @@ export async function saveWorkspace(req, res, next) {
     next(err);
   }
 }
-function mergeWorkspaceFiles(files) {
-  const root = {};
-  if (!Array.isArray(files)) return root;
-
-  for (const f of files) {
-    if (f && f.content && typeof f.content === "object") {
-      Object.assign(root, f.content);
-    }
-  }
-  return root;
-}
-
-function extractPrimitiveColor(value) {
-  if (typeof value === "string") return value;
-  if (!value || typeof value !== "object") return null;
-
-  if (typeof value.hex === "string") return value.hex;
-
-  if (typeof value.srgb === "string") return value.srgb;
-
-  if (
-    value.hex &&
-    typeof value.hex === "object" &&
-    typeof value.hex.$value === "string"
-  ) {
-    return value.hex.$value;
-  }
-  if (
-    value.srgb &&
-    typeof value.srgb === "object" &&
-    typeof value.srgb.$value === "string"
-  ) {
-    return value.srgb.$value;
-  }
-
-  return null;
-}
-
-function normalizeDtcgForCss(node, path = []) {
-  if (!node || typeof node !== "object") return;
-
-  if (Array.isArray(node)) {
-    node.forEach((item, idx) =>
-      normalizeDtcgForCss(item, path.concat(String(idx)))
-    );
-    return;
-  }
-  if ("$value" in node) {
-    const before = node.$value;
-    const primitive = extractPrimitiveColor(before);
-    if (primitive && before !== primitive) {
-      console.log(
-        "normalizeDtcgForCss: converted",
-        path.join("."),
-        "from",
-        JSON.stringify(before),
-        "to",
-        primitive
-      );
-      node.$value = primitive;
-    }
-  }
-
-  for (const [key, value] of Object.entries(node)) {
-    normalizeDtcgForCss(value, path.concat(key));
-  }
-}
 
 export async function exportTokens(req, res, next) {
   let stage = "start";
@@ -228,7 +142,15 @@ export async function exportTokens(req, res, next) {
 
     stage = "mergeTokens";
     const mergedTokens = mergeWorkspaceFiles(workspace.files);
-    applyOverridesToTokens(mergedTokens, workspace.overrides);
+
+    pruneDeletedTokens(mergedTokens, workspace.deletedPaths ?? []);
+
+    const cleanedOverrides = buildCleanOverrides(
+      mergedTokens,
+      workspace.overrides ?? {}
+    );
+
+    applyOverridesToTokens(mergedTokens, cleanedOverrides);
     normalizeDtcgForCss(mergedTokens);
 
     const sample = mergedTokens?.global?.palette?.neutral?.["50"];
@@ -256,67 +178,20 @@ export async function exportTokens(req, res, next) {
 
     stage = "configureStyleDictionary";
     const buildBase = path.join(tmpDir, `build-${userId}`);
-    const sdConfig = {
-      source: [jsonFilePath],
-      platforms: {},
-    };
+    const sdConfig = createSdConfig(format, jsonFilePath, buildBase);
 
-    if (format === "css") {
-      sdConfig.platforms.css = {
-        transformGroup: "css",
-        buildPath: path.join(buildBase, "css/"),
-        files: [
-          {
-            destination: "tokens.css",
-            format: "css/variables",
-          },
-        ],
-      };
-    } else if (format === "tailwind") {
-      sdConfig.platforms.tailwind = {
-        transformGroup: "js", // JS module for Tailwind config
-        buildPath: path.join(buildBase, "tailwind/"),
-        files: [
-          {
-            destination: "tailwind.tokens.js",
-            format: "javascript/module",
-            options: {
-              outputReferences: false,
-              showFileHeader: true,
-            },
-          },
-        ],
-      };
-    } else if (format === "swift") {
-      sdConfig.platforms.ios = {
-        transformGroup: "ios-swift",
-        buildPath: path.join(buildBase, "ios/"),
-        files: [
-          {
-            destination: "Colors.swift",
-            format: "ios-swift/colors-swift",
-          },
-        ],
-      };
-    } else {
-      return res.status(400).json({
-        ok: false,
-        stage,
-        message: `Unsupported export format: ${format}`,
-      });
+    if (!sdConfig) {
+      throw new Error(`Unsupported export format: ${format}`);
     }
 
-    // Ensure the build path exists
     for (const platform of Object.values(sdConfig.platforms)) {
       fs.mkdirSync(platform.buildPath, { recursive: true });
     }
 
-    // 4) Run Style Dictionary – v5 Node API
     stage = "buildStyleDictionary";
     const sd = new StyleDictionary(sdConfig);
     await sd.buildAllPlatforms();
 
-    // 5) Determine which file to send back
     stage = "sendFile";
     const destPlatformKey = Object.keys(sdConfig.platforms)[0];
     const platformConfig = sdConfig.platforms[destPlatformKey];
@@ -343,11 +218,9 @@ export async function exportTokens(req, res, next) {
         console.error("exportTokens sendFile error", err);
         return next(err);
       }
-      // optional cleanup here
     });
   } catch (err) {
     console.error("exportTokens error at stage:", stage, err);
-    // instead of next(err) send JSON with details so frontend can read it
     return res.status(500).json({
       ok: false,
       stage,

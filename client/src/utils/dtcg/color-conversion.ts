@@ -1,5 +1,3 @@
-// client/src/utils/dtcg/color-conversion.ts
-
 export type Json = unknown
 type JsonObject = Record<string, Json>
 
@@ -11,9 +9,9 @@ export const HEX_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0
 
 export interface DtcgSrgbValue {
   colorSpace: 'srgb'
-  components: [number, number, number] // each 0–1
-  alpha?: number // 0–1, only if not 1
-  hex?: string // canonical 6-digit hex
+  components: [number, number, number]
+  alpha?: number
+  hex?: string
 }
 
 const expandHex = (hex: string): string => {
@@ -68,10 +66,6 @@ export const hexToDtcgColorValue = (hex: string): DtcgSrgbValue => {
   return obj
 }
 
-/**
- * Recursively converts all hex `$value` occurrences inside a `$type: "color"`
- * subtree into W3C srgb color objects.
- */
 export function convertHexColorsInDocument(doc: Json): Json {
   return convertNode(doc, false)
 }
