@@ -24,10 +24,19 @@ interface CrudDeps {
   persistUploadedDocsAndReload: () => Promise<void>
 }
 
-// small helper so we don’t repeat the same pattern
+function ensurePath(root: JsonRecord, segments: string[]): JsonRecord {
+  let node: JsonRecord = root
+  for (const seg of segments) {
+    if (!node[seg] || typeof node[seg] !== 'object' || Array.isArray(node[seg])) {
+      node[seg] = {}
+    }
+    node = node[seg] as JsonRecord
+  }
+  return node
+}
+
 function ensureRowOrder(store: WorkspaceStore): string[] {
   if (!Array.isArray(store.rowOrder)) {
-    // if backend didn’t send it yet, initialise
     store.rowOrder = []
   }
   return store.rowOrder
@@ -96,7 +105,6 @@ export function useTokenCrud({
     }
     updateAliasReferencesInDocs(uploadedDocs.value, row.path, newPath)
 
-    // update rowOrder entry
     const order = ensureRowOrder(workspaceStore)
     const idx = order.indexOf(row.path)
     if (idx >= 0) {
@@ -145,7 +153,6 @@ export function useTokenCrud({
     delete workspaceStore.overrides[row.path]
     delete workspaceStore.nameOverrides[row.path]
 
-    // also clean up alias references to this token
     removeAliasReferencesInDocs(uploadedDocs.value, row.path)
 
     await persistUploadedDocsAndReload()
@@ -255,6 +262,113 @@ export function useTokenCrud({
     await persistUploadedDocsAndReload()
   }
 
+  async function addGroupWithToken(
+    parentGroupPath: string[],
+    groupName: string,
+    initialHex = '#000000',
+  ): Promise<void> {
+    if (!groupName.trim()) {
+      console.warn('addGroupWithToken: empty group name')
+      return
+    }
+
+    const docs = uploadedDocs.value
+    const fileNames = Object.keys(docs)
+
+    if (fileNames.length === 0) {
+      console.warn('addGroupWithToken: no uploaded docs')
+      return
+    }
+
+    const fileName = fileNames[0]
+    const rawDoc = docs[fileName]
+
+    if (!isJsonRecord(rawDoc)) {
+      console.warn('addGroupWithToken: first uploaded doc is not an object')
+      return
+    }
+
+    const doc = rawDoc as JsonRecord
+
+    const fullGroupPath = [...parentGroupPath, groupName.trim()]
+
+    const groupContainer = ensurePath(doc, fullGroupPath)
+
+    const tokenKey = createDuplicateKey(groupContainer, 'default')
+
+    groupContainer[tokenKey] = {
+      $type: 'color',
+      $value: initialHex,
+    }
+
+    const newPath = [...fullGroupPath, tokenKey].join('.')
+
+    const order = ensureRowOrder(workspaceStore)
+    order.push(newPath)
+
+    uploadedDocs.value[fileName] = doc
+
+    await persistUploadedDocsAndReload()
+  }
+
+  async function addSiblingGroupWithToken(
+    siblingOfGroupPath: string[],
+    newGroupName: string,
+    initialTokenName = 'new-token',
+    initialHex = '#000000',
+  ): Promise<void> {
+    if (siblingOfGroupPath.length === 0) {
+      console.warn('addSiblingGroupWithToken: empty sibling path is not supported')
+      return
+    }
+
+    const parentPath = siblingOfGroupPath.slice(0, -1)
+
+    const parentFound =
+      parentPath.length > 0
+        ? findGroupContainer(uploadedDocs.value, parentPath)
+        : (() => {
+            // root-level sibling: use the first document as container
+            const [fileName, maybeDoc] = Object.entries(uploadedDocs.value)[0] ?? []
+            if (!fileName || !isJsonRecord(maybeDoc)) return null
+            const doc = maybeDoc as JsonRecord
+            return { fileName, doc, container: doc }
+          })()
+
+    if (!parentFound) {
+      console.warn(
+        'addSiblingGroupWithToken: parent group not found for path',
+        parentPath.join('.'),
+      )
+      return
+    }
+
+    const { fileName, doc, container } = parentFound
+    const parentContainer: JsonRecord = container
+
+    // choose a unique group name under the parent
+    const safeGroupName = createDuplicateKey(parentContainer, newGroupName)
+
+    // create the new group object
+    const newGroup: JsonRecord = {}
+    parentContainer[safeGroupName] = newGroup
+
+    // add a first color token inside the new group
+    const safeTokenName = createDuplicateKey(newGroup, initialTokenName)
+    newGroup[safeTokenName] = {
+      $type: 'color',
+      $value: initialHex,
+    }
+
+    // update rowOrder so the new token appears in the grid
+    const order = ensureRowOrder(workspaceStore)
+    const newTokenPath = [...parentPath, safeGroupName, safeTokenName].join('.')
+    order.push(newTokenPath)
+
+    uploadedDocs.value[fileName] = doc
+    await persistUploadedDocsAndReload()
+  }
+
   return {
     updateTokenValue,
     updateTokenName,
@@ -262,5 +376,7 @@ export function useTokenCrud({
     duplicateToken,
     addRowBelowToken,
     addTokenToGroup,
+    addGroupWithToken,
+    addSiblingGroupWithToken,
   }
 }

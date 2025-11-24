@@ -50,7 +50,9 @@ export function useTokenWorkspaceTable() {
   const detectedModifiers = ref<DetectedModifier[]>([])
   const selectedModifiers = ref<Record<string, string>>({})
   const workspaceStore = useTokenWorkspaceStore()
+
   const groupTreeItems = computed<GroupNode[]>(() => pruneEmptyChildren(buildGroupTree(rows.value)))
+
   const filteredRows = computed<TableRow[]>(() => {
     const g = activeNodeIds.value[0]
     if (!g) return rows.value
@@ -64,9 +66,7 @@ export function useTokenWorkspaceTable() {
   function extractAliasPath(raw: unknown): string | null {
     if (!raw) return null
 
-    // 1) Pure string: "{global.palette.neutral.900}"
     if (typeof raw === 'string') {
-      // with or without curly braces
       const braceMatch = raw.match(/^\{(.+)\}$/)
       if (braceMatch) return braceMatch[1]
       return raw.includes('.') ? raw : null
@@ -75,12 +75,10 @@ export function useTokenWorkspaceTable() {
     if (typeof raw === 'object') {
       const obj = raw as Record<string, unknown>
 
-      // 2) DTCG-style: { alias: "global.palette.neutral.900" }
       if (typeof obj.alias === 'string') {
         return obj.alias
       }
 
-      // 3) DTCG-style in $value: { $value: { alias: "..." } } or { $value: "{...}" }
       if (obj.$value) {
         const v = obj.$value as unknown
 
@@ -309,12 +307,33 @@ export function useTokenWorkspaceTable() {
 
     await resolveAndPopulateFromUploadedDocs()
   }
-  const { updateTokenValue, updateTokenName, deleteToken, duplicateToken, addRowBelowToken } =
-    useTokenCrud({
-      uploadedDocs,
-      workspaceStore,
-      persistUploadedDocsAndReload,
-    })
+
+  const {
+    updateTokenValue,
+    updateTokenName,
+    deleteToken,
+    duplicateToken,
+    addRowBelowToken,
+    addGroupWithToken,
+    addSiblingGroupWithToken,
+  } = useTokenCrud({
+    uploadedDocs,
+    workspaceStore,
+    persistUploadedDocsAndReload,
+  })
+
+  async function addSiblingGroupForActiveGroup(newGroupName: string): Promise<void> {
+    const trimmed = newGroupName.trim()
+    if (!trimmed) return
+
+    // activeNodeIds holds the group id, e.g. "global.palette.neutral"
+    const activeId = activeNodeIds.value[0] ?? ''
+
+    // When activeId is empty, this becomes [], i.e. "root-level"
+    const siblingPath = activeId ? activeId.split('.') : []
+
+    await addSiblingGroupWithToken(siblingPath, trimmed)
+  }
 
   onMounted(() => {
     void initFromWorkspaceStore()
@@ -340,5 +359,7 @@ export function useTokenWorkspaceTable() {
     deleteToken,
     duplicateToken,
     addRowBelowToken,
+    addGroupWithToken,
+    addSiblingGroupForActiveGroup,
   }
 }
