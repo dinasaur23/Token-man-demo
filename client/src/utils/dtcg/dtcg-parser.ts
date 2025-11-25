@@ -70,39 +70,6 @@ export function findEntryForTarget(
   return null
 }
 
-// export function resolveValue(
-//   valueOrAlias: unknown,
-//   map: Record<string, ColorTokenEntry>,
-//   seen: Set<string> = new Set(),
-// ): string | null {
-//   if (isHex(valueOrAlias)) return valueOrAlias
-
-//   if (valueOrAlias && typeof valueOrAlias === 'object') {
-//     const obj = valueOrAlias as Record<string, unknown>
-//     if (isHex(obj.hex)) return obj.hex
-//     if (typeof obj.alias === 'string') {
-//       return resolveValue(obj.alias, map, seen)
-//     }
-//     return null
-//   }
-
-//   if (isAlias(valueOrAlias)) {
-//     const target = aliasTarget(valueOrAlias)
-
-//     const entry = findEntryForTarget(target, map)
-//     if (!entry) return null
-
-//     if (seen.has(entry.path)) {
-//       // avoid cycles
-//       return null
-//     }
-//     seen.add(entry.path)
-
-//     return resolveValue(entry.value, map, seen)
-//   }
-
-//   return null
-// }
 export function resolveValue(value: Json, map: Record<string, ColorTokenEntry>): Json | undefined {
   // string alias
   if (typeof value === 'string') {
@@ -125,11 +92,7 @@ export function resolveValue(value: Json, map: Record<string, ColorTokenEntry>):
 
   return undefined
 }
-// export function resolveAlias(path: string, map: Record<string, ColorTokenEntry>): string | null {
-//   const entry = map[path]
-//   if (!entry) return null
-//   return resolveValue(entry.value, map, new Set())
-// }
+
 export function resolveAlias(
   path: string,
   map: Record<string, ColorTokenEntry>,

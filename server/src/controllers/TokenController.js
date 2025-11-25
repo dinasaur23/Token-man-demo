@@ -151,6 +151,25 @@ export async function exportTokens(req, res, next) {
     );
 
     applyOverridesToTokens(mergedTokens, cleanedOverrides);
+    if (format === "json") {
+      if (!mergedTokens || Object.keys(mergedTokens).length === 0) {
+        return res.status(400).json({
+          ok: false,
+          stage,
+          message: "Merged token object is empty – nothing to export",
+        });
+      }
+
+      const filename = "tokens.dtcg.json";
+      res.setHeader(
+        "Content-Disposition",
+        `attachment; filename="${filename}"`
+      );
+      res.setHeader("Content-Type", "application/json");
+
+      return res.send(JSON.stringify(mergedTokens, null, 2));
+    }
+
     normalizeDtcgForCss(mergedTokens);
 
     const sample = mergedTokens?.global?.palette?.neutral?.["50"];

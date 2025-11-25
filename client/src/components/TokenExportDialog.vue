@@ -46,7 +46,7 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import axios from 'axios'
-type ExportFormat = 'css' | 'tailwind' | 'swift' | 'android'
+type ExportFormat = 'css' | 'tailwind' | 'swift' | 'android' | 'json'
 
 const dialog = ref(false)
 const loading = ref(false)
@@ -56,6 +56,7 @@ const formats = [
   { label: 'Tailwind config', value: 'tailwind', icon: 'mdi-tailwind' },
   { label: 'Swift (iOS)', value: 'swift', icon: 'mdi-apple' },
   { label: 'Android', value: 'android', icon: 'mdi-android' },
+  { label: 'JSON', value: 'json', icon: 'mdi-code-json' },
 ]
 const selectedFormats = ref<ExportFormat[]>([])
 
@@ -96,7 +97,6 @@ async function exportNow() {
   loading.value = true
 
   try {
-    // simple sequential downloads so the browser handles them nicely
     for (const fmt of selectedFormats.value) {
       await downloadOne(fmt)
     }

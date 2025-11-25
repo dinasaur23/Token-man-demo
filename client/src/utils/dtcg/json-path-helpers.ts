@@ -1,4 +1,3 @@
-// utils/dtcg/json-path-helpers.ts
 import type { JsonValue } from './resolver'
 
 export type JsonRecord = Record<string, JsonValue>
@@ -72,9 +71,6 @@ export interface GroupContainerResult {
   container: JsonRecord
 }
 
-/**
- * Find the group container (object) for a given group path.
- */
 export function findGroupContainer(
   docs: Record<string, JsonValue>,
   groupSegments: string[],
@@ -89,9 +85,6 @@ export function findGroupContainer(
   return null
 }
 
-/**
- * Generate a unique key in an object for duplications.
- */
 export function createDuplicateKey(obj: JsonRecord, baseName: string): string {
   if (!(baseName in obj)) return baseName
   let counter = 1
@@ -113,7 +106,6 @@ export function updateAliasReferencesInDocs(
 
   function visit(parent: JsonValue): void {
     if (Array.isArray(parent)) {
-      // iterate with index because we may splice
       for (let i = 0; i < parent.length; i += 1) {
         const value = parent[i]
 

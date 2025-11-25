@@ -1,0 +1,73 @@
+{
+  "global": {
+    "color": {
+      "badHexLength": {
+        "$type": "color",
+        "$value": "#1234"
+      },
+      "badHexChars": {
+        "$type": "color",
+        "$value": "#zzzzzz"
+      },
+      "missingDollarType": {
+        "$value": "#ff0000"
+      },
+      "wrongTypeName": {
+        "$type": "colour",
+        "$value": "#ff0000"
+      },
+      "nullValue": {
+        "$type": "color",
+        "$value": null
+      },
+      "numberValue": {
+        "$type": "color",
+        "$value": 16711680
+      },
+      "arrayValue": {
+        "$type": "color",
+        "$value": ["#ff0000"]
+      },
+      "missingDollarValue": {
+        "$type": "color"
+      },
+      "aliasWithoutBraces": {
+        "$type": "color",
+        "$value": "global.palette.neutral.50"
+      },
+      "aliasEmptyBraces": {
+        "$type": "color",
+        "$value": "{}"
+      },
+      "plainStringToken": "#ff0000",
+      "plainNumberToken": 0,
+      "plainArrayToken": ["#00ff00", "#0000ff"],
+      "plainNullToken": null,
+      "valueObjectWrongShape": {
+        "$type": "color",
+        "$value": {
+          "foo": "bar"
+        }
+      },
+      "valueObjectInvalidHex": {
+        "$type": "color",
+        "$value": {
+          "alias": "#gg0000"
+        }
+      },
+      "typeIsNumber": {
+        "$type": 123,
+        "$value": "#00ff00"
+      },
+      "typeIsNull": {
+        "$type": null,
+        "$value": "#00ff00"
+      },
+      "typeIsArray": {
+        "$type": ["color"],
+        "$value": "#00ff00"
+      },
+      "completelyEmptyObject": {}
+    }
+  }
+}

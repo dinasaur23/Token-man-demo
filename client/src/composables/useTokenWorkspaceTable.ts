@@ -1,4 +1,4 @@
-import { ref, computed, onMounted, watch } from 'vue'
+import { ref, computed, onMounted } from 'vue'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import {
   resolveUploadedDocuments,
@@ -45,6 +45,9 @@ function sortTokensByRowOrder(tokens: ColorTokenEntry[], rowOrder: string[]): Co
 export function useTokenWorkspaceTable() {
   const rows = ref<TableRow[]>([])
   const errorMessage = ref<string | null>(null)
+  // watch(errorMessage, (val) => {
+  //   console.log('🔍 UI sees errorMessage =', val)
+  // })
   const activeNodeIds = ref<string[]>([])
   const uploadedDocs = ref<Record<string, JsonValue>>({})
   const detectedModifiers = ref<DetectedModifier[]>([])
@@ -115,8 +118,10 @@ export function useTokenWorkspaceTable() {
   async function populateTableFromDocument(doc: unknown): Promise<void> {
     const convertedDoc = convertHexColorsInDocument(doc)
     const validation = await validateTokensStrict(convertedDoc)
+    //console.log('✅ DTCG validation result:', validation)
 
     if (!validation.ok) {
+      //console.error('❌ DTCG validation errors:', validation.errors)
       const count = validation.errors.length
       errorMessage.value =
         `The uploaded JSON is not valid DTCG (${validation.kind} errors: ${count}). ` +
@@ -130,6 +135,7 @@ export function useTokenWorkspaceTable() {
     if (workspaceStore.rowOrder.length === 0) {
       workspaceStore.rowOrder = tokens.map((t) => t.path)
     }
+
     const orderedTokens = sortTokensByRowOrder(tokens, workspaceStore.rowOrder)
     const map: Record<string, ColorTokenEntry> = {}
     for (const t of tokens) {
@@ -192,7 +198,9 @@ export function useTokenWorkspaceTable() {
       const input: Record<string, string> = { ...selectedModifiers.value }
       const resolvedDoc = resolveUploadedDocuments(docs, input)
       await populateTableFromDocument(resolvedDoc)
-      errorMessage.value = null
+      if (rows.value.length > 0) {
+        errorMessage.value = null
+      }
     } catch (err) {
       console.error('Error resolving tokens:', err)
       errorMessage.value =
@@ -200,13 +208,6 @@ export function useTokenWorkspaceTable() {
       rows.value = []
     }
   }
-  watch(
-    () => workspaceStore.overrides,
-    () => {
-      void resolveAndPopulateFromUploadedDocs()
-    },
-    { deep: true },
-  )
 
   function onModifierChange(name: string, value: string | null): void {
     if (!value) {
@@ -316,6 +317,8 @@ export function useTokenWorkspaceTable() {
     addRowBelowToken,
     addGroupWithToken,
     addSiblingGroupWithToken,
+    setTokenAlias,
+    clearTokenAlias,
   } = useTokenCrud({
     uploadedDocs,
     workspaceStore,
@@ -326,10 +329,8 @@ export function useTokenWorkspaceTable() {
     const trimmed = newGroupName.trim()
     if (!trimmed) return
 
-    // activeNodeIds holds the group id, e.g. "global.palette.neutral"
     const activeId = activeNodeIds.value[0] ?? ''
 
-    // When activeId is empty, this becomes [], i.e. "root-level"
     const siblingPath = activeId ? activeId.split('.') : []
 
     await addSiblingGroupWithToken(siblingPath, trimmed)
@@ -361,5 +362,7 @@ export function useTokenWorkspaceTable() {
     addRowBelowToken,
     addGroupWithToken,
     addSiblingGroupForActiveGroup,
+    setTokenAlias,
+    clearTokenAlias,
   }
 }

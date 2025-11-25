@@ -1,66 +1,3 @@
-// // client/src/utils/dtcg/resolver.ts
-
-// export type JsonPrimitive = string | number | boolean | null
-
-// export type JsonValue = JsonPrimitive | JsonObject | JsonArray
-
-// export interface JsonObject {
-//   [key: string]: JsonValue
-// }
-
-// export type JsonArray = JsonValue[]
-
-// // deep merge of two JSON values
-// export function deepMergeDocs(target: JsonValue, source: JsonValue): JsonValue {
-//   if (typeof target !== 'object' || target === null) return source
-//   if (typeof source !== 'object' || source === null) return source
-
-//   // both arrays → concat
-//   if (Array.isArray(target) && Array.isArray(source)) {
-//     return [...target, ...source]
-//   }
-
-//   // one is array, the other is object/primitive → take source
-//   if (Array.isArray(target) || Array.isArray(source)) {
-//     return source
-//   }
-
-//   // both objects
-//   const tObj = target as JsonObject
-//   const sObj = source as JsonObject
-
-//   const out: JsonObject = { ...tObj }
-
-//   for (const key of Object.keys(sObj)) {
-//     const tVal = tObj[key]
-//     const sVal = sObj[key]
-
-//     out[key] = tVal === undefined ? sVal : deepMergeDocs(tVal, sVal)
-//   }
-
-//   return out
-// }
-
-// // merge all uploaded docs into one JSON value
-// export function resolveUploadedDocuments(docs: Record<string, JsonValue>): JsonValue {
-//   const entries = Object.entries(docs)
-//   if (entries.length === 0) return {}
-
-//   let result: JsonValue = entries[0][1]
-
-//   for (let i = 1; i < entries.length; i += 1) {
-//     result = deepMergeDocs(result, entries[i][1])
-//   }
-
-//   return result
-// }
-
-// client/src/utils/dtcg/resolver.ts
-
-// client/src/utils/dtcg/resolver.ts
-
-// ---------- JSON types -------------------------------------------------------
-
 export type JsonPrimitive = string | number | boolean | null
 
 export type JsonValue = JsonPrimitive | JsonObject | JsonArray
@@ -172,11 +109,6 @@ function isSourceRef(source: ResolverSource): source is ResolverSourceRef {
   return isJsonObject(source) && typeof (source as JsonObject).$ref === 'string'
 }
 
-// ---------- loading token sources (frontend) ---------------------------------
-//
-// On the frontend we don't read files from disk. Instead we assume docs is a
-// map: { "fileName.json": parsedJson } built from your uploads.
-
 function loadTokenSource(source: ResolverSource, docs: Record<string, JsonValue>): JsonObject {
   if (!isSourceRef(source)) {
     // inline object
@@ -280,11 +212,6 @@ export function resolveWithResolverDocument(
 
   return isJsonObject(result) ? result : {}
 }
-
-// ---------- high-level helper for your UI -----------------------------------
-//
-//  docs: map from filename -> JSON (from uploaded files)
-//  input: current modifier values, e.g. { theme: "dark" }
 
 export function resolveUploadedDocuments(
   docs: Record<string, JsonValue>,

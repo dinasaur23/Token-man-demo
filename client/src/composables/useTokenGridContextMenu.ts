@@ -14,6 +14,8 @@ export interface ContextMenuActions {
   addRowBelowToken: (row: TableRow) => Promise<void>
   duplicateToken: (row: TableRow) => Promise<void>
   deleteToken: (row: TableRow) => Promise<void>
+  convertToAlias?: (row: TableRow) => void | Promise<void>
+  clearAlias?: (row: TableRow) => void | Promise<void>
 }
 
 export function useTokenGridContextMenu(rows: Ref<TableRow[]>, actions: ContextMenuActions) {
@@ -66,6 +68,28 @@ export function useTokenGridContextMenu(rows: Ref<TableRow[]>, actions: ContextM
     await actions.deleteToken(base)
     closeMenu()
   }
+  async function convertRowToAlias(): Promise<void> {
+    const base = menu.row
+    const handler = actions.convertToAlias
+    if (!base || !handler) {
+      closeMenu()
+      return
+    }
+
+    await handler(base)
+    closeMenu()
+  }
+  async function clearAliasForRow(): Promise<void> {
+    const base = menu.row
+    const handler = actions.clearAlias
+    if (!base || !handler) {
+      closeMenu()
+      return
+    }
+
+    await handler(base)
+    closeMenu()
+  }
 
   return {
     menu,
@@ -74,5 +98,7 @@ export function useTokenGridContextMenu(rows: Ref<TableRow[]>, actions: ContextM
     duplicateRow,
     deleteRow,
     closeMenu,
+    convertRowToAlias,
+    clearAliasForRow,
   }
 }

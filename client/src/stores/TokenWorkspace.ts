@@ -65,7 +65,6 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
         this.deletedPaths = data.deletedPaths ?? {}
         this.rowOrder = data.rowOrder ?? []
 
-        // 🔧 SANITIZE: drop anything that looks like a hex color from nameOverrides
         const cleaned: Record<string, string> = {}
         const hexPattern = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
 

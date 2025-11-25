@@ -127,6 +127,12 @@
       <v-list-item @click="addRowBelow">
         <v-list-item-title>Add row below</v-list-item-title>
       </v-list-item>
+      <v-list-item @click="convertRowToAlias">
+        <v-list-item-title>Convert to alias…</v-list-item-title>
+      </v-list-item>
+      <v-list-item v-if="menu.row?.aliasPath" @click="clearAliasForRow">
+        <v-list-item-title>Remove alias</v-list-item-title>
+      </v-list-item>
       <v-list-item @click="deleteRow">
         <v-list-item-title class="text-error">Delete row</v-list-item-title>
       </v-list-item>
@@ -199,24 +205,61 @@
       </v-card-actions>
     </v-card>
   </v-dialog>
+  <v-dialog v-model="addAliasDialog" max-width="420">
+    <v-card>
+      <v-card-title class="text-subtitle-1">Convert to alias</v-card-title>
+      <v-card-text>
+        <div class="text-caption mb-2" v-if="currentAliasRow">
+          Token: <code>{{ currentAliasRow.path }}</code>
+        </div>
+
+        <v-autocomplete
+          v-model="aliasSourcePath"
+          :items="allTokenPaths"
+          label="Alias target (token path)"
+          density="comfortable"
+          variant="outlined"
+          clearable
+        />
+        <v-alert
+          v-if="aliasErrorMessage"
+          type="error"
+          variant="tonal"
+          class="mt-3"
+          density="comfortable"
+        >
+          {{ aliasErrorMessage }}
+        </v-alert>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="addAliasDialog = false">Cancel</v-btn>
+        <v-btn
+          color="primary"
+          variant="flat"
+          :disabled="!aliasSourcePath.trim().length"
+          @click="confirmAliasForRow"
+        >
+          Apply
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
 </template>
 
 <script setup lang="ts">
 import { ref } from 'vue'
 import { AgGridVue } from 'ag-grid-vue3'
-import { themeQuartz, type GridApi, type GridReadyEvent } from 'ag-grid-community'
+import { themeQuartz } from 'ag-grid-community'
 import TokenExportDialog from './TokenExportDialog.vue'
-import type { TableRow } from '@/utils/dtcg/token-table-types'
 import { useTokenGridColumns } from '@/composables/useTokenGridColumns'
-import { useTokenWorkspaceTable } from '@/composables/useTokenWorkspaceTable'
-import { useTokenGridContextMenu } from '@/composables/useTokenGridContextMenu'
-import type { GroupNode } from '@/utils/dtcg/token-table-types'
+import { useColorTableComponent } from '@/composables/useColorTableComponent'
 
 const myTheme = themeQuartz.withParams({ accentColor: 'red' })
 const gridTheme = ref(myTheme)
-const files = ref<File[] | null>(null)
 
 const {
+  files,
   rows,
   errorMessage,
   activeNodeIds,
@@ -224,167 +267,44 @@ const {
   selectedModifiers,
   groupTreeItems,
   filteredRows,
-  addGroupWithToken,
-  addRowBelowToken,
-  duplicateToken,
-  deleteToken,
   onFileChange,
   onModifierChange,
-} = useTokenWorkspaceTable()
 
-const gridApi = ref<GridApi<TableRow> | null>(null)
-const lastScrollPath = ref<string | null>(null)
+  onGridReady,
+  onModelUpdated,
 
-const addGroupDialog = ref(false)
-const newGroupName = ref('')
-const currentParentGroupId = ref<string | null>(null)
+  addGroupDialog,
+  newGroupName,
+  currentParentGroupId,
+  showAddSiblingDialog,
+  newSiblingGroupName,
+  openAddSiblingGroupDialog,
+  confirmAddSiblingGroup,
+  openAddGroupDialog,
+  confirmAddGroup,
+  onAddChildGroup,
+  onDeleteGroup,
 
-const showAddSiblingDialog = ref(false)
-const newSiblingGroupName = ref('')
+  addTokenDialog,
+  newTokenName,
+  currentTokenGroupId,
+  confirmAddTokenInGroup,
 
-const addTokenDialog = ref(false)
-const newTokenName = ref('')
-const currentTokenGroupId = ref<string | null>(null)
-
-function openAddSiblingGroupDialog() {
-  newSiblingGroupName.value = ''
-  showAddSiblingDialog.value = true
-}
-
-async function confirmAddSiblingGroup() {
-  const name = newSiblingGroupName.value.trim()
-  if (!name) return
-
-  const existsAtRoot = groupTreeItems.value.some((node) => {
-    return node.id === name || node.title === name
-  })
-
-  if (existsAtRoot) {
-    console.warn('Root group already exists:', name)
-
-    showAddSiblingDialog.value = false
-    newSiblingGroupName.value = ''
-    return
-  }
-
-  await addGroupWithToken([], name)
-
-  newSiblingGroupName.value = ''
-  showAddSiblingDialog.value = false
-}
-
-function onGridReady(event: GridReadyEvent<TableRow>): void {
-  gridApi.value = event.api
-}
-
-function onModelUpdated(): void {
-  const api = gridApi.value
-  const path = lastScrollPath.value
-  if (!api || !path) return
-
-  lastScrollPath.value = null
-
-  const rowCount = api.getDisplayedRowCount()
-  for (let i = 0; i < rowCount; i++) {
-    const node = api.getDisplayedRowAtIndex(i)
-    if (node?.data?.path === path) {
-      api.ensureIndexVisible(i, 'middle')
-      break
-    }
-  }
-}
-
-function openAddGroupDialog(): void {
-  if (!activeNodeIds.value.length) return
-  currentParentGroupId.value = activeNodeIds.value[0]
-  newGroupName.value = ''
-  addGroupDialog.value = true
-}
-
-async function confirmAddGroup(): Promise<void> {
-  const parentId = currentParentGroupId.value
-  const name = newGroupName.value.trim()
-
-  if (!parentId || !name) {
-    addGroupDialog.value = false
-    return
-  }
-
-  const parentSegments = parentId.split('.')
-  await addGroupWithToken(parentSegments, name)
-
-  addGroupDialog.value = false
-}
-
-function onAddChildGroup(item: GroupNode): void {
-  // reuse existing "Add group" dialog as child of this node
-  currentParentGroupId.value = item.id
-  newGroupName.value = ''
-  addGroupDialog.value = true
-}
-
-async function confirmAddTokenInGroup(): Promise<void> {
-  const groupId = currentTokenGroupId.value
-  const name = newTokenName.value.trim()
-
-  if (!groupId || !name) {
-    addTokenDialog.value = false
-    return
-  }
-
-  const groupSegments = groupId.split('.') // e.g. ["semantic","mapped","text-bg"]
-
-  // reuse your existing helper that creates a token under a group
-  await addGroupWithToken(groupSegments, name)
-
-  addTokenDialog.value = false
-}
-
-async function onDeleteGroup(item: GroupNode): Promise<void> {
-  const groupId = item.id
-  const confirmed = window.confirm(`Delete group "${groupId}" and all tokens inside it?`)
-  if (!confirmed) return
-
-  const prefix = groupId + '.'
-
-  const rowsToDelete = rows.value.filter((row) => {
-    return row.path === groupId || row.path.startsWith(prefix)
-  })
-
-  for (const row of rowsToDelete) {
-    await deleteToken(row)
-  }
-
-  if (activeNodeIds.value[0] === groupId) {
-    activeNodeIds.value = []
-  }
-}
-
-const { menu, onActionButtonClick, addRowBelow, duplicateRow, deleteRow, closeMenu } =
-  useTokenGridContextMenu(rows, {
-    async addRowBelowToken(row) {
-      lastScrollPath.value = row.path
-      await addRowBelowToken(row)
-    },
-
-    async duplicateToken(row) {
-      lastScrollPath.value = row.path
-      await duplicateToken(row)
-    },
-
-    async deleteToken(row) {
-      const idx = rows.value.findIndex((r) => r.path === row.path)
-      if (idx > 0) {
-        lastScrollPath.value = rows.value[idx - 1]?.path ?? null
-      } else if (idx >= 0 && idx + 1 < rows.value.length) {
-        lastScrollPath.value = rows.value[idx + 1]?.path ?? null
-      } else {
-        lastScrollPath.value = null
-      }
-
-      await deleteToken(row)
-    },
-  })
+  addAliasDialog,
+  aliasSourcePath,
+  currentAliasRow,
+  aliasErrorMessage,
+  allTokenPaths,
+  confirmAliasForRow,
+  menu,
+  onActionButtonClick,
+  addRowBelow,
+  duplicateRow,
+  deleteRow,
+  closeMenu,
+  convertRowToAlias,
+  clearAliasForRow,
+} = useColorTableComponent()
 
 const { columnDefs, defaultColDef } = useTokenGridColumns(onActionButtonClick)
 </script>

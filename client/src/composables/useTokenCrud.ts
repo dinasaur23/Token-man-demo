@@ -24,6 +24,72 @@ interface CrudDeps {
   persistUploadedDocsAndReload: () => Promise<void>
 }
 
+type Json = unknown
+
+function normalizeAliasTarget(raw: string): string {
+  let s = raw.trim()
+  if (s.startsWith('{') && s.endsWith('}')) {
+    s = s.slice(1, -1).trim()
+  }
+  return s
+}
+
+function getNodeAtPath(root: JsonRecord, path: string[]): Json | undefined {
+  let current: Json = root
+  for (const segment of path) {
+    if (!isJsonRecord(current)) return undefined
+    current = current[segment]
+  }
+  return current
+}
+
+function getAliasTargetFromToken(node: Json): string | null {
+  if (!isJsonRecord(node)) return null
+
+  const rawValue = (node as JsonRecord)['$value']
+  if (typeof rawValue !== 'string') return null
+
+  const trimmed = rawValue.trim()
+  if (!trimmed.startsWith('{') || !trimmed.endsWith('}')) return null
+
+  return normalizeAliasTarget(trimmed)
+}
+
+function wouldCreateAliasCycle(
+  root: JsonRecord,
+  fromPath: string[],
+  targetPath: string[],
+): boolean {
+  const startId = fromPath.join('.')
+  let currentId = targetPath.join('.')
+
+  const visited = new Set<string>()
+
+  while (true) {
+    if (currentId === startId) {
+      // direct or indirect cycle back to the starting token
+      return true
+    }
+
+    if (visited.has(currentId)) {
+      // loop somewhere else (A -> B -> C -> B …)
+      return true
+    }
+    visited.add(currentId)
+
+    const node = getNodeAtPath(root, currentId.split('.'))
+    if (!node) return false
+
+    const nextTarget = getAliasTargetFromToken(node)
+    if (!nextTarget) {
+      // chain ends at a non-alias token → no cycle
+      return false
+    }
+
+    currentId = nextTarget
+  }
+}
+
 function ensurePath(root: JsonRecord, segments: string[]): JsonRecord {
   let node: JsonRecord = root
   for (const seg of segments) {
@@ -346,24 +412,110 @@ export function useTokenCrud({
     const { fileName, doc, container } = parentFound
     const parentContainer: JsonRecord = container
 
-    // choose a unique group name under the parent
     const safeGroupName = createDuplicateKey(parentContainer, newGroupName)
 
-    // create the new group object
     const newGroup: JsonRecord = {}
     parentContainer[safeGroupName] = newGroup
 
-    // add a first color token inside the new group
     const safeTokenName = createDuplicateKey(newGroup, initialTokenName)
     newGroup[safeTokenName] = {
       $type: 'color',
       $value: initialHex,
     }
 
-    // update rowOrder so the new token appears in the grid
     const order = ensureRowOrder(workspaceStore)
     const newTokenPath = [...parentPath, safeGroupName, safeTokenName].join('.')
     order.push(newTokenPath)
+
+    uploadedDocs.value[fileName] = doc
+    await persistUploadedDocsAndReload()
+  }
+  async function setTokenAlias(row: TableRow, aliasPath: string): Promise<void> {
+    const trimmedInput = aliasPath.trim()
+    if (!trimmedInput) {
+      throw new Error('Alias path cannot be empty.')
+    }
+
+    const targetNormalized = normalizeAliasTarget(trimmedInput)
+
+    if (targetNormalized === row.path) {
+      throw new Error('A token cannot alias itself.')
+    }
+
+    const docs = uploadedDocs.value
+    const fileNames = Object.keys(docs)
+    if (!fileNames.length) {
+      throw new Error('No token files are loaded.')
+    }
+
+    const fileName = fileNames[0]
+    const rawDoc = docs[fileName]
+    if (!isJsonRecord(rawDoc)) {
+      throw new Error('First uploaded token file is not an object.')
+    }
+
+    const doc = rawDoc as JsonRecord
+
+    const fromSegments = row.path.split('.')
+    const targetSegments = targetNormalized.split('.')
+
+    const targetNode = getNodeAtPath(doc, targetSegments)
+    if (!targetNode) {
+      throw new Error(`Alias target "${targetNormalized}" does not exist.`)
+    }
+
+    if (wouldCreateAliasCycle(doc, fromSegments, targetSegments)) {
+      throw new Error(
+        `Alias "${row.path}" → "${targetNormalized}" would create a circular reference.`,
+      )
+    }
+
+    const pathSegments = row.path.split('.')
+    const key = pathSegments.pop()!
+    const parentPath = pathSegments
+
+    const parent = ensurePath(doc, parentPath)
+
+    const aliasValue =
+      trimmedInput.startsWith('{') && trimmedInput.endsWith('}')
+        ? trimmedInput
+        : `{${targetNormalized}}`
+
+    parent[key] = { $type: 'color', $value: aliasValue }
+
+    uploadedDocs.value[fileName] = doc
+    await persistUploadedDocsAndReload()
+  }
+
+  async function clearTokenAlias(row: TableRow): Promise<void> {
+    const docs = uploadedDocs.value
+    const fileNames = Object.keys(docs)
+    if (!fileNames.length) {
+      console.warn('clearTokenAlias: no uploaded docs')
+      return
+    }
+
+    const fileName = fileNames[0]
+    const rawDoc = docs[fileName]
+    if (!isJsonRecord(rawDoc)) {
+      console.warn('clearTokenAlias: first uploaded doc is not an object')
+      return
+    }
+
+    const doc = rawDoc as JsonRecord
+
+    const pathSegments = row.path.split('.') // e.g. ["global","palette","neutral","50"]
+    const key = pathSegments.pop()!
+    const parentPath = pathSegments
+
+    const parent = ensurePath(doc, parentPath)
+
+    const hex = row.hex
+
+    parent[key] = {
+      $type: 'color',
+      $value: hex,
+    }
 
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
@@ -378,5 +530,7 @@ export function useTokenCrud({
     addTokenToGroup,
     addGroupWithToken,
     addSiblingGroupWithToken,
+    setTokenAlias,
+    clearTokenAlias,
   }
 }

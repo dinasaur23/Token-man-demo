@@ -29,11 +29,6 @@ export function pruneDeletedTokens(root, deletedPaths = []) {
   visit(root, []);
 }
 
-/**
- * Build a cleaned overrides object:
- *  - only for paths that still exist in root
- *  - ignore temporary/history paths like *-copy-* and *-new-*.
- */
 export function buildCleanOverrides(root, overrides = {}) {
   const validPaths = collectTokenPaths(root);
   const cleaned = {};
@@ -47,9 +42,6 @@ export function buildCleanOverrides(root, overrides = {}) {
   return cleaned;
 }
 
-/**
- * Collect full paths of all token leaves in a DTCG document.
- */
 function collectTokenPaths(node, prefix = [], out = new Set()) {
   if (!node || typeof node !== "object") return out;
 
