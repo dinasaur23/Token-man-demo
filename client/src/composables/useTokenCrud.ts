@@ -67,12 +67,10 @@ function wouldCreateAliasCycle(
 
   while (true) {
     if (currentId === startId) {
-      // direct or indirect cycle back to the starting token
       return true
     }
 
     if (visited.has(currentId)) {
-      // loop somewhere else (A -> B -> C -> B …)
       return true
     }
     visited.add(currentId)
@@ -82,7 +80,6 @@ function wouldCreateAliasCycle(
 
     const nextTarget = getAliasTargetFromToken(node)
     if (!nextTarget) {
-      // chain ends at a non-alias token → no cycle
       return false
     }
 
@@ -133,7 +130,6 @@ export function useTokenCrud({
       }
     }
 
-    // clear overrides hiding the real JSON
     delete workspaceStore.overrides[row.path]
 
     uploadedDocs.value[fileName] = doc

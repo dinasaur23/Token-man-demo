@@ -1,4 +1,4 @@
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import {
   resolveUploadedDocuments,
@@ -65,6 +65,28 @@ export function useTokenWorkspaceTable() {
       return id === g || id.startsWith(g + '.')
     })
   })
+
+  watch(
+    [() => uploadedDocs.value, () => workspaceStore.overrides],
+    () => {
+      // only run when docs are non-empty (optional)
+      if (Object.keys(uploadedDocs.value).length > 0) {
+        resolveAndPopulateFromUploadedDocs().catch((err) => {
+          console.error('Watch-triggered table refresh failed:', err)
+        })
+      }
+    },
+    { deep: true },
+  )
+
+  watch(
+    [() => uploadedDocs.value, () => workspaceStore.overrides],
+    () => {
+      console.log('🔄 uploadedDocs or overrides changed — re-resolving tokens')
+      resolveAndPopulateFromUploadedDocs()
+    },
+    { deep: true },
+  )
 
   function extractAliasPath(raw: unknown): string | null {
     if (!raw) return null
