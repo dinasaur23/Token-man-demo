@@ -46,8 +46,10 @@
 <script setup lang="ts">
 import { ref } from 'vue'
 import axios from 'axios'
+import { useDesignSystemStore } from '@/stores/DesignSystem'
 type ExportFormat = 'css' | 'tailwind' | 'swift' | 'android' | 'json'
 
+const dsStore = useDesignSystemStore()
 const dialog = ref(false)
 const loading = ref(false)
 
@@ -65,9 +67,20 @@ function openDialog() {
 }
 
 async function downloadOne(format: ExportFormat) {
-  const res = await axios.get('/api/tokens/export', {
+  const designSystemId = dsStore.currentId
+
+  if (!designSystemId) {
+    console.error('[Export] No design system selected, aborting export')
+    return
+  }
+
+  console.log('[Export] downloading', format, 'for DS', designSystemId)
+
+  const url = `/api/tokens/export/${encodeURIComponent(designSystemId)}`
+  const res = await axios.get(url, {
     params: { format },
     responseType: 'blob',
+    withCredentials: true,
   })
 
   const blob = new Blob([res.data], {
@@ -82,9 +95,9 @@ async function downloadOne(format: ExportFormat) {
     if (m) filename = m[1]
   }
 
-  const url = window.URL.createObjectURL(blob)
+  const urlObject = window.URL.createObjectURL(blob)
   const a = document.createElement('a')
-  a.href = url
+  a.href = urlObject
   a.download = filename
   document.body.appendChild(a)
   a.click()

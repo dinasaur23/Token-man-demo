@@ -16,7 +16,11 @@ const tokenWorkspaceSchema = new Schema(
       type: Schema.Types.ObjectId,
       ref: "User",
       required: true,
-      unique: true,
+    },
+    designSystem: {
+      type: Schema.Types.ObjectId,
+      ref: "DesignSystem",
+      required: true,
     },
     files: {
       type: [fileSchema],
@@ -36,6 +40,8 @@ const tokenWorkspaceSchema = new Schema(
 
   { timestamps: true }
 );
+
+tokenWorkspaceSchema.index({ user: 1, designSystem: 1 }, { unique: true });
 
 const TokenWorkspace = mongoose.model("TokenWorkspace", tokenWorkspaceSchema);
 export default TokenWorkspace;

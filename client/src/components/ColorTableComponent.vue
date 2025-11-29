@@ -13,7 +13,6 @@
     </v-col>
 
     <v-col cols="4" class="d-flex align-center">
-      <!-- Export button -->
       <TokenExportDialog />
     </v-col>
 

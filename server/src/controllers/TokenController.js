@@ -18,17 +18,46 @@ function getUserIdFromReq(req) {
   if (req.user?._id) return req.user._id;
   return null;
 }
+function getDesignSystemIdFromReq(req) {
+  if (req.query?.designSystemId) return req.query.designSystemId;
+  if (req.params?.designSystemId) return req.params.designSystemId;
+  return null;
+}
 
 export async function getWorkspace(req, res, next) {
   try {
     const userId = getUserIdFromReq(req);
     if (!userId) {
       console.warn("getWorkspace: no user id in token", req.user);
-      return res.json({ files: [], modifiers: {}, overrides: {} });
+      return res.json({
+        files: [],
+        modifiers: {},
+        overrides: {},
+        nameOverrides: {},
+        addedRows: [],
+        deletedPaths: [],
+        rowOrder: [],
+      });
     }
-
-    const workspace = await TokenWorkspace.findOne({ user: userId }).lean();
-    console.log("getWorkspace: found?", !!workspace);
+    const designSystemId = getDesignSystemIdFromReq(req);
+    if (!designSystemId) {
+      return res.status(400).json({
+        ok: false,
+        stage: "loadWorkspace",
+        message: "No design system selected",
+      });
+    }
+    const query = { user: userId, designSystem: designSystemId };
+    console.log("getWorkspace query =", query);
+    const workspace = await TokenWorkspace.findOne(query).lean();
+    console.log(
+      "getWorkspace: found?",
+      !!workspace,
+      "user:",
+      userId,
+      "designSystem:",
+      designSystemId
+    );
 
     if (!workspace) {
       return res.json({
@@ -59,11 +88,17 @@ export async function getWorkspace(req, res, next) {
 export async function saveWorkspace(req, res, next) {
   try {
     const userId = getUserIdFromReq(req);
+    const designSystemId = getDesignSystemIdFromReq(req);
     if (!userId) {
       console.error("saveWorkspace: no user id in token", req.user);
       return res
         .status(400)
         .json({ ok: false, message: "No user id in token" });
+    }
+    if (!designSystemId) {
+      return res
+        .status(400)
+        .json({ ok: false, message: "No design system selected" });
     }
 
     const {
@@ -79,12 +114,15 @@ export async function saveWorkspace(req, res, next) {
     console.log(
       "saveWorkspace user",
       userId,
+      "designSystem:",
+      designSystemId,
       "files:",
       Array.isArray(files) ? files.length : 0
     );
 
     const workspaceData = {
       user: userId,
+      designSystem: designSystemId || null,
       files: Array.isArray(files) ? files : [],
       modifiers: modifiers ?? {},
       overrides: overrides ?? {},
@@ -94,11 +132,20 @@ export async function saveWorkspace(req, res, next) {
       rowOrder: Array.isArray(rowOrder) ? rowOrder : [],
     };
 
+    const query = { user: userId, designSystem: designSystemId };
+    console.log("saveWorkspace query =", query);
     const workspace = await TokenWorkspace.findOneAndUpdate(
-      { user: userId },
+      query,
       workspaceData,
       { upsert: true, new: true, setDefaultsOnInsert: true }
     ).lean();
+
+    console.log(
+      "saveWorkspace saved workspaceId:",
+      workspace?._id,
+      "for designSystem:",
+      designSystemId
+    );
 
     res.json({
       files: workspace.files ?? [],
@@ -118,6 +165,18 @@ export async function exportTokens(req, res, next) {
   let stage = "start";
   try {
     const userId = getUserIdFromReq(req);
+    const designSystemId = getDesignSystemIdFromReq(req);
+    console.log(
+      "exportTokens user:",
+      userId,
+      "designSystemId:",
+      designSystemId,
+      "params:",
+      req.params,
+      "query:",
+      req.query
+    );
+
     if (!userId) {
       return res
         .status(400)
@@ -125,7 +184,12 @@ export async function exportTokens(req, res, next) {
     }
 
     stage = "loadWorkspace";
-    const workspace = await TokenWorkspace.findOne({ user: userId }).lean();
+    const query = { user: userId };
+    if (designSystemId) {
+      query.designSystem = designSystemId;
+    }
+    console.log("exportTokens query =", query);
+    const workspace = await TokenWorkspace.findOne(query).lean();
     if (!workspace) {
       return res
         .status(400)
@@ -151,6 +215,7 @@ export async function exportTokens(req, res, next) {
     );
 
     applyOverridesToTokens(mergedTokens, cleanedOverrides);
+
     if (format === "json") {
       if (!mergedTokens || Object.keys(mergedTokens).length === 0) {
         return res.status(400).json({
@@ -188,7 +253,9 @@ export async function exportTokens(req, res, next) {
 
     stage = "writeTempFile";
     const tmpDir = os.tmpdir();
-    const jsonFilePath = path.join(tmpDir, `tokens-${userId}.json`);
+    const dsSuffix = designSystemId ? `-${designSystemId}` : "";
+    const jsonFilePath = path.join(tmpDir, `tokens-${userId}${dsSuffix}.json`);
+
     fs.writeFileSync(
       jsonFilePath,
       JSON.stringify(mergedTokens, null, 2),
@@ -196,7 +263,7 @@ export async function exportTokens(req, res, next) {
     );
 
     stage = "configureStyleDictionary";
-    const buildBase = path.join(tmpDir, `build-${userId}`);
+    const buildBase = path.join(tmpDir, `build-${userId}${dsSuffix}`);
     const sdConfig = createSdConfig(format, jsonFilePath, buildBase);
 
     if (!sdConfig) {

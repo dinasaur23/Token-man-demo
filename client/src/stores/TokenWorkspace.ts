@@ -1,4 +1,5 @@
 import { defineStore } from 'pinia'
+import { useDesignSystemStore } from './DesignSystem'
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue }
 
@@ -26,6 +27,14 @@ interface TokenWorkspaceState {
   deletedPaths: string[]
   rowOrder: string[]
   loaded: boolean
+  currentDesignSystemId: string | null
+}
+function buildWorkspaceUrl(designSystemId: string | null): string {
+  if (!designSystemId) {
+    return '/api/tokens/workspace'
+  }
+  const encoded = encodeURIComponent(designSystemId)
+  return `/api/tokens/workspace?designSystemId=${encoded}`
 }
 
 export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
@@ -38,17 +47,40 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
     deletedPaths: [],
     rowOrder: [],
     loaded: false,
+    currentDesignSystemId: null,
   }),
 
   actions: {
+    setDesignSystemId(id: string | null) {
+      console.log('[WS] setDesignSystemId', id)
+      this.currentDesignSystemId = id
+    },
+    resetForDesignSystem(designSystemId: string | null): void {
+      console.log('[WS] resetForDesignSystem', designSystemId)
+      this.currentDesignSystemId = designSystemId
+      this.files = []
+      this.modifiers = {}
+      this.overrides = {}
+      this.nameOverrides = {}
+      this.addedRows = []
+      this.deletedPaths = []
+      this.rowOrder = []
+      this.loaded = false
+    },
     async loadFromServer(): Promise<void> {
       try {
-        const res = await fetch('/api/tokens/workspace', {
+        const designSystemStore = useDesignSystemStore()
+        const designSystemId = designSystemStore.currentId ?? null
+        this.currentDesignSystemId = designSystemId
+
+        const url = buildWorkspaceUrl(designSystemId)
+        console.log('[WS] loadFromServer url =', url)
+        const res = await fetch(url, {
           method: 'GET',
           credentials: 'include',
         })
 
-        console.log('GET /api/tokens/workspace status', res.status)
+        console.log('GET', url, 'status', res.status)
 
         if (!res.ok) {
           this.loaded = true
@@ -57,13 +89,13 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
 
         const data = (await res.json()) as TokenWorkspaceDto
 
-        this.files = data.files ?? []
+        this.files = Array.isArray(data.files) ? data.files : []
         this.modifiers = data.modifiers ?? {}
         this.overrides = data.overrides ?? {}
         this.nameOverrides = data.nameOverrides ?? {}
-        this.addedRows = data.addedRows ?? {}
-        this.deletedPaths = data.deletedPaths ?? {}
-        this.rowOrder = data.rowOrder ?? []
+        this.addedRows = Array.isArray(data.addedRows) ? data.addedRows : []
+        this.deletedPaths = Array.isArray(data.deletedPaths) ? data.deletedPaths : []
+        this.rowOrder = Array.isArray(data.rowOrder) ? data.rowOrder : []
 
         const cleaned: Record<string, string> = {}
         const hexPattern = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
@@ -85,6 +117,17 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
 
     async saveToServer(): Promise<void> {
       try {
+        const designSystemStore = useDesignSystemStore()
+        const designSystemId = designSystemStore.currentId ?? this.currentDesignSystemId ?? null
+
+        if (!designSystemId) {
+          console.warn('saveToServer: no design system selected')
+          return
+        }
+        this.currentDesignSystemId = designSystemId
+        const url = buildWorkspaceUrl(designSystemId)
+        console.log('[WS] saveToServer url =', url)
+
         const payload: TokenWorkspaceDto = {
           files: this.files,
           modifiers: this.modifiers,
@@ -95,7 +138,7 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
           rowOrder: this.rowOrder,
         }
 
-        const res = await fetch('/api/tokens/workspace', {
+        const res = await fetch(url, {
           method: 'PUT',
           credentials: 'include',
           headers: {
@@ -103,7 +146,7 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
           },
           body: JSON.stringify(payload),
         })
-        console.log('PUT /api/tokens/workspace status', res.status)
+        console.log('PUT', url, 'status', res.status)
       } catch (err) {
         console.error('saveToServer failed', err)
       }

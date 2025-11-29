@@ -10,5 +10,6 @@ const router = express.Router();
 
 router.get("/workspace", requireAuth, getWorkspace);
 router.put("/workspace", requireAuth, saveWorkspace);
-router.get("/export", requireAuth, exportTokens);
+router.get("/export/:designSystemId", requireAuth, exportTokens);
+
 export default router;
