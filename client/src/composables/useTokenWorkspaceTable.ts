@@ -80,10 +80,26 @@ export function useTokenWorkspaceTable() {
   )
 
   watch(
-    [() => uploadedDocs.value, () => workspaceStore.overrides],
-    () => {
-      console.log('🔄 uploadedDocs or overrides changed — re-resolving tokens')
-      resolveAndPopulateFromUploadedDocs()
+    () => workspaceStore.files,
+    async () => {
+      console.log(
+        '[Table] workspaceStore.files changed → syncing table, file count =',
+        workspaceStore.files.length,
+      )
+
+      // Reset table visual state so we don't mix DS1+DS2
+      rows.value = []
+      activeNodeIds.value = []
+      errorMessage.value = null
+
+      if (workspaceStore.files.length === 0) {
+        uploadedDocs.value = {}
+        detectedModifiers.value = []
+        selectedModifiers.value = {}
+        return
+      }
+
+      await syncFromWorkspaceStoreFiles()
     },
     { deep: true },
   )
@@ -305,17 +321,16 @@ export function useTokenWorkspaceTable() {
 
     await resolveAndPopulateFromUploadedDocs()
   }
-
-  async function initFromWorkspaceStore(): Promise<void> {
-    await workspaceStore.loadFromServer()
-    if (workspaceStore.files.length === 0) return
-
+  async function syncFromWorkspaceStoreFiles(): Promise<void> {
+    // 1) copy files from store → uploadedDocs
     const docs: Record<string, JsonValue> = {}
+
     for (const file of workspaceStore.files) {
       docs[file.name] = file.content as JsonValue
     }
     uploadedDocs.value = docs
 
+    // 2) rebuild modifiers
     detectedModifiers.value = extractModifiersFromDocs(docs)
     selectedModifiers.value = { ...workspaceStore.modifiers }
 
@@ -328,7 +343,15 @@ export function useTokenWorkspaceTable() {
       }
     }
 
+    // 3) actually rebuild rows
     await resolveAndPopulateFromUploadedDocs()
+  }
+
+  async function initFromWorkspaceStore(): Promise<void> {
+    await workspaceStore.loadFromServer()
+    if (workspaceStore.files.length === 0) return
+
+    await syncFromWorkspaceStoreFiles()
   }
 
   const {

@@ -22,6 +22,18 @@ interface CreateResponse {
   item: DesignSystemDto
 }
 
+interface UpdateResponse {
+  ok: boolean
+  stage: string
+  item: DesignSystemDto
+}
+
+interface DeleteResponse {
+  ok: boolean
+  stage: string
+  message?: string
+}
+
 export interface DesignSystem {
   id: string
   name: string
@@ -52,7 +64,7 @@ function mapDto(dto: DesignSystemDto): DesignSystem {
 export const useDesignSystemStore = defineStore('designSystem', {
   state: (): DesignSystemState => ({
     items: [],
-    currentId: localStorage.getItem(STORAGE_KEY), // <— restore
+    currentId: localStorage.getItem(STORAGE_KEY),
     loading: false,
     error: null,
   }),
@@ -81,7 +93,6 @@ export const useDesignSystemStore = defineStore('designSystem', {
         const items = Array.isArray(data.items) ? data.items.map(mapDto) : []
         this.items = items
 
-        // if nothing selected anymore but we have items, pick the first
         if (!this.currentId && items.length > 0) {
           this.setCurrent(items[0].id)
         }
@@ -113,6 +124,36 @@ export const useDesignSystemStore = defineStore('designSystem', {
       this.items.push(created)
       this.setCurrent(created.id)
       return created
+    },
+    async rename(id: string, name: string): Promise<void> {
+      const trimmed = name.trim()
+      if (!trimmed) {
+        throw new Error('Name is required')
+      }
+
+      const { data } = await axios.patch<UpdateResponse>(
+        `/api/design-systems/${id}`,
+        { name: trimmed },
+        { withCredentials: true },
+      )
+
+      const updated = mapDto(data.item)
+      const idx = this.items.findIndex((ds) => ds.id === id)
+      if (idx !== -1) {
+        this.items[idx] = updated
+      }
+    },
+    async remove(id: string): Promise<void> {
+      await axios.delete<DeleteResponse>(`/api/design-systems/${id}`, {
+        withCredentials: true,
+      })
+
+      this.items = this.items.filter((ds) => ds.id !== id)
+
+      if (this.currentId === id) {
+        const next = this.items[0]?.id ?? null
+        this.setCurrent(next)
+      }
     },
   },
 })

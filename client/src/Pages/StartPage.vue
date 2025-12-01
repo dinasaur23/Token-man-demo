@@ -29,10 +29,31 @@
       <v-row v-if="dsStore.items.length" class="mt-6">
         <v-col cols="12">
           <div class="text-subtitle-2 mb-2">Design Systems</div>
+
           <v-chip-group column v-model="selectedId" @update:model-value="onQuickSelect">
-            <v-chip v-for="ds in dsStore.items" :key="ds.id" :value="ds.id" class="ma-1" label>
-              {{ ds.name }}
-            </v-chip>
+            <!-- chip + 3-dots menu per design system -->
+            <div v-for="ds in dsStore.items" :key="ds.id" class="d-inline-flex align-center ma-1">
+              <v-chip :value="ds.id" label class="mr-1">
+                {{ ds.name }}
+              </v-chip>
+
+              <v-menu location="bottom">
+                <template #activator="{ props }">
+                  <v-btn v-bind="props" icon size="small" variant="text">
+                    <v-icon>mdi-dots-vertical</v-icon>
+                  </v-btn>
+                </template>
+
+                <v-list density="compact">
+                  <v-list-item @click="onRename(ds)">
+                    <v-list-item-title>Rename</v-list-item-title>
+                  </v-list-item>
+                  <v-list-item @click="onDelete(ds)">
+                    <v-list-item-title class="text-error"> Delete </v-list-item-title>
+                  </v-list-item>
+                </v-list>
+              </v-menu>
+            </div>
           </v-chip-group>
         </v-col>
       </v-row>
@@ -45,6 +66,7 @@ import { ref, computed, onMounted } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDesignSystemStore } from '@/stores/DesignSystem'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
+import type { DesignSystem } from '@/stores/DesignSystem'
 
 const router = useRouter()
 const dsStore = useDesignSystemStore()
@@ -54,6 +76,7 @@ const selectedId = ref<string | null>(null)
 
 onMounted(async () => {
   await dsStore.fetchAll()
+  selectedId.value = dsStore.currentId
   console.log('StartPage mounted, design systems:', dsStore.items)
 })
 
@@ -98,6 +121,39 @@ function onQuickSelect(id: string | null) {
   if (!id) return
   selectedId.value = id
   void goToWorkspace(id)
+}
+
+async function onRename(ds: DesignSystem) {
+  const currentName = ds.name
+  const input = window.prompt('Rename design system', currentName)
+  const newName = input?.trim()
+  if (!newName || newName === currentName) return
+
+  try {
+    await dsStore.rename(ds.id, newName)
+  } catch (err) {
+    console.error('rename design system failed', err)
+    window.alert('Could not rename design system.')
+  }
+}
+
+async function onDelete(ds: DesignSystem) {
+  const ok = window.confirm(
+    `Delete design system "${ds.name}"?\nAll its tokens will be removed. This cannot be undone.`,
+  )
+  if (!ok) return
+
+  try {
+    await dsStore.remove(ds.id)
+
+    // keep selectedId in sync with store after deletion
+    if (selectedId.value === ds.id) {
+      selectedId.value = dsStore.currentId
+    }
+  } catch (err) {
+    console.error('delete design system failed', err)
+    window.alert('Could not delete design system.')
+  }
 }
 </script>
 

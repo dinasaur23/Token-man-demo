@@ -18,13 +18,13 @@ const router = createRouter({
         { path: '', name: 'home', component: HomePage },
         { path: 'SignUpPage', name: 'signup', component: SignupPage },
         { path: 'LoginPage', name: 'login', component: LoginPage },
+        { path: 'StartPage', name: 'start', component: StartPage, meta: { requiresAuth: true } },
       ],
     },
     {
       path: '/',
       component: DefaultLayout,
       children: [
-        { path: 'StartPage', name: 'start', component: StartPage, meta: { requiresAuth: true } },
         {
           path: 'ColorContentPage',
           name: 'colors',

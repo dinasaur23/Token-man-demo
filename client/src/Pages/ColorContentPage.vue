@@ -3,7 +3,7 @@
 </template>
 
 <script lang="ts" setup>
-import { onMounted } from 'vue'
+import { onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import ColorTableComponent from '@/components/ColorTableComponent.vue'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
@@ -24,4 +24,16 @@ onMounted(async () => {
   wsStore.setDesignSystemId(dsStore.currentId)
   await wsStore.loadFromServer()
 })
+watch(
+  () => dsStore.currentId,
+  async (newId, oldId) => {
+    if (!newId || newId === oldId) return
+
+    console.log('[ColorContentPage] design system changed', oldId, '→', newId)
+
+    wsStore.resetForDesignSystem(newId)
+    await wsStore.loadFromServer()
+    // the table will now resync because workspaceStore.files changed
+  },
+)
 </script>
