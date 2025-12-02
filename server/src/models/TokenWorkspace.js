@@ -36,6 +36,10 @@ const tokenWorkspaceSchema = new Schema(
     },
     nameOverrides: { type: Schema.Types.Mixed, default: {} },
     rowOrder: { type: [String], default: [] },
+    figmaTokens: {
+      type: Object,
+      default: {},
+    },
   },
 
   { timestamps: true }

@@ -16,6 +16,7 @@ export interface TokenWorkspaceDto {
   addedRows: unknown[]
   deletedPaths: string[]
   rowOrder: string[]
+  figmaTokens?: Record<string, unknown>
 }
 
 interface TokenWorkspaceState {
@@ -28,6 +29,7 @@ interface TokenWorkspaceState {
   rowOrder: string[]
   loaded: boolean
   currentDesignSystemId: string | null
+  figmaTokens: Record<string, unknown>
 }
 function buildWorkspaceUrl(designSystemId: string | null): string {
   if (!designSystemId) {
@@ -48,6 +50,7 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
     rowOrder: [],
     loaded: false,
     currentDesignSystemId: null,
+    figmaTokens: {} as Record<string, unknown>,
   }),
 
   actions: {
@@ -66,6 +69,7 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
       this.deletedPaths = []
       this.rowOrder = []
       this.loaded = false
+      this.figmaTokens = {}
     },
     async loadFromServer(): Promise<void> {
       try {
@@ -96,6 +100,17 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
         this.addedRows = Array.isArray(data.addedRows) ? data.addedRows : []
         this.deletedPaths = Array.isArray(data.deletedPaths) ? data.deletedPaths : []
         this.rowOrder = Array.isArray(data.rowOrder) ? data.rowOrder : []
+        this.figmaTokens = data.figmaTokens || {}
+
+        if (Object.keys(this.figmaTokens).length > 0 && this.files.length === 0) {
+          this.files = [
+            {
+              name: 'figma-sync.json',
+              content: this.figmaTokens,
+            },
+          ]
+        }
+        console.log('[WorkspaceStore] loaded files from server:', this.files)
 
         const cleaned: Record<string, string> = {}
         const hexPattern = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i

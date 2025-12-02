@@ -18,10 +18,75 @@ function getUserIdFromReq(req) {
   if (req.user?._id) return req.user._id;
   return null;
 }
+
 function getDesignSystemIdFromReq(req) {
   if (req.query?.designSystemId) return req.query.designSystemId;
   if (req.params?.designSystemId) return req.params.designSystemId;
   return null;
+}
+
+export async function syncFigmaTokens(req, res, next) {
+  try {
+    const userId = getUserIdFromReq(req);
+    if (!userId) {
+      return res.status(401).json({ ok: false, message: "Not authenticated" });
+    }
+
+    const { tokens } = req.body;
+    if (!tokens || typeof tokens !== "object") {
+      return res
+        .status(400)
+        .json({ ok: false, message: "Missing or invalid tokens payload" });
+    }
+
+    console.log(
+      "syncFigmaTokens: user =",
+      userId,
+      "token keys =",
+      Object.keys(tokens)
+    );
+
+    // IMPORTANT: this must be the SAME query you use in getWorkspace
+    const designSystemId = getDesignSystemIdFromReq(req); // if you have this helper
+    const query = designSystemId
+      ? { user: userId, designSystem: designSystemId }
+      : { user: userId };
+
+    let workspace = await TokenWorkspace.findOne(query);
+    if (!workspace) {
+      return res.status(400).json({
+        ok: false,
+        message:
+          "No workspace found for this user/design system. Open Token Manager once first.",
+      });
+    }
+
+    // 1) store raw tokens
+    workspace.figmaTokens = tokens;
+
+    // 2) also keep/update a 'figma-sync.json' file
+    const files = workspace.files || [];
+    const idx = files.findIndex((f) => f.name === "figma-sync.json");
+
+    if (idx === -1) {
+      files.push({
+        name: "figma-sync.json",
+        content: tokens,
+      });
+    } else {
+      files[idx].content = tokens;
+    }
+
+    workspace.files = files;
+    await workspace.save();
+
+    return res.json({
+      ok: true,
+      saved: Object.keys(tokens).length,
+    });
+  } catch (err) {
+    next(err);
+  }
 }
 
 export async function getWorkspace(req, res, next) {
@@ -37,6 +102,7 @@ export async function getWorkspace(req, res, next) {
         addedRows: [],
         deletedPaths: [],
         rowOrder: [],
+        figmaTokens: {},
       });
     }
     const designSystemId = getDesignSystemIdFromReq(req);
@@ -68,6 +134,7 @@ export async function getWorkspace(req, res, next) {
         addedRows: [],
         deletedPaths: [],
         rowOrder: [],
+        figmaTokens: {},
       });
     }
     res.json({
@@ -78,6 +145,7 @@ export async function getWorkspace(req, res, next) {
       addedRows: workspace.addedRows,
       deletedPaths: workspace.deletedPaths,
       rowOrder: workspace.rowOrder ?? [],
+      figmaTokens: workspace.figmaTokens ?? {},
     });
   } catch (err) {
     console.error("getWorkspace error", err);
