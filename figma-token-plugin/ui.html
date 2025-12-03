@@ -1,0 +1,78 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body {
+        font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        margin: 12px;
+        font-size: 12px;
+      }
+      label {
+        display: block;
+        margin-top: 8px;
+      }
+      input {
+        width: 100%;
+        box-sizing: border-box;
+        margin-top: 2px;
+        padding: 4px 6px;
+      }
+      button {
+        margin-top: 12px;
+        padding: 6px 10px;
+      }
+    </style>
+  </head>
+  <body>
+    <div>
+      <label>
+        API URL
+        <input id="apiUrl" placeholder="http://localhost:8081" />
+      </label>
+
+      <label>
+        Design System ID
+        <input id="designSystemId" placeholder="MongoDB DesignSystem _id" />
+      </label>
+
+      <label>
+        JWT (login token)
+        <input id="jwt" placeholder="Paste your JWT here" />
+      </label>
+
+      <button id="save">Save settings</button>
+    </div>
+
+    <script>
+      const apiInput = document.getElementById("apiUrl");
+      const dsInput = document.getElementById("designSystemId");
+      const jwtInput = document.getElementById("jwt");
+      const saveBtn = document.getElementById("save");
+
+      // receive initial values from plugin
+      window.onmessage = (event) => {
+        const msg = event.data.pluginMessage;
+        if (msg && msg.type === "init-settings") {
+          apiInput.value = msg.apiUrl || "";
+          dsInput.value = msg.designSystemId || "";
+          jwtInput.value = msg.jwt || "";
+        }
+      };
+
+      saveBtn.onclick = () => {
+        parent.postMessage(
+          {
+            pluginMessage: {
+              type: "save-settings",
+              apiUrl: apiInput.value,
+              designSystemId: dsInput.value,
+              jwt: jwtInput.value,
+            },
+          },
+          "*"
+        );
+      };
+    </script>
+  </body>
+</html>

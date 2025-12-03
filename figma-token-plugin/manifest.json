@@ -3,10 +3,17 @@
   "id": "token-manager-sync",
   "api": "1.0.0",
   "main": "code.js",
+  "ui": "ui.html",
   "editorType": ["figma"],
+
   "networkAccess": {
     "allowedDomains": ["http://localhost:8081"],
     "reasoning": "Allow plugin to sync design tokens with local backend during development.",
     "devAllowedDomains": ["http://localhost:8081"]
-  }
+  },
+
+  "menu": [
+    { "name": "Sync variables to Token Manager", "command": "sync" },
+    { "name": "Token Manager settings", "command": "settings" }
+  ]
 }

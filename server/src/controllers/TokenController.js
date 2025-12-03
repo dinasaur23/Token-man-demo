@@ -32,6 +32,14 @@ export async function syncFigmaTokens(req, res, next) {
       return res.status(401).json({ ok: false, message: "Not authenticated" });
     }
 
+    // use same logic as getWorkspace/saveToServer
+    const designSystemId = getDesignSystemIdFromReq(req);
+    if (!designSystemId) {
+      return res
+        .status(400)
+        .json({ ok: false, message: "designSystemId is required" });
+    }
+
     const { tokens } = req.body;
     if (!tokens || typeof tokens !== "object") {
       return res
@@ -39,32 +47,32 @@ export async function syncFigmaTokens(req, res, next) {
         .json({ ok: false, message: "Missing or invalid tokens payload" });
     }
 
-    console.log(
-      "syncFigmaTokens: user =",
-      userId,
-      "token keys =",
-      Object.keys(tokens)
-    );
+    // find workspace for this user + design system
+    let workspace = await TokenWorkspace.findOne({
+      user: userId,
+      designSystem: designSystemId,
+    });
 
-    // IMPORTANT: this must be the SAME query you use in getWorkspace
-    const designSystemId = getDesignSystemIdFromReq(req); // if you have this helper
-    const query = designSystemId
-      ? { user: userId, designSystem: designSystemId }
-      : { user: userId };
-
-    let workspace = await TokenWorkspace.findOne(query);
     if (!workspace) {
-      return res.status(400).json({
-        ok: false,
-        message:
-          "No workspace found for this user/design system. Open Token Manager once first.",
+      // create a new workspace
+      workspace = new TokenWorkspace({
+        user: userId,
+        designSystem: designSystemId,
+        files: [],
+        modifiers: {},
+        overrides: {},
+        nameOverrides: {},
+        addedRows: [],
+        deletedPaths: [],
+        rowOrder: [],
+        figmaTokens: tokens,
       });
+    } else {
+      // just update the figmaTokens field
+      workspace.figmaTokens = tokens;
     }
 
-    // 1) store raw tokens
-    workspace.figmaTokens = tokens;
-
-    // 2) also keep/update a 'figma-sync.json' file
+    // ALSO mirror the tokens into a virtual file so the UI + CRUD keep working
     const files = workspace.files || [];
     const idx = files.findIndex((f) => f.name === "figma-sync.json");
 
@@ -76,15 +84,25 @@ export async function syncFigmaTokens(req, res, next) {
     } else {
       files[idx].content = tokens;
     }
-
     workspace.files = files;
+
     await workspace.save();
+
+    console.log(
+      "syncFigmaTokens: user =",
+      userId,
+      "designSystem =",
+      designSystemId,
+      "token keys =",
+      Object.keys(tokens)
+    );
 
     return res.json({
       ok: true,
       saved: Object.keys(tokens).length,
     });
   } catch (err) {
+    console.error("syncFigmaTokens error", err);
     next(err);
   }
 }
