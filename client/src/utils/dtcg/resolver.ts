@@ -14,9 +14,6 @@ export interface DetectedModifier {
   defaultValue?: string
 }
 
-// ---------- DTCG resolver model ---------------------------------------------
-
-// Make these extend JsonObject so they are compatible with JsonValue
 export interface ResolverSourceRef extends JsonObject {
   $ref: string
 }
@@ -51,6 +48,114 @@ export interface ResolverDocument extends JsonObject {
 export type ResolverInput = Record<string, string>
 
 // ---------- small helpers ----------------------------------------------------
+
+export function applySelectedContextsToDoc(doc: JsonObject, input: ResolverInput): JsonObject {
+  const selectedMode = input.mode || null
+
+  console.log('[Resolver] applySelectedContextsToDoc start. Selected mode =', selectedMode)
+
+  // helper type for the figma extension we actually use
+  type FigmaExtension = {
+    valuesByMode?: Record<string, JsonValue>
+    defaultMode?: string
+  }
+
+  function visit(value: JsonValue): JsonValue {
+    // arrays
+    if (Array.isArray(value)) {
+      return (value as JsonArray).map(visit)
+    }
+
+    // objects
+    if (isJsonObject(value)) {
+      const obj = value as JsonObject
+      const out: JsonObject = {}
+
+      for (const [key, v] of Object.entries(obj)) {
+        out[key] = visit(v as JsonValue)
+      }
+
+      // ---------- Figma-mode handling ----------
+      if (selectedMode && obj.$extensions && isJsonObject(obj.$extensions)) {
+        const ext = obj.$extensions as { figma?: FigmaExtension }
+        const fig = ext.figma
+
+        if (fig && typeof fig === 'object') {
+          const valuesByMode = fig.valuesByMode
+          if (valuesByMode && typeof valuesByMode === 'object') {
+            const defaultMode: string | undefined = fig.defaultMode
+            const keys = Object.keys(valuesByMode)
+
+            const map = valuesByMode as Record<string, JsonValue>
+
+            const chosen: JsonValue | undefined =
+              map[selectedMode] ??
+              (defaultMode ? map[defaultMode] : undefined) ??
+              (keys.length ? map[keys[0]] : undefined)
+
+            if (typeof chosen === 'string') {
+              // ✅ override $value with final scalar used by table & exporter
+              out.$value = chosen
+            }
+          }
+        }
+      }
+
+      return out
+    }
+
+    // primitives
+    return value
+  }
+
+  const resolved = visit(doc) as JsonObject
+
+  // DEBUG: log a sample token after resolution
+  ;(() => {
+    const cKeys = Object.keys(resolved)
+    if (!cKeys.length) {
+      console.log('[Resolver][DEBUG] No tokens after applySelectedContextsToDoc')
+      return
+    }
+
+    const firstCollection = cKeys[0]
+    const groupValue = resolved[firstCollection]
+
+    if (!isJsonObject(groupValue)) {
+      console.log('[Resolver][DEBUG] First collection not an object')
+      return
+    }
+
+    const group = groupValue as JsonObject
+    const tKeys = Object.keys(group)
+    if (!tKeys.length) {
+      console.log('[Resolver][DEBUG] First collection has no tokens')
+      return
+    }
+
+    const firstTokenKey = tKeys[0]
+    const tokenValue = group[firstTokenKey]
+
+    if (!isJsonObject(tokenValue)) {
+      console.log('[Resolver][DEBUG] First token is not an object')
+      return
+    }
+
+    const token = tokenValue as JsonObject & { $value?: JsonValue }
+
+    console.log(
+      '[Resolver][DEBUG] Sample AFTER resolution:',
+      `${firstCollection}/${firstTokenKey}`,
+      'typeof $value =',
+      typeof token.$value,
+      'value =',
+      token.$value,
+    )
+  })()
+
+  console.log('[Resolver] applySelectedContextsToDoc end')
+  return resolved
+}
 
 function isJsonObject(value: unknown): value is JsonObject {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -98,7 +203,6 @@ function mergeAllDocs(docs: Record<string, JsonValue>): JsonObject {
   return isJsonObject(result) ? result : {}
 }
 
-// Type guard: JsonValue -> ResolverDocument
 function isResolverDocument(value: JsonValue): value is ResolverDocument {
   if (!isJsonObject(value)) return false
   const maybe = value as { resolutionOrder?: JsonValue }
@@ -213,25 +317,65 @@ export function resolveWithResolverDocument(
   return isJsonObject(result) ? result : {}
 }
 
+// export function resolveUploadedDocuments(
+//   docs: Record<string, JsonValue>,
+//   input: ResolverInput = {},
+// ): JsonObject {
+//   const resolverEntry = Object.entries(docs).find(([, value]) => isResolverDocument(value))
+
+//   if (!resolverEntry) {
+//     // no resolver found -> simple merge (old behaviour) ...
+//     const merged = mergeAllDocs(docs)
+//     // ... plus: apply selected modifier values to $value objects
+//     return applySelectedContextsToDoc(merged, input)
+//   }
+
+//   const resolverValue = resolverEntry[1]
+//   if (!isResolverDocument(resolverValue)) {
+//     throw new Error('Resolver document has wrong shape.')
+//   }
+
+//   const resolverDoc = resolverValue
+//   return resolveWithResolverDocument(resolverDoc, docs, input)
+// }
 export function resolveUploadedDocuments(
   docs: Record<string, JsonValue>,
   input: ResolverInput = {},
 ): JsonObject {
+  console.log('[Resolver] resolveUploadedDocuments called', {
+    docNames: Object.keys(docs),
+    input,
+  })
+
   const resolverEntry = Object.entries(docs).find(([, value]) => isResolverDocument(value))
 
   if (!resolverEntry) {
-    // no resolver found -> simple merge of all docs (your previous behavior)
-    return mergeAllDocs(docs)
+    console.log(
+      '[Resolver] no resolver doc found → simple mergeAllDocs + applySelectedContextsToDoc',
+    )
+    const merged = mergeAllDocs(docs)
+    console.log('[Resolver] merged document sample:', JSON.stringify(merged, null, 2).slice(0, 500))
+    const applied = applySelectedContextsToDoc(merged, input)
+    console.log(
+      '[Resolver] after applySelectedContextsToDoc sample:',
+      JSON.stringify(applied, null, 2).slice(0, 500),
+    )
+    return applied
   }
 
+  console.log('[Resolver] resolver doc found:', resolverEntry[0])
   const resolverValue = resolverEntry[1]
   if (!isResolverDocument(resolverValue)) {
-    // should never happen at runtime, but keeps TS happy
     throw new Error('Resolver document has wrong shape.')
   }
 
   const resolverDoc = resolverValue
-  return resolveWithResolverDocument(resolverDoc, docs, input)
+  const resolved = resolveWithResolverDocument(resolverDoc, docs, input)
+  console.log(
+    '[Resolver] resolveWithResolverDocument finished, sample:',
+    JSON.stringify(resolved, null, 2).slice(0, 500),
+  )
+  return resolved
 }
 
 export function extractModifiersFromDocs(docs: Record<string, JsonValue>): DetectedModifier[] {

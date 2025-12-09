@@ -3,8 +3,7 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import StyleDictionary from "style-dictionary";
-
-import { mergeWorkspaceFiles } from "../utils/dtcg/mergeWorkspaceFiles.js";
+//import { mergeWorkspaceFiles } from "../utils/dtcg/mergeWorkspaceFiles.js";
 import { applyOverridesToTokens } from "../utils/dtcg/applyOverrides.js";
 import { normalizeDtcgForCss } from "../utils/dtcg/normalizeDtcgForCss.js";
 import { createSdConfig } from "../utils/sd/index.js";
@@ -12,6 +11,7 @@ import {
   pruneDeletedTokens,
   buildCleanOverrides,
 } from "../utils/dtcg/cleanupWorkspaceTokens.js";
+import { resolveUploadedDocuments } from "../utils/dtcg/uploadedResolver.js";
 
 function getUserIdFromReq(req) {
   if (req.user?.id) return req.user.id;
@@ -25,6 +25,50 @@ function getDesignSystemIdFromReq(req) {
   return null;
 }
 
+function applyGroupNameOverridesToTokens(rootTokens, groupNameOverrides) {
+  if (!groupNameOverrides || typeof groupNameOverrides !== "object") return;
+
+  for (const [groupId, newLabel] of Object.entries(groupNameOverrides)) {
+    if (typeof newLabel !== "string") continue;
+    const trimmed = newLabel.trim();
+    if (!trimmed) continue;
+
+    const segments = groupId.split(".");
+    if (!segments.length) continue;
+
+    const parentSegments = segments.slice(0, -1);
+    const oldKey = segments[segments.length - 1];
+
+    let parent = rootTokens;
+    let ok = true;
+
+    for (const segment of parentSegments) {
+      if (!parent || typeof parent !== "object" || !(segment in parent)) {
+        ok = false;
+        break;
+      }
+      parent = parent[segment];
+    }
+
+    if (!ok || !parent || typeof parent !== "object") continue;
+    if (!(oldKey in parent)) continue;
+
+    // avoid overwriting an existing key with the new name
+    if (Object.prototype.hasOwnProperty.call(parent, trimmed)) {
+      console.warn(
+        "[exportTokens] group rename skipped because key already exists:",
+        groupId,
+        "→",
+        trimmed
+      );
+      continue;
+    }
+
+    parent[trimmed] = parent[oldKey];
+    delete parent[oldKey];
+  }
+}
+
 export async function syncFigmaTokens(req, res, next) {
   try {
     const userId = getUserIdFromReq(req);
@@ -32,7 +76,6 @@ export async function syncFigmaTokens(req, res, next) {
       return res.status(401).json({ ok: false, message: "Not authenticated" });
     }
 
-    // use same logic as getWorkspace/saveToServer
     const designSystemId = getDesignSystemIdFromReq(req);
     if (!designSystemId) {
       return res
@@ -40,21 +83,20 @@ export async function syncFigmaTokens(req, res, next) {
         .json({ ok: false, message: "designSystemId is required" });
     }
 
-    const { tokens } = req.body;
+    // plugin sends { tokens, modifiers? }
+    const { tokens, modifiers } = req.body || {};
     if (!tokens || typeof tokens !== "object") {
       return res
         .status(400)
         .json({ ok: false, message: "Missing or invalid tokens payload" });
     }
 
-    // find workspace for this user + design system
     let workspace = await TokenWorkspace.findOne({
       user: userId,
       designSystem: designSystemId,
     });
 
     if (!workspace) {
-      // create a new workspace
       workspace = new TokenWorkspace({
         user: userId,
         designSystem: designSystemId,
@@ -66,36 +108,41 @@ export async function syncFigmaTokens(req, res, next) {
         deletedPaths: [],
         rowOrder: [],
         figmaTokens: tokens,
+        figmaModifierOptions: modifiers || {},
       });
     } else {
-      // just update the figmaTokens field
       workspace.figmaTokens = tokens;
+      if (modifiers && typeof modifiers === "object") {
+        workspace.figmaModifierOptions = modifiers;
+      }
     }
 
-    // ALSO mirror the tokens into a virtual file so the UI + CRUD keep working
     const files = workspace.files || [];
     const idx = files.findIndex((f) => f.name === "figma-sync.json");
-
     if (idx === -1) {
-      files.push({
-        name: "figma-sync.json",
-        content: tokens,
-      });
+      files.push({ name: "figma-sync.json", content: tokens });
     } else {
       files[idx].content = tokens;
     }
     workspace.files = files;
 
+    console.log(
+      "figma-sync.json content preview:",
+      JSON.stringify(
+        files[idx === -1 ? files.length - 1 : idx].content,
+        null,
+        2
+      )
+    );
+
     await workspace.save();
 
-    console.log(
-      "syncFigmaTokens: user =",
+    console.log("syncFigmaTokens:", {
       userId,
-      "designSystem =",
       designSystemId,
-      "token keys =",
-      Object.keys(tokens)
-    );
+      tokenKeys: Object.keys(tokens),
+      hasModifiers: !!modifiers,
+    });
 
     return res.json({
       ok: true,
@@ -121,6 +168,8 @@ export async function getWorkspace(req, res, next) {
         deletedPaths: [],
         rowOrder: [],
         figmaTokens: {},
+        figmaModifierOptions: {},
+        groupNameOverrides: {},
       });
     }
     const designSystemId = getDesignSystemIdFromReq(req);
@@ -153,6 +202,8 @@ export async function getWorkspace(req, res, next) {
         deletedPaths: [],
         rowOrder: [],
         figmaTokens: {},
+        figmaModifierOptions: {},
+        groupNameOverrides: {},
       });
     }
     res.json({
@@ -164,6 +215,8 @@ export async function getWorkspace(req, res, next) {
       deletedPaths: workspace.deletedPaths,
       rowOrder: workspace.rowOrder ?? [],
       figmaTokens: workspace.figmaTokens ?? {},
+      figmaModifierOptions: workspace.figmaModifierOptions ?? {},
+      groupNameOverrides: workspace.groupNameOverrides ?? {},
     });
   } catch (err) {
     console.error("getWorkspace error", err);
@@ -195,6 +248,7 @@ export async function saveWorkspace(req, res, next) {
       addedRows,
       deletedPaths,
       rowOrder,
+      groupNameOverrides,
     } = req.body;
 
     console.log(
@@ -216,6 +270,7 @@ export async function saveWorkspace(req, res, next) {
       addedRows: Array.isArray(addedRows) ? addedRows : [],
       deletedPaths: Array.isArray(deletedPaths) ? deletedPaths : [],
       rowOrder: Array.isArray(rowOrder) ? rowOrder : [],
+      groupNameOverrides: groupNameOverrides ?? {},
     };
 
     const query = { user: userId, designSystem: designSystemId };
@@ -240,6 +295,7 @@ export async function saveWorkspace(req, res, next) {
       nameOverrides: workspace.nameOverrides ?? {},
       addedRows: workspace.addedRows,
       deletedPaths: workspace.deletedPaths,
+      groupNameOverrides: workspace.groupNameOverrides ?? {},
     });
   } catch (err) {
     console.error("saveWorkspace error", err);
@@ -290,8 +346,34 @@ export async function exportTokens(req, res, next) {
 
     const format = (req.query.format || "css").toString();
 
-    stage = "mergeTokens";
-    const mergedTokens = mergeWorkspaceFiles(workspace.files);
+    const resolverInput = { ...(workspace.modifiers || {}) };
+
+    const activeModifierLabel =
+      resolverInput.mode ||
+      resolverInput.theme ||
+      resolverInput.colorMode ||
+      null;
+
+    for (const [key, value] of Object.entries(req.query)) {
+      if (key === "format" || key === "designSystemId") continue;
+      if (typeof value === "string" && value.trim() !== "") {
+        resolverInput[key] = value;
+      }
+    }
+
+    stage = "buildDocsFromWorkspace";
+    const docs = {};
+    for (const file of workspace.files) {
+      if (!file || !file.name) continue;
+      docs[file.name] =
+        file.content !== undefined ? file.content : (file.json ?? {});
+    }
+
+    stage = "resolveTokens";
+    const mergedTokens = resolveUploadedDocuments(docs, resolverInput);
+
+    // stage = "mergeTokens";
+    // const mergedTokens = mergeWorkspaceFiles(workspace.files);
 
     pruneDeletedTokens(mergedTokens, workspace.deletedPaths ?? []);
 
@@ -302,6 +384,11 @@ export async function exportTokens(req, res, next) {
 
     applyOverridesToTokens(mergedTokens, cleanedOverrides);
 
+    applyGroupNameOverridesToTokens(
+      mergedTokens,
+      workspace.groupNameOverrides ?? {}
+    );
+
     if (format === "json") {
       if (!mergedTokens || Object.keys(mergedTokens).length === 0) {
         return res.status(400).json({
@@ -311,7 +398,10 @@ export async function exportTokens(req, res, next) {
         });
       }
 
-      const filename = "tokens.dtcg.json";
+      let filename = "tokens.dtcg.json";
+      if (activeModifierLabel) {
+        filename = `tokens.${activeModifierLabel}.dtcg.json`;
+      }
       res.setHeader(
         "Content-Disposition",
         `attachment; filename="${filename}"`
@@ -367,8 +457,21 @@ export async function exportTokens(req, res, next) {
     stage = "sendFile";
     const destPlatformKey = Object.keys(sdConfig.platforms)[0];
     const platformConfig = sdConfig.platforms[destPlatformKey];
-    const destFileName = platformConfig.files[0].destination;
-    const outputFullPath = path.join(platformConfig.buildPath, destFileName);
+
+    const builtFileName = platformConfig.files[0].destination;
+    const outputFullPath = path.join(platformConfig.buildPath, builtFileName);
+    let downloadFileName = builtFileName;
+
+    if (activeModifierLabel) {
+      const extIndex = downloadFileName.lastIndexOf(".");
+      if (extIndex !== -1) {
+        const base = downloadFileName.slice(0, extIndex);
+        const ext = downloadFileName.slice(extIndex);
+        downloadFileName = `${base}.${activeModifierLabel}${ext}`;
+      } else {
+        downloadFileName = `${downloadFileName}.${activeModifierLabel}`;
+      }
+    }
 
     if (!fs.existsSync(outputFullPath)) {
       console.error("exportTokens: output file not found", outputFullPath);
@@ -381,7 +484,7 @@ export async function exportTokens(req, res, next) {
 
     res.setHeader(
       "Content-Disposition",
-      `attachment; filename="${destFileName}"`
+      `attachment; filename="${downloadFileName}"`
     );
     res.setHeader("Content-Type", "application/octet-stream");
 

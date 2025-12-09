@@ -3,6 +3,13 @@ import { useDesignSystemStore } from './DesignSystem'
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue }
 
+export interface FigmaModifierOptions {
+  mode?: {
+    values: string[]
+    default: string
+  }
+}
+
 export interface TokenFileDto {
   name: string
   content: unknown
@@ -17,6 +24,8 @@ export interface TokenWorkspaceDto {
   deletedPaths: string[]
   rowOrder: string[]
   figmaTokens?: Record<string, unknown>
+  figmaModifierOptions?: FigmaModifierOptions
+  groupNameOverrides?: Record<string, string>
 }
 
 interface TokenWorkspaceState {
@@ -30,6 +39,8 @@ interface TokenWorkspaceState {
   loaded: boolean
   currentDesignSystemId: string | null
   figmaTokens: Record<string, unknown>
+  figmaModifierOptions: FigmaModifierOptions
+  groupNameOverrides: Record<string, string>
 }
 function buildWorkspaceUrl(designSystemId: string | null): string {
   if (!designSystemId) {
@@ -50,7 +61,9 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
     rowOrder: [],
     loaded: false,
     currentDesignSystemId: null,
-    figmaTokens: {} as Record<string, unknown>,
+    figmaTokens: {},
+    figmaModifierOptions: {},
+    groupNameOverrides: {} as Record<string, string>,
   }),
 
   actions: {
@@ -70,6 +83,8 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
       this.rowOrder = []
       this.loaded = false
       this.figmaTokens = {}
+      this.figmaModifierOptions = {}
+      this.groupNameOverrides = {}
     },
     async loadFromServer(): Promise<void> {
       try {
@@ -93,6 +108,11 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
 
         const data = (await res.json()) as TokenWorkspaceDto
 
+        console.log(
+          '[WorkspaceStore] loadFromServer raw DTO:',
+          JSON.stringify(data, null, 2).slice(0, 800),
+        )
+
         this.files = Array.isArray(data.files) ? data.files : []
         this.modifiers = data.modifiers ?? {}
         this.overrides = data.overrides ?? {}
@@ -100,7 +120,15 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
         this.addedRows = Array.isArray(data.addedRows) ? data.addedRows : []
         this.deletedPaths = Array.isArray(data.deletedPaths) ? data.deletedPaths : []
         this.rowOrder = Array.isArray(data.rowOrder) ? data.rowOrder : []
-        this.figmaTokens = data.figmaTokens || {}
+        this.figmaTokens = data.figmaTokens ?? {}
+        this.figmaModifierOptions = data.figmaModifierOptions ?? {}
+        this.groupNameOverrides = data.groupNameOverrides ?? {}
+        console.log('[WorkspaceStore] after assigning from DTO:', {
+          files: this.files.map((f) => f.name),
+          modifiers: this.modifiers,
+          figmaTokensKeys: Object.keys(this.figmaTokens),
+          figmaModifierOptions: this.figmaModifierOptions,
+        })
 
         if (Object.keys(this.figmaTokens).length > 0 && this.files.length === 0) {
           this.files = [
@@ -110,7 +138,7 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
             },
           ]
         }
-        console.log('[WorkspaceStore] loaded files from server:', this.files)
+        // console.log('[WorkspaceStore] loaded files from server:', this.files)
 
         const cleaned: Record<string, string> = {}
         const hexPattern = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
@@ -151,6 +179,7 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
           addedRows: this.addedRows,
           deletedPaths: this.deletedPaths,
           rowOrder: this.rowOrder,
+          groupNameOverrides: this.groupNameOverrides,
         }
 
         const res = await fetch(url, {
@@ -165,6 +194,10 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
       } catch (err) {
         console.error('saveToServer failed', err)
       }
+    },
+    renameGroup(groupKey: string, newName: string) {
+      this.groupNameOverrides[groupKey] = newName
+      void this.saveToServer()
     },
   },
 })

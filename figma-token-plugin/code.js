@@ -5,7 +5,6 @@ const STORAGE_KEYS = {
   fileConfig: "tm_fileConfig", // map: { [fileKey]: { designSystemId, jwt } }
 };
 
-// create / read a *per-file* key, stored in this Figma file's pluginData
 function getCurrentFileKey() {
   let key = figma.root.getPluginData("tm_fileKey");
   if (typeof key === "string" && key.length > 0) {
@@ -49,23 +48,43 @@ async function getSettingsForCurrentFile() {
   return { apiUrl, designSystemId, jwt };
 }
 
-// -------------------------------------------------
-//               Figma → DTCG converter
-// -------------------------------------------------
-
 function figmaVariablesToDtcg() {
   const collections = figma.variables.getLocalVariableCollections();
   const variables = figma.variables.getLocalVariables();
 
+  // collectionId -> collection
+  const collectionsById = {};
+  for (let i = 0; i < collections.length; i++) {
+    collectionsById[collections[i].id] = collections[i];
+  }
+
   const dtcgTokens = {};
+  const globalModeKeySet = {};
+
+  // --- helpers ---------------------------------------------------------
 
   function toHexChannel(n) {
     const clamped = Math.max(0, Math.min(255, Math.round(n)));
     return clamped.toString(16).padStart(2, "0");
   }
 
+  function colorToHex(color) {
+    const r8 = color.r * 255;
+    const g8 = color.g * 255;
+    const b8 = color.b * 255;
+    const a = color.a != null ? color.a : 1;
+
+    let hex = "#" + toHexChannel(r8) + toHexChannel(g8) + toHexChannel(b8);
+    if (a < 0.999) {
+      hex += toHexChannel(a * 255); // #RRGGBBAA if alpha not 1
+    }
+    return hex;
+  }
+
   function slugify(name) {
-    return name.trim().replace(/\s+/g, "-");
+    return String(name || "")
+      .trim()
+      .replace(/\s+/g, "-");
   }
 
   function ensureGroup(root, segments) {
@@ -80,100 +99,192 @@ function figmaVariablesToDtcg() {
     return obj;
   }
 
+  function getModeKey(collection, modeId) {
+    if (!collection || !collection.modes) return modeId;
+    for (let i = 0; i < collection.modes.length; i++) {
+      const m = collection.modes[i];
+      if (m.modeId === modeId) {
+        return slugify(m.name || modeId);
+      }
+    }
+    return modeId;
+  }
+
+  function pickDefaultModeKey(modeMap) {
+    const keys = Object.keys(modeMap);
+    if (keys.length === 0) return null;
+    if (keys.indexOf("light") >= 0) return "light"; // prefer "light" if present
+    return keys[0];
+  }
+
+  // --- main loop -------------------------------------------------------
+
   for (let i = 0; i < variables.length; i++) {
     const variable = variables[i];
 
-    // ----- collection name ----- //
+    // 🔴 Only handle color variables for now
+    if (variable.resolvedType !== "COLOR") {
+      continue;
+    }
+
+    // ----- collection name (top-level group) -----
     let collectionName = "default";
-    for (let j = 0; j < collections.length; j++) {
-      if (collections[j].id === variable.variableCollectionId) {
-        collectionName = collections[j].name;
-        break;
-      }
+    const collection = collectionsById[variable.variableCollectionId];
+    if (collection) {
+      collectionName = collection.name || collectionName;
     }
     const collectionKey = slugify(collectionName);
 
-    // groups + token name
+    // ----- variable name → groups + token key -----
     const rawParts = variable.name
       .split("/")
-      .map((p) => slugify(p))
-      .filter(Boolean);
+      .map(function (p) {
+        return slugify(p);
+      })
+      .filter(function (p) {
+        return !!p;
+      });
+
     if (rawParts.length === 0) continue;
 
     const tokenKey = rawParts[rawParts.length - 1];
     const groupSegments = rawParts.slice(0, -1);
-    const containerPath = [collectionKey, ...groupSegments];
+    const containerPath = [collectionKey].concat(groupSegments);
 
-    // value
-    const modeIds = variable.valuesByMode
-      ? Object.keys(variable.valuesByMode)
-      : [];
-    const modeId = modeIds.length > 0 ? modeIds[0] : null;
+    const valuesByMode = variable.valuesByMode || null;
+    const modeIds = valuesByMode ? Object.keys(valuesByMode) : [];
+    const hasModes = modeIds.length > 0;
 
-    let value;
-    if (variable.valuesByMode && modeId) value = variable.valuesByMode[modeId];
-    else if (variable.value !== undefined) value = variable.value;
-    else value = null;
+    let token = null;
 
-    let token;
+    // ---------- COLOR with modes ----------------------------------------
+    if (hasModes) {
+      const valueByMode = {};
+      const modesExt = {};
 
-    if (variable.resolvedType === "COLOR" && value) {
-      const color = value;
-      const r8 = color.r * 255;
-      const g8 = color.g * 255;
-      const b8 = color.b * 255;
-      const a = color.a != null ? color.a : 1;
+      for (let m = 0; m < modeIds.length; m++) {
+        const modeId = modeIds[m];
+        const raw = valuesByMode[modeId];
+        if (!raw) continue;
 
-      let hex = "#" + toHexChannel(r8) + toHexChannel(g8) + toHexChannel(b8);
-      if (a < 0.999) hex += toHexChannel(a * 255);
+        const modeKey = getModeKey(collection, modeId);
+        const hex = colorToHex(raw);
+
+        valueByMode[modeKey] = hex;
+        modesExt[modeKey] = modeId;
+        globalModeKeySet[modeKey] = true;
+      }
+
+      if (Object.keys(valueByMode).length === 0) continue;
+
+      const defaultModeKey = pickDefaultModeKey(valueByMode);
 
       token = {
         $type: "color",
-        $value: hex,
+        // ✅ scalar string – this is what the exporter will see
+        $value: defaultModeKey ? valueByMode[defaultModeKey] : null,
         $extensions: {
           figma: {
             collection: collectionKey,
             variableId: variable.id,
-            modeId: modeId,
+            defaultMode: defaultModeKey,
+            modes: modesExt,
+            // full per-mode map for the web app / resolver
+            valuesByMode: valueByMode,
           },
         },
       };
-    } else if (variable.resolvedType === "FLOAT") {
-      token = {
-        $type: "dimension",
-        $value: value,
-        $extensions: {
-          figma: {
-            collection: collectionKey,
-            variableId: variable.id,
-            modeId: modeId,
-          },
-        },
-      };
+
+      // if for some reason defaultModeKey was null, skip this token
+      if (token.$value == null) continue;
     } else {
-      token = {
-        $type: "string",
-        $value: String(value),
-        $extensions: {
-          figma: {
-            collection: collectionKey,
-            variableId: variable.id,
-            modeId: modeId,
+      // ---------- COLOR without modes ----------------------------------
+      let value = null;
+      if (valuesByMode && modeIds.length > 0) {
+        value = valuesByMode[modeIds[0]];
+      } else if (variable.value != null) {
+        value = variable.value;
+      }
+
+      if (value) {
+        const hex = colorToHex(value);
+        token = {
+          $type: "color",
+          $value: hex,
+          $extensions: {
+            figma: {
+              collection: collectionKey,
+              variableId: variable.id,
+            },
           },
-        },
-      };
+        };
+      }
     }
+
+    if (!token) continue;
 
     const container = ensureGroup(dtcgTokens, containerPath);
     container[tokenKey] = token;
   }
 
-  return dtcgTokens;
+  // ---- build generic "mode" modifier from all seen mode keys ----------
+
+  const modeKeys = Object.keys(globalModeKeySet);
+  let modifiers = {};
+
+  if (modeKeys.length > 0) {
+    const defaultMode = modeKeys.indexOf("light") >= 0 ? "light" : modeKeys[0];
+    modifiers = {
+      mode: {
+        values: modeKeys,
+        default: defaultMode,
+      },
+    };
+  }
+
+  // --- DEBUG: show a sample token so we can verify $value --------------
+
+  (function debugSampleToken() {
+    const collectionKeys = Object.keys(dtcgTokens);
+    if (!collectionKeys.length) {
+      console.log("[Plugin][DEBUG] No tokens generated");
+      return;
+    }
+    const firstCollection = collectionKeys[0];
+    const group = dtcgTokens[firstCollection];
+    const tokenKeys = Object.keys(group);
+    if (!tokenKeys.length) {
+      console.log("[Plugin][DEBUG] First collection has no tokens");
+      return;
+    }
+    const firstTokenKey = tokenKeys[0];
+    const token = group[firstTokenKey];
+    console.log(
+      "[Plugin][DEBUG] Sample token:",
+      firstCollection + "/" + firstTokenKey,
+      "type =",
+      token.$type,
+      "typeof $value =",
+      typeof token.$value,
+      "value =",
+      token.$value,
+      "extensions =",
+      token.$extensions
+    );
+  })();
+
+  console.log("[Plugin] DTCG tokens:", dtcgTokens);
+  console.log("[Plugin] DTCG modifiers:", modifiers);
+
+  return { tokens: dtcgTokens, modifiers: modifiers };
 }
 
 async function syncToTokenManager() {
   try {
-    const { apiUrl, designSystemId, jwt } = await getSettingsForCurrentFile();
+    const settings = await getSettingsForCurrentFile();
+    const apiUrl = settings.apiUrl;
+    const designSystemId = settings.designSystemId;
+    const jwt = settings.jwt;
 
     if (!apiUrl || !designSystemId || !jwt) {
       figma.notify(
@@ -183,7 +294,14 @@ async function syncToTokenManager() {
       return;
     }
 
-    const tokens = figmaVariablesToDtcg();
+    const dtcg = figmaVariablesToDtcg();
+    const tokens = dtcg.tokens;
+    const modifiers = dtcg.modifiers || {};
+
+    console.log("[Plugin] figmaVariablesToDtcg result:", {
+      tokensSample: JSON.stringify(tokens, null, 2).slice(0, 500),
+      modifiers,
+    });
 
     const base = apiUrl.replace(/\/$/, "");
     const url =
@@ -191,23 +309,33 @@ async function syncToTokenManager() {
       "/api/tokens/figma-sync?designSystemId=" +
       encodeURIComponent(designSystemId);
 
-    console.log("Syncing to TokenManager", { url, designSystemId });
+    const payload = { tokens: tokens };
+    if (modifiers && Object.keys(modifiers).length > 0) {
+      payload.modifiers = modifiers;
+    }
+
+    console.log(
+      "[Plugin] Sync payload:",
+      JSON.stringify(payload, null, 2).slice(0, 500)
+    );
 
     const response = await fetch(url, {
       method: "POST",
       headers: {
         "Content-Type": "application/json",
-        Authorization: `Bearer ${jwt}`,
+        Authorization: "Bearer " + jwt,
       },
-      body: JSON.stringify({ tokens }),
+      body: JSON.stringify(payload),
     });
 
     if (!response.ok) {
       const text = await response.text();
       figma.notify("Sync failed: " + response.status + " " + text);
     } else {
-      const text = await response.text();
-      console.log("Sync OK:", text);
+      const resJson = await response.json().catch(function () {
+        return null;
+      });
+      console.log("Sync OK:", resJson || {});
       figma.notify("Tokens synced to Token Manager ✓");
     }
   } catch (err) {

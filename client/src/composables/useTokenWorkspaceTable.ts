@@ -19,6 +19,46 @@ import type { GroupNode, TableRow } from '@/utils/dtcg/token-table-types'
 import { convertHexColorsInDocument } from '@/utils/dtcg/color-conversion'
 import { pruneEmptyChildren } from '@/utils/dtcg/grouping'
 import { useTokenCrud } from './useTokenCrud'
+import type { FigmaModifierOptions } from '@/stores/TokenWorkspace'
+
+function computeDetectedModifiers(
+  docs: Record<string, JsonValue>,
+  wsModifiers: Record<string, unknown> | undefined,
+): DetectedModifier[] {
+  const fromWorkspace: DetectedModifier[] = []
+
+  if (wsModifiers && typeof wsModifiers === 'object') {
+    for (const [name, raw] of Object.entries(wsModifiers)) {
+      let values: string[] = []
+
+      if (Array.isArray(raw)) {
+        values = raw.map((v) => String(v))
+      } else if (raw && typeof raw === 'object') {
+        values = Object.keys(raw as Record<string, unknown>)
+      } else {
+        // scalar (string/number/boolean) → treat as "selected value only"
+        // and ignore for detection – we’ll fall back to resolver docs.
+      }
+
+      if (values.length) {
+        fromWorkspace.push({
+          name,
+          values,
+          defaultValue: values[0],
+        })
+      }
+    }
+  }
+
+  if (fromWorkspace.length) {
+    console.log('[Table] detectedModifiers from workspace.modifiers', fromWorkspace)
+    return fromWorkspace
+  }
+
+  const fromResolver = extractModifiersFromDocs(docs)
+  console.log('[Table] detectedModifiers from resolver docs', fromResolver)
+  return fromResolver
+}
 
 function sortTokensByRowOrder(tokens: ColorTokenEntry[], rowOrder: string[]): ColorTokenEntry[] {
   const order = rowOrder
@@ -54,7 +94,34 @@ export function useTokenWorkspaceTable() {
   const selectedModifiers = ref<Record<string, string>>({})
   const workspaceStore = useTokenWorkspaceStore()
 
-  const groupTreeItems = computed<GroupNode[]>(() => pruneEmptyChildren(buildGroupTree(rows.value)))
+  //const groupTreeItems = computed<GroupNode[]>(() => pruneEmptyChildren(buildGroupTree(rows.value)))
+  const groupTreeItems = computed<GroupNode[]>(() => {
+    const base = pruneEmptyChildren(buildGroupTree(rows.value))
+    const overrides = workspaceStore.groupNameOverrides ?? {}
+
+    function applyOverrides(nodes: GroupNode[]): GroupNode[] {
+      return nodes.map((node) => {
+        const overriddenTitle = overrides[node.id] ?? node.title
+
+        // only keep children when there actually are children
+        if (node.children && node.children.length > 0) {
+          return {
+            id: node.id,
+            title: overriddenTitle,
+            children: applyOverrides(node.children), // node.children is GroupNode[] here
+          }
+        }
+
+        // leaf node: no children property at all → no arrow in v-treeview
+        return {
+          id: node.id,
+          title: overriddenTitle,
+        }
+      })
+    }
+
+    return applyOverrides(base)
+  })
 
   const filteredRows = computed<TableRow[]>(() => {
     const g = activeNodeIds.value[0]
@@ -80,24 +147,34 @@ export function useTokenWorkspaceTable() {
   )
 
   watch(
-    () => workspaceStore.files,
-    async () => {
-      console.log(
-        '[Table] workspaceStore.files changed → syncing table, file count =',
-        workspaceStore.files.length,
-      )
+    () => ({
+      files: workspaceStore.files,
+      modifiers: workspaceStore.modifiers,
+      figmaModifiers: workspaceStore.figmaModifierOptions,
+    }),
+    async (ws) => {
+      console.log('[Modifiers watch] Triggered')
+      console.log('files:', ws.files)
+      console.log('modifiers from store:', ws.modifiers)
+      console.log('figmaModifierOptions from store:', ws.figmaModifiers)
 
-      // Reset table visual state so we don't mix DS1+DS2
+      // reset table visual state
       rows.value = []
       activeNodeIds.value = []
       errorMessage.value = null
 
-      if (workspaceStore.files.length === 0) {
+      if (ws.files.length === 0) {
         uploadedDocs.value = {}
         detectedModifiers.value = []
         selectedModifiers.value = {}
         return
       }
+
+      const mods = computeDetectedModifiers(ws.modifiers, ws.figmaModifiers)
+      console.log('[Modifiers watch] computed modifiers:', mods)
+
+      detectedModifiers.value = mods
+      selectedModifiers.value = { ...ws.modifiers }
 
       await syncFromWorkspaceStoreFiles()
     },
@@ -234,7 +311,14 @@ export function useTokenWorkspaceTable() {
 
     try {
       const input: Record<string, string> = { ...selectedModifiers.value }
+      console.log('[Table] resolveAndPopulateFromUploadedDocs input + docs:', {
+        input,
+        docNames: Object.keys(docs),
+      })
+
       const resolvedDoc = resolveUploadedDocuments(docs, input)
+      console.log('[Table] resolvedDoc sample:', JSON.stringify(resolvedDoc, null, 2).slice(0, 500))
+
       await populateTableFromDocument(resolvedDoc)
       if (rows.value.length > 0) {
         errorMessage.value = null
@@ -255,9 +339,15 @@ export function useTokenWorkspaceTable() {
       selectedModifiers.value[name] = value
       workspaceStore.modifiers[name] = value
     }
+    console.log('[Table] selectedModifiers after change:', { ...selectedModifiers.value })
+    console.log('[Table] workspaceStore.modifiers after change:', { ...workspaceStore.modifiers })
 
-    void workspaceStore.saveToServer()
-    void resolveAndPopulateFromUploadedDocs()
+    void workspaceStore.saveToServer().then(() => {
+      console.log(
+        '[Table] workspaceStore.saveToServer finished, calling resolveAndPopulateFromUploadedDocs',
+      )
+      void resolveAndPopulateFromUploadedDocs()
+    })
   }
 
   async function onFileChange(newFiles: File[] | File | null): Promise<void> {
@@ -321,21 +411,69 @@ export function useTokenWorkspaceTable() {
 
     await resolveAndPopulateFromUploadedDocs()
   }
-  async function syncFromWorkspaceStoreFiles(): Promise<void> {
-    // 1) copy files from store → uploadedDocs
-    const docs: Record<string, JsonValue> = {}
+  // async function syncFromWorkspaceStoreFiles(): Promise<void> {
+  //   // 1) copy files from store → uploadedDocs
+  //   const docs: Record<string, JsonValue> = {}
 
+  //   for (const file of workspaceStore.files) {
+  //     docs[file.name] = file.content as JsonValue
+  //   }
+  //   uploadedDocs.value = docs
+
+  //   // 2) rebuild modifiers
+  //   detectedModifiers.value = extractModifiersFromDocs(docs)
+  //   selectedModifiers.value = { ...workspaceStore.modifiers }
+
+  //   if (Object.keys(selectedModifiers.value).length === 0) {
+  //     for (const mod of detectedModifiers.value) {
+  //       const initial = mod.defaultValue ?? (mod.values.length > 0 ? mod.values[0] : '')
+  //       if (initial) {
+  //         selectedModifiers.value[mod.name] = initial
+  //       }
+  //     }
+  //   }
+
+  //   // 3) actually rebuild rows
+  //   await resolveAndPopulateFromUploadedDocs()
+  // }
+
+  async function syncFromWorkspaceStoreFiles(): Promise<void> {
+    const docs: Record<string, JsonValue> = {}
     for (const file of workspaceStore.files) {
       docs[file.name] = file.content as JsonValue
     }
     uploadedDocs.value = docs
 
-    // 2) rebuild modifiers
-    detectedModifiers.value = extractModifiersFromDocs(docs)
+    const resolverMods = extractModifiersFromDocs(docs)
+
+    const combined: DetectedModifier[] = [...resolverMods]
+
+    const figmaOpts = workspaceStore.figmaModifierOptions as FigmaModifierOptions
+    console.log('[syncFromWorkspaceStoreFiles] figmaModifierOptions =', figmaOpts)
+
+    const modeOpt = figmaOpts.mode
+    if (modeOpt && Array.isArray(modeOpt.values)) {
+      const modeMod: DetectedModifier = {
+        name: 'mode',
+        values: modeOpt.values,
+        defaultValue: modeOpt.default ?? modeOpt.values[0],
+      }
+
+      // avoid duplicate "mode" if resolver already defined one
+      const hasModeAlready = combined.some((m) => m.name === 'mode')
+      if (!hasModeAlready) {
+        combined.push(modeMod)
+      }
+    }
+
+    detectedModifiers.value = combined
+    console.log('[syncFromWorkspaceStoreFiles] detectedModifiers =', combined)
+
+    // 4) restore / initialize selected modifiers
     selectedModifiers.value = { ...workspaceStore.modifiers }
 
     if (Object.keys(selectedModifiers.value).length === 0) {
-      for (const mod of detectedModifiers.value) {
+      for (const mod of combined) {
         const initial = mod.defaultValue ?? (mod.values.length > 0 ? mod.values[0] : '')
         if (initial) {
           selectedModifiers.value[mod.name] = initial
@@ -343,7 +481,7 @@ export function useTokenWorkspaceTable() {
       }
     }
 
-    // 3) actually rebuild rows
+    // 5) re-resolve tokens with current modifier selection
     await resolveAndPopulateFromUploadedDocs()
   }
 

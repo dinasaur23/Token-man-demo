@@ -3,6 +3,7 @@ import { type GridApi, type GridReadyEvent } from 'ag-grid-community'
 import { useTokenWorkspaceTable } from './useTokenWorkspaceTable'
 import { useTokenGridContextMenu } from './useTokenGridContextMenu'
 import type { TableRow, GroupNode } from '@/utils/dtcg/token-table-types'
+import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 
 export function useColorTableComponent() {
   const files = ref<File[] | null>(null)
@@ -39,11 +40,38 @@ export function useColorTableComponent() {
   const newTokenName = ref('')
   const currentTokenGroupId = ref<string | null>(null)
 
+  const wsStore = useTokenWorkspaceStore()
+  const editingGroupId = ref<string | null>(null)
+  const editingGroupName = ref('')
+
   const addAliasDialog = ref(false)
   const aliasSourcePath = ref('')
   const currentAliasRow = ref<TableRow | null>(null)
   const aliasErrorMessage = ref<string | null>(null)
   const allTokenPaths = computed<string[]>(() => rows.value.map((row) => row.path))
+
+  function startRenameGroup(item: GroupNode): void {
+    editingGroupId.value = item.id
+    editingGroupName.value = item.title ?? ''
+  }
+
+  async function confirmRenameGroup(): Promise<void> {
+    const id = editingGroupId.value
+    const name = editingGroupName.value.trim()
+    if (!id || !name) {
+      editingGroupId.value = null
+      return
+    }
+
+    wsStore.groupNameOverrides[id] = name
+    await wsStore.saveToServer()
+
+    editingGroupId.value = null
+  }
+
+  function cancelRenameGroup(): void {
+    editingGroupId.value = null
+  }
 
   function openAliasDialogForRow(row: TableRow): void {
     currentAliasRow.value = row
@@ -160,9 +188,8 @@ export function useColorTableComponent() {
       return
     }
 
-    const groupSegments = groupId.split('.') // e.g. ["semantic","mapped","text-bg"]
+    const groupSegments = groupId.split('.')
 
-    // reuse your existing helper that creates a token under a group
     await addGroupWithToken(groupSegments, name)
 
     addTokenDialog.value = false
@@ -283,5 +310,11 @@ export function useColorTableComponent() {
     closeMenu,
     convertRowToAlias,
     clearAliasForRow,
+
+    editingGroupId,
+    editingGroupName,
+    startRenameGroup,
+    confirmRenameGroup,
+    cancelRenameGroup,
   }
 }

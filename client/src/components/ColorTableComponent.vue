@@ -67,7 +67,23 @@
           rounded
           style="height: 70vh"
         >
-          <!-- actions at the end of each row -->
+          <template #title="{ item }">
+            <div v-if="editingGroupId !== item.id" @dblclick.stop="startRenameGroup(item)">
+              {{ item.title }}
+            </div>
+            <v-text-field
+              v-else
+              v-model="editingGroupName"
+              variant="underlined"
+              density="compact"
+              hide-details
+              autofocus
+              @blur="confirmRenameGroup"
+              @keyup.enter="confirmRenameGroup"
+              @keyup.esc="cancelRenameGroup"
+              style="max-width: 180px"
+            />
+          </template>
           <template #append="{ item }">
             <v-menu location="end" origin="overlap" :close-on-content-click="false">
               <template #activator="{ props }">
@@ -86,7 +102,9 @@
                 <v-list-item @click="onAddChildGroup(item)">
                   <v-list-item-title>Add child group</v-list-item-title>
                 </v-list-item>
-
+                <v-list-item @click="startRenameGroup(item)">
+                  <v-list-item-title>Rename group</v-list-item-title>
+                </v-list-item>
                 <v-list-item @click="onDeleteGroup(item)">
                   <v-list-item-title class="text-error">Delete group</v-list-item-title>
                 </v-list-item>
@@ -303,6 +321,12 @@ const {
   closeMenu,
   convertRowToAlias,
   clearAliasForRow,
+
+  editingGroupId,
+  editingGroupName,
+  startRenameGroup,
+  confirmRenameGroup,
+  cancelRenameGroup,
 } = useColorTableComponent()
 
 const { columnDefs, defaultColDef } = useTokenGridColumns(onActionButtonClick)

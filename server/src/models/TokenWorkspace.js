@@ -30,6 +30,7 @@ const tokenWorkspaceSchema = new Schema(
       type: Schema.Types.Mixed,
       default: {},
     },
+
     overrides: {
       type: Schema.Types.Mixed,
       default: {},
@@ -37,6 +38,14 @@ const tokenWorkspaceSchema = new Schema(
     nameOverrides: { type: Schema.Types.Mixed, default: {} },
     rowOrder: { type: [String], default: [] },
     figmaTokens: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
+    figmaModifierOptions: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
+    groupNameOverrides: {
       type: Object,
       default: {},
     },
