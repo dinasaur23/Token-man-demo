@@ -83,13 +83,15 @@ export async function syncFigmaTokens(req, res, next) {
         .json({ ok: false, message: "designSystemId is required" });
     }
 
-    // plugin sends { tokens, modifiers? }
     const { tokens, modifiers } = req.body || {};
     if (!tokens || typeof tokens !== "object") {
       return res
         .status(400)
         .json({ ok: false, message: "Missing or invalid tokens payload" });
     }
+
+    const normalizedModifiers =
+      modifiers && typeof modifiers === "object" ? modifiers : {};
 
     let workspace = await TokenWorkspace.findOne({
       user: userId,
@@ -108,13 +110,11 @@ export async function syncFigmaTokens(req, res, next) {
         deletedPaths: [],
         rowOrder: [],
         figmaTokens: tokens,
-        figmaModifierOptions: modifiers || {},
+        figmaModifierOptions: normalizedModifiers,
       });
     } else {
       workspace.figmaTokens = tokens;
-      if (modifiers && typeof modifiers === "object") {
-        workspace.figmaModifierOptions = modifiers;
-      }
+      workspace.figmaModifierOptions = normalizedModifiers;
     }
 
     const files = workspace.files || [];

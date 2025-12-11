@@ -23,6 +23,10 @@ interface CrudDeps {
   workspaceStore: WorkspaceStore
   persistUploadedDocsAndReload: () => Promise<void>
 }
+interface ResolverModifierLike {
+  default?: string
+  contexts?: Record<string, Array<{ $ref: string }> | JsonValue>
+}
 
 type Json = unknown
 
@@ -103,6 +107,72 @@ function ensureRowOrder(store: WorkspaceStore): string[] {
     store.rowOrder = []
   }
   return store.rowOrder
+}
+
+function isResolverDocument(value: JsonValue): value is JsonRecord {
+  return isJsonRecord(value) && Array.isArray((value as JsonRecord).resolutionOrder)
+}
+
+// Find the resolver document, if any, among uploaded docs
+function findResolverDoc(
+  docs: Record<string, JsonValue>,
+): { fileName: string; doc: JsonRecord } | null {
+  for (const [fileName, raw] of Object.entries(docs)) {
+    if (isResolverDocument(raw)) {
+      return { fileName, doc: raw as JsonRecord }
+    }
+  }
+  return null
+}
+
+function hasPathInDoc(doc: JsonRecord, segments: string[]): boolean {
+  return getNodeAtPath(doc, segments) !== undefined
+}
+
+function pickDocForRowPath(
+  docs: Record<string, JsonValue>,
+  rowPath: string,
+  workspaceStore: WorkspaceStore,
+): { fileName: string; doc: JsonRecord } | null {
+  const segments = rowPath.split('.')
+  const resolverInfo = findResolverDoc(docs)
+
+  if (resolverInfo) {
+    const resolver = resolverInfo.doc
+    const mods = (resolver.modifiers ?? {}) as Record<string, ResolverModifierLike>
+    const wsMods = (workspaceStore.modifiers ?? {}) as Record<string, string>
+
+    // Pick the first modifier that has a selected value in the workspace
+    const activeModName = Object.keys(mods).find((name) => wsMods[name])
+    if (activeModName) {
+      const mod = mods[activeModName]
+      const selectedValue: string = wsMods[activeModName] ?? mod.default ?? null
+
+      if (selectedValue && mod.contexts && mod.contexts[selectedValue]) {
+        const sources = mod.contexts[selectedValue] as Array<{ $ref: string }>
+        const candidateFiles = sources
+          .map((s) => (typeof s.$ref === 'string' ? s.$ref.split('#')[0] : ''))
+          .filter(Boolean)
+
+        // Among candidate files, pick the one that actually contains the path
+        for (const fileName of candidateFiles) {
+          const raw = docs[fileName]
+          if (!isJsonRecord(raw)) continue
+          const doc = raw as JsonRecord
+          if (hasPathInDoc(doc, segments)) {
+            return { fileName, doc }
+          }
+        }
+      }
+    }
+  }
+  const found = findDocContainingPath(docs, segments)
+  if (!found || !isJsonRecord(found.doc)) return null
+
+  return {
+    fileName: found.fileName,
+    doc: found.doc as JsonRecord,
+  }
 }
 
 export function useTokenCrud({
@@ -426,6 +496,62 @@ export function useTokenCrud({
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
+  // async function setTokenAlias(row: TableRow, aliasPath: string): Promise<void> {
+  //   const trimmedInput = aliasPath.trim()
+  //   if (!trimmedInput) {
+  //     throw new Error('Alias path cannot be empty.')
+  //   }
+
+  //   const targetNormalized = normalizeAliasTarget(trimmedInput)
+
+  //   if (targetNormalized === row.path) {
+  //     throw new Error('A token cannot alias itself.')
+  //   }
+
+  //   const docs = uploadedDocs.value
+  //   const fileNames = Object.keys(docs)
+  //   if (!fileNames.length) {
+  //     throw new Error('No token files are loaded.')
+  //   }
+
+  //   const fileName = fileNames[0]
+  //   const rawDoc = docs[fileName]
+  //   if (!isJsonRecord(rawDoc)) {
+  //     throw new Error('First uploaded token file is not an object.')
+  //   }
+
+  //   const doc = rawDoc as JsonRecord
+
+  //   const fromSegments = row.path.split('.')
+  //   const targetSegments = targetNormalized.split('.')
+
+  //   const targetNode = getNodeAtPath(doc, targetSegments)
+  //   if (!targetNode) {
+  //     throw new Error(`Alias target "${targetNormalized}" does not exist.`)
+  //   }
+
+  //   if (wouldCreateAliasCycle(doc, fromSegments, targetSegments)) {
+  //     throw new Error(
+  //       `Alias "${row.path}" → "${targetNormalized}" would create a circular reference.`,
+  //     )
+  //   }
+
+  //   const pathSegments = row.path.split('.')
+  //   const key = pathSegments.pop()!
+  //   const parentPath = pathSegments
+
+  //   const parent = ensurePath(doc, parentPath)
+
+  //   const aliasValue =
+  //     trimmedInput.startsWith('{') && trimmedInput.endsWith('}')
+  //       ? trimmedInput
+  //       : `{${targetNormalized}}`
+
+  //   parent[key] = { $type: 'color', $value: aliasValue }
+
+  //   uploadedDocs.value[fileName] = doc
+  //   await persistUploadedDocsAndReload()
+  // }
   async function setTokenAlias(row: TableRow, aliasPath: string): Promise<void> {
     const trimmedInput = aliasPath.trim()
     if (!trimmedInput) {
@@ -444,29 +570,40 @@ export function useTokenCrud({
       throw new Error('No token files are loaded.')
     }
 
-    const fileName = fileNames[0]
-    const rawDoc = docs[fileName]
-    if (!isJsonRecord(rawDoc)) {
-      throw new Error('First uploaded token file is not an object.')
-    }
-
-    const doc = rawDoc as JsonRecord
-
-    const fromSegments = row.path.split('.')
     const targetSegments = targetNormalized.split('.')
 
-    const targetNode = getNodeAtPath(doc, targetSegments)
-    if (!targetNode) {
+    // 1) Check that the alias target exists in *some* uploaded document
+    let targetExists = false
+    for (const raw of Object.values(docs)) {
+      if (!isJsonRecord(raw)) continue
+      if (getNodeAtPath(raw as JsonRecord, targetSegments) !== undefined) {
+        targetExists = true
+        break
+      }
+    }
+    if (!targetExists) {
       throw new Error(`Alias target "${targetNormalized}" does not exist.`)
     }
 
+    // 2) Decide which document to edit for THIS token (resolver + mode aware)
+    const picked = pickDocForRowPath(docs, row.path, workspaceStore)
+    if (!picked) {
+      throw new Error(`Token "${row.path}" was not found in any uploaded document.`)
+    }
+
+    const { fileName, doc } = picked
+
+    const fromSegments = row.path.split('.')
+
+    // 3) Cycle detection within the chosen document (as before)
     if (wouldCreateAliasCycle(doc, fromSegments, targetSegments)) {
       throw new Error(
         `Alias "${row.path}" → "${targetNormalized}" would create a circular reference.`,
       )
     }
 
-    const pathSegments = row.path.split('.')
+    // 4) Actually write alias value into the correct document
+    const pathSegments = row.path.split('.') // e.g. ["alias","color","background"]
     const key = pathSegments.pop()!
     const parentPath = pathSegments
 
@@ -483,6 +620,39 @@ export function useTokenCrud({
     await persistUploadedDocsAndReload()
   }
 
+  // async function clearTokenAlias(row: TableRow): Promise<void> {
+  //   const docs = uploadedDocs.value
+  //   const fileNames = Object.keys(docs)
+  //   if (!fileNames.length) {
+  //     console.warn('clearTokenAlias: no uploaded docs')
+  //     return
+  //   }
+
+  //   const fileName = fileNames[0]
+  //   const rawDoc = docs[fileName]
+  //   if (!isJsonRecord(rawDoc)) {
+  //     console.warn('clearTokenAlias: first uploaded doc is not an object')
+  //     return
+  //   }
+
+  //   const doc = rawDoc as JsonRecord
+
+  //   const pathSegments = row.path.split('.') // e.g. ["global","palette","neutral","50"]
+  //   const key = pathSegments.pop()!
+  //   const parentPath = pathSegments
+
+  //   const parent = ensurePath(doc, parentPath)
+
+  //   const hex = row.hex
+
+  //   parent[key] = {
+  //     $type: 'color',
+  //     $value: hex,
+  //   }
+
+  //   uploadedDocs.value[fileName] = doc
+  //   await persistUploadedDocsAndReload()
+  // }
   async function clearTokenAlias(row: TableRow): Promise<void> {
     const docs = uploadedDocs.value
     const fileNames = Object.keys(docs)
@@ -491,21 +661,19 @@ export function useTokenCrud({
       return
     }
 
-    const fileName = fileNames[0]
-    const rawDoc = docs[fileName]
-    if (!isJsonRecord(rawDoc)) {
-      console.warn('clearTokenAlias: first uploaded doc is not an object')
+    const picked = pickDocForRowPath(docs, row.path, workspaceStore)
+    if (!picked) {
+      console.warn('clearTokenAlias: token not found in any uploaded doc', row.path)
       return
     }
 
-    const doc = rawDoc as JsonRecord
+    const { fileName, doc } = picked
 
-    const pathSegments = row.path.split('.') // e.g. ["global","palette","neutral","50"]
+    const pathSegments = row.path.split('.') // e.g. ["alias","color","background"]
     const key = pathSegments.pop()!
     const parentPath = pathSegments
 
     const parent = ensurePath(doc, parentPath)
-
     const hex = row.hex
 
     parent[key] = {

@@ -16,16 +16,23 @@
       <TokenExportDialog />
     </v-col>
 
-    <v-col v-for="mod in detectedModifiers" :key="mod.name" cols="3">
-      <v-select
-        :label="mod.name"
-        :items="mod.values"
-        :model-value="selectedModifiers[mod.name]"
-        @update:model-value="(value) => onModifierChange(mod.name, value)"
-        variant="outlined"
-        density="compact"
-      />
-    </v-col>
+    <div v-if="visibleModifiers.length && groupHasModes">
+      <v-col v-for="mod in visibleModifiers" :key="mod.name">
+        <v-select
+          :label="mod.name"
+          :items="
+            groupScopedModifierName === mod.name && modeOptionsForActiveGroup.length
+              ? modeOptionsForActiveGroup
+              : mod.values
+          "
+          :model-value="selectedModifiers[mod.name]"
+          @update:model-value="(value) => onModifierChange(mod.name, value)"
+          variant="outlined"
+          density="compact"
+          style="min-width: 25vw"
+        />
+      </v-col>
+    </div>
   </v-row>
 
   <v-row v-if="errorMessage" class="mt-2">
@@ -271,6 +278,7 @@ import { themeQuartz } from 'ag-grid-community'
 import TokenExportDialog from './TokenExportDialog.vue'
 import { useTokenGridColumns } from '@/composables/useTokenGridColumns'
 import { useColorTableComponent } from '@/composables/useColorTableComponent'
+import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 
 const myTheme = themeQuartz.withParams({ accentColor: 'red' })
 const gridTheme = ref(myTheme)
@@ -280,10 +288,14 @@ const {
   rows,
   errorMessage,
   activeNodeIds,
-  detectedModifiers,
+  //detectedModifiers,
   selectedModifiers,
   groupTreeItems,
   filteredRows,
+  groupScopedModifierName,
+  modeOptionsForActiveGroup,
+  visibleModifiers,
+  groupHasModes,
   onFileChange,
   onModifierChange,
 
@@ -330,6 +342,8 @@ const {
 } = useColorTableComponent()
 
 const { columnDefs, defaultColDef } = useTokenGridColumns(onActionButtonClick)
+const ws = useTokenWorkspaceStore()
+;(window as unknown as { ws: typeof ws }).ws = ws
 </script>
 
 <style scoped>

@@ -3,11 +3,14 @@ import { useDesignSystemStore } from './DesignSystem'
 
 export type JsonValue = string | number | boolean | null | JsonValue[] | { [k: string]: JsonValue }
 
+export interface FigmaModeOptions {
+  values: string[]
+  default?: string
+  groupModes?: Record<string, string[]>
+}
+
 export interface FigmaModifierOptions {
-  mode?: {
-    values: string[]
-    default: string
-  }
+  mode?: FigmaModeOptions
 }
 
 export interface TokenFileDto {

@@ -62,7 +62,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue'
+import { ref, computed, onMounted, watch } from 'vue'
 import { useRouter } from 'vue-router'
 import { useDesignSystemStore } from '@/stores/DesignSystem'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
@@ -77,7 +77,22 @@ const selectedId = ref<string | null>(null)
 onMounted(async () => {
   await dsStore.fetchAll()
   selectedId.value = dsStore.currentId
+
+  const current = dsStore.items.find((ds) => ds.id === dsStore.currentId)
+  search.value = current?.name ?? ''
+
   console.log('StartPage mounted, design systems:', dsStore.items)
+})
+
+watch(search, (val) => {
+  const trimmed = val.trim().toLowerCase()
+  const current = dsStore.items.find((ds) => ds.id === selectedId.value)
+
+  if (!current) return
+
+  if (trimmed !== current.name.toLowerCase()) {
+    selectedId.value = null
+  }
 })
 
 const designSystemOptions = computed(() =>

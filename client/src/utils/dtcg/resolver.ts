@@ -32,7 +32,6 @@ export interface ResolverModifier extends JsonObject {
 }
 
 export interface ResolverOrderEntry extends JsonObject {
-  // "#/sets/name", "#/modifiers/name" or "tokens.json"
   $ref: string
 }
 
@@ -46,6 +45,11 @@ export interface ResolverDocument extends JsonObject {
 }
 
 export type ResolverInput = Record<string, string>
+
+export interface GroupScopedModifierInfo {
+  modifierName: string
+  groupModes: Record<string, string[]>
+}
 
 // ---------- small helpers ----------------------------------------------------
 
@@ -399,4 +403,77 @@ export function extractModifiersFromDocs(docs: Record<string, JsonValue>): Detec
     values: Object.keys(modifier.contexts),
     defaultValue: modifier.default,
   }))
+}
+export function extractGroupModesFromResolverDocs(
+  docs: Record<string, JsonValue>,
+  preferredModifierName = 'mode',
+): GroupScopedModifierInfo | null {
+  const resolverEntry = Object.entries(docs).find(([, value]) => isResolverDocument(value))
+  if (!resolverEntry) return null
+
+  const resolverValue = resolverEntry[1]
+  if (!isResolverDocument(resolverValue)) {
+    return null
+  }
+
+  const resolver = resolverValue
+  const modifiers = resolver.modifiers ?? {}
+
+  const modifierNames = Object.keys(modifiers)
+  if (modifierNames.length === 0) return null
+
+  // helper: only return name if it actually exists in the resolver
+  const pickIfExists = (name: string): string | null => (name in modifiers ? name : null)
+
+  let modifierName: string | null = null
+
+  // 1. explicit preferred name, if it exists
+  if (preferredModifierName) {
+    modifierName = pickIfExists(preferredModifierName)
+  }
+
+  // 2. otherwise try our common names in order
+  if (!modifierName) {
+    modifierName =
+      pickIfExists('mode') ?? // old case (light/dark)
+      pickIfExists('density') ?? // your example5.resolver
+      null
+  }
+
+  // 3. final fallback → first modifier defined in the resolver
+  if (!modifierName) {
+    modifierName = modifierNames[0]
+  }
+
+  const modifier = modifiers[modifierName]
+  if (!modifier) return null
+
+  const groupMap = new Map<string, Set<string>>()
+
+  for (const [contextValue, sources] of Object.entries(modifier.contexts ?? {})) {
+    for (const src of sources) {
+      const tokensObject = loadTokenSource(src, docs)
+      if (!isJsonObject(tokensObject)) continue
+
+      for (const groupKey of Object.keys(tokensObject)) {
+        if (!groupKey) continue
+        let set = groupMap.get(groupKey)
+        if (!set) {
+          set = new Set<string>()
+          groupMap.set(groupKey, set)
+        }
+        set.add(contextValue)
+      }
+    }
+  }
+
+  const groupModes: Record<string, string[]> = {}
+  for (const [groupKey, set] of groupMap.entries()) {
+    groupModes[groupKey] = Array.from(set)
+  }
+
+  return {
+    modifierName,
+    groupModes,
+  }
 }

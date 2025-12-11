@@ -39,8 +39,6 @@ export async function listDesignSystems(req, res, next) {
   }
 }
 
-// POST /api/design-systems
-// body: { name: string }
 export async function createDesignSystem(req, res, next) {
   let stage = "start";
   try {

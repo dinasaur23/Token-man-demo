@@ -52,7 +52,6 @@ function figmaVariablesToDtcg() {
   const collections = figma.variables.getLocalVariableCollections();
   const variables = figma.variables.getLocalVariables();
 
-  // collectionId -> collection
   const collectionsById = {};
   for (let i = 0; i < collections.length; i++) {
     collectionsById[collections[i].id] = collections[i];
@@ -60,8 +59,9 @@ function figmaVariablesToDtcg() {
 
   const dtcgTokens = {};
   const globalModeKeySet = {};
-
-  // --- helpers ---------------------------------------------------------
+  const groupModeKeySet = {};
+  const variablesById = {};
+  const pathMap = {};
 
   function toHexChannel(n) {
     const clamped = Math.max(0, Math.min(255, Math.round(n)));
@@ -113,21 +113,18 @@ function figmaVariablesToDtcg() {
   function pickDefaultModeKey(modeMap) {
     const keys = Object.keys(modeMap);
     if (keys.length === 0) return null;
-    if (keys.indexOf("light") >= 0) return "light"; // prefer "light" if present
+    if (keys.indexOf("light") >= 0) return "light";
     return keys[0];
   }
 
-  // --- main loop -------------------------------------------------------
-
   for (let i = 0; i < variables.length; i++) {
     const variable = variables[i];
+    variablesById[variable.id] = variable;
 
-    // 🔴 Only handle color variables for now
     if (variable.resolvedType !== "COLOR") {
       continue;
     }
 
-    // ----- collection name (top-level group) -----
     let collectionName = "default";
     const collection = collectionsById[variable.variableCollectionId];
     if (collection) {
@@ -135,7 +132,39 @@ function figmaVariablesToDtcg() {
     }
     const collectionKey = slugify(collectionName);
 
-    // ----- variable name → groups + token key -----
+    const rawParts = variable.name
+      .split("/")
+      .map(function (p) {
+        return slugify(p);
+      })
+      .filter(function (p) {
+        return !!p;
+      });
+
+    if (rawParts.length === 0) continue;
+
+    const tokenKey = rawParts[rawParts.length - 1];
+    const groupSegments = rawParts.slice(0, -1);
+    const containerPath = [collectionKey].concat(groupSegments);
+    const fullPath = containerPath.concat(tokenKey).join(".");
+
+    pathMap[variable.id] = fullPath;
+  }
+
+  for (let i = 0; i < variables.length; i++) {
+    const variable = variables[i];
+
+    if (variable.resolvedType !== "COLOR") {
+      continue;
+    }
+
+    let collectionName = "default";
+    const collection = collectionsById[variable.variableCollectionId];
+    if (collection) {
+      collectionName = collection.name || collectionName;
+    }
+    const collectionKey = slugify(collectionName);
+
     const rawParts = variable.name
       .split("/")
       .map(function (p) {
@@ -153,11 +182,10 @@ function figmaVariablesToDtcg() {
 
     const valuesByMode = variable.valuesByMode || null;
     const modeIds = valuesByMode ? Object.keys(valuesByMode) : [];
-    const hasModes = modeIds.length > 0;
+    const hasModes = modeIds.length > 1;
 
     let token = null;
 
-    // ---------- COLOR with modes ----------------------------------------
     if (hasModes) {
       const valueByMode = {};
       const modesExt = {};
@@ -168,11 +196,27 @@ function figmaVariablesToDtcg() {
         if (!raw) continue;
 
         const modeKey = getModeKey(collection, modeId);
-        const hex = colorToHex(raw);
 
-        valueByMode[modeKey] = hex;
+        let modeValue = null;
+
+        if (raw.type === "VARIABLE_ALIAS") {
+          const target = variablesById[raw.id];
+          const targetPath = target ? pathMap[target.id] : null;
+          if (!target || !targetPath) {
+            continue;
+          }
+          modeValue = "{" + targetPath + "}";
+        } else {
+          modeValue = colorToHex(raw);
+        }
+
+        valueByMode[modeKey] = modeValue;
         modesExt[modeKey] = modeId;
         globalModeKeySet[modeKey] = true;
+        if (!groupModeKeySet[collectionKey]) {
+          groupModeKeySet[collectionKey] = {};
+        }
+        groupModeKeySet[collectionKey][modeKey] = true;
       }
 
       if (Object.keys(valueByMode).length === 0) continue;
@@ -181,7 +225,6 @@ function figmaVariablesToDtcg() {
 
       token = {
         $type: "color",
-        // ✅ scalar string – this is what the exporter will see
         $value: defaultModeKey ? valueByMode[defaultModeKey] : null,
         $extensions: {
           figma: {
@@ -189,16 +232,13 @@ function figmaVariablesToDtcg() {
             variableId: variable.id,
             defaultMode: defaultModeKey,
             modes: modesExt,
-            // full per-mode map for the web app / resolver
             valuesByMode: valueByMode,
           },
         },
       };
 
-      // if for some reason defaultModeKey was null, skip this token
       if (token.$value == null) continue;
     } else {
-      // ---------- COLOR without modes ----------------------------------
       let value = null;
       if (valuesByMode && modeIds.length > 0) {
         value = valuesByMode[modeIds[0]];
@@ -207,17 +247,30 @@ function figmaVariablesToDtcg() {
       }
 
       if (value) {
-        const hex = colorToHex(value);
-        token = {
-          $type: "color",
-          $value: hex,
-          $extensions: {
-            figma: {
-              collection: collectionKey,
-              variableId: variable.id,
+        let finalValue = null;
+
+        if (value.type === "VARIABLE_ALIAS") {
+          const target = variablesById[value.id];
+          const targetPath = target ? pathMap[target.id] : null;
+          if (target && targetPath) {
+            finalValue = "{" + targetPath + "}";
+          }
+        } else {
+          finalValue = colorToHex(value);
+        }
+
+        if (finalValue) {
+          token = {
+            $type: "color",
+            $value: finalValue,
+            $extensions: {
+              figma: {
+                collection: collectionKey,
+                variableId: variable.id,
+              },
             },
-          },
-        };
+          };
+        }
       }
     }
 
@@ -227,22 +280,29 @@ function figmaVariablesToDtcg() {
     container[tokenKey] = token;
   }
 
-  // ---- build generic "mode" modifier from all seen mode keys ----------
-
   const modeKeys = Object.keys(globalModeKeySet);
   let modifiers = {};
 
   if (modeKeys.length > 0) {
     const defaultMode = modeKeys.indexOf("light") >= 0 ? "light" : modeKeys[0];
+
+    // Build groupModes from groupModeKeySet
+    const groupModes = {};
+    for (const groupKey in groupModeKeySet) {
+      if (!Object.prototype.hasOwnProperty.call(groupModeKeySet, groupKey))
+        continue;
+      // keys of the per-group mode set, sorted just for stability
+      groupModes[groupKey] = Object.keys(groupModeKeySet[groupKey]).sort();
+    }
+
     modifiers = {
       mode: {
         values: modeKeys,
         default: defaultMode,
+        groupModes, // <-- dynamic map; no hard-coding
       },
     };
   }
-
-  // --- DEBUG: show a sample token so we can verify $value --------------
 
   (function debugSampleToken() {
     const collectionKeys = Object.keys(dtcgTokens);
