@@ -1,17 +1,18 @@
 // ---------------- shared helpers ----------------
 
 const STORAGE_KEYS = {
-  apiUrl: "tm_apiUrl", // global for all files
-  fileConfig: "tm_fileConfig", // map: { [fileKey]: { designSystemId, jwt } }
+  apiUrl: "tm_apiUrl",
+  fileConfig: "tm_fileConfig",
+  jwt: "tm_jwt",
 };
+
+const DEFAULT_API_URL = "http://localhost:8081";
 
 function getCurrentFileKey() {
   let key = figma.root.getPluginData("tm_fileKey");
   if (typeof key === "string" && key.length > 0) {
     return key;
   }
-
-  // generate a new random key and store it on this file
   key =
     "file-" +
     Date.now().toString(36) +
@@ -26,16 +27,17 @@ function getCurrentFileKey() {
 async function getSettingsForCurrentFile() {
   const fileKey = getCurrentFileKey();
 
-  const [apiUrl, fileConfig] = await Promise.all([
+  const [apiUrl, fileConfig, globalJwt] = await Promise.all([
     figma.clientStorage.getAsync(STORAGE_KEYS.apiUrl),
     figma.clientStorage.getAsync(STORAGE_KEYS.fileConfig),
+    figma.clientStorage.getAsync(STORAGE_KEYS.jwt),
   ]);
 
   const config =
     fileConfig && typeof fileConfig === "object" ? fileConfig[fileKey] : null;
 
   const designSystemId = config ? config.designSystemId : null;
-  const jwt = config ? config.jwt : null;
+  const jwt = globalJwt || (config ? config.jwt : null);
 
   console.log("TokenManager settings for file (getSettingsForCurrentFile)", {
     fileKey,
@@ -45,7 +47,11 @@ async function getSettingsForCurrentFile() {
     rawFileConfig: fileConfig,
   });
 
-  return { apiUrl, designSystemId, jwt };
+  return {
+    apiUrl: (apiUrl || DEFAULT_API_URL).replace(/\/$/, ""),
+    designSystemId,
+    jwt,
+  };
 }
 
 function figmaVariablesToDtcg() {
@@ -342,6 +348,9 @@ function figmaVariablesToDtcg() {
 async function syncToTokenManager() {
   try {
     const settings = await getSettingsForCurrentFile();
+    console.log("[Sync] fileKey =", getCurrentFileKey());
+    console.log("[Sync] settings =", settings);
+
     const apiUrl = settings.apiUrl;
     const designSystemId = settings.designSystemId;
     const jwt = settings.jwt;
@@ -411,27 +420,88 @@ async function syncToTokenManager() {
 async function openSettingsUI() {
   const { apiUrl, designSystemId, jwt } = await getSettingsForCurrentFile();
 
-  figma.showUI(__html__, { width: 420, height: 260 });
+  figma.showUI(__html__, { width: 420, height: 320 });
 
   figma.ui.postMessage({
     type: "init-settings",
-    apiUrl: apiUrl || "http://localhost:8081",
+    apiUrl: apiUrl || DEFAULT_API_URL,
     designSystemId: designSystemId || "",
-    jwt: jwt || "",
+    hasJwt: !!jwt,
   });
+  // if we already have a stored jwt, fetch DS list and send to UI
+  const settings = await getSettingsForCurrentFile();
+  if (settings.jwt) {
+    try {
+      const base = settings.apiUrl.replace(/\/$/, "");
+      const res = await fetch(base + "/api/design-systems", {
+        headers: { Authorization: "Bearer " + settings.jwt },
+      });
+
+      const data = await res.json().catch(() => null);
+      if (res.ok) {
+        figma.ui.postMessage({
+          type: "design-systems",
+          items: Array.isArray(data)
+            ? data
+            : data && data.items
+            ? data.items
+            : [],
+        });
+      } else {
+        figma.ui.postMessage({
+          type: "design-systems-error",
+          message:
+            (data && (data.message || data.error)) ||
+            "Failed to load design systems.",
+        });
+      }
+    } catch (e) {
+      figma.ui.postMessage({
+        type: "design-systems-error",
+        message: e && e.message ? e.message : String(e),
+      });
+    }
+  }
 }
 
 figma.ui.onmessage = async (msg) => {
+  if (msg.type === "login-success") {
+    const jwt = (msg.jwt || "").trim();
+    if (!jwt) {
+      figma.notify("Login failed (empty token).");
+      return;
+    }
+
+    await figma.clientStorage.setAsync(STORAGE_KEYS.jwt, jwt);
+
+    const apiUrl =
+      (await figma.clientStorage.getAsync(STORAGE_KEYS.apiUrl)) ||
+      DEFAULT_API_URL;
+    const base = String(apiUrl).replace(/\/$/, "");
+    const res = await fetch(base + "/api/design-systems", {
+      headers: { Authorization: "Bearer " + jwt },
+    });
+    const data = await res.json().catch(() => null);
+
+    figma.ui.postMessage({
+      type: "design-systems",
+      items: Array.isArray(data) ? data : data && data.items ? data.items : [],
+    });
+
+    figma.notify("Logged in ✓");
+    return;
+  }
+
   if (msg.type === "save-settings") {
     const fileKey = getCurrentFileKey();
 
     const apiUrl =
-      (msg.apiUrl || "").trim().replace(/\/$/, "") || "http://localhost:8081";
-    const designSystemId = (msg.designSystemId || "").trim();
-    const jwt = (msg.jwt || "").trim();
+      (msg.apiUrl || "").trim().replace(/\/$/, "") || DEFAULT_API_URL;
 
-    if (!designSystemId || !jwt) {
-      figma.notify("Please enter Design System ID and JWT.");
+    const designSystemId = (msg.designSystemId || "").trim();
+
+    if (!designSystemId) {
+      figma.notify("Please select a Design System.");
       return;
     }
 
@@ -440,7 +510,7 @@ figma.ui.onmessage = async (msg) => {
 
     if (typeof fileConfig !== "object") fileConfig = {};
 
-    fileConfig[fileKey] = { designSystemId, jwt };
+    fileConfig[fileKey] = { designSystemId };
 
     await Promise.all([
       figma.clientStorage.setAsync(STORAGE_KEYS.apiUrl, apiUrl),
