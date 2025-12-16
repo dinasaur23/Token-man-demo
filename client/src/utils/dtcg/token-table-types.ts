@@ -1,4 +1,4 @@
-import type { ColorRow } from './dtcg-parser'
+//import type { ColorRow } from './dtcg-parser'
 
 export type GroupNode = {
   id: string
@@ -11,10 +11,15 @@ export type SrgbObject = {
   alpha?: unknown
   hex?: unknown
 }
-export type TableRow = ColorRow & {
-  raw?: unknown
-  hex: string
+export type TableRow = {
+  name: string
+  value: string
+  raw: unknown
+  type: 'color' | 'number' | 'string' | 'boolean'
+  hex?: string
+  group: string
+  groupPath: string[]
   path: string
-  aliasPath: string | null
   isAlias: boolean
+  aliasPath: string | null
 }

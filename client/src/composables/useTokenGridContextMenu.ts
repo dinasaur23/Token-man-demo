@@ -1,4 +1,3 @@
-// client/src/composables/useTokenGridContextMenu.ts
 import { reactive } from 'vue'
 import type { Ref } from 'vue'
 import type { TableRow } from '@/utils/dtcg/token-table-types'
@@ -25,6 +24,20 @@ export function useTokenGridContextMenu(rows: Ref<TableRow[]>, actions: ContextM
     y: 0,
     row: null,
   })
+
+  function canConvertToAlias(
+    row: TableRow | null | undefined,
+    rows: Ref<TableRow[]> | TableRow[] | null | undefined,
+  ): boolean {
+    if (!row) return false
+
+    const list = Array.isArray(rows) ? rows : rows?.value
+    if (!list) return false
+
+    if (row.isAlias) return false
+
+    return list.some((r) => r.path !== row.path && r.type === row.type && !r.isAlias)
+  }
 
   function onActionButtonClick(row: TableRow, ev: MouseEvent): void {
     ev.stopPropagation()
@@ -100,5 +113,6 @@ export function useTokenGridContextMenu(rows: Ref<TableRow[]>, actions: ContextM
     closeMenu,
     convertRowToAlias,
     clearAliasForRow,
+    canConvertToAlias,
   }
 }

@@ -28,6 +28,7 @@ export function useColorTableComponent() {
     deleteToken,
     onFileChange,
     onModifierChange,
+    updateTokenValueAny,
   } = useTokenWorkspaceTable()
 
   const gridApi = ref<GridApi<TableRow> | null>(null)
@@ -52,7 +53,15 @@ export function useColorTableComponent() {
   const aliasSourcePath = ref('')
   const currentAliasRow = ref<TableRow | null>(null)
   const aliasErrorMessage = ref<string | null>(null)
-  const allTokenPaths = computed<string[]>(() => rows.value.map((row) => row.path))
+
+  const aliasOptions = computed<string[]>(() => {
+    const base = currentAliasRow.value
+    if (!base) return []
+
+    return rows.value
+      .filter((r) => r.path !== base.path && r.type === base.type && !r.isAlias)
+      .map((r) => r.path)
+  })
 
   function startRenameGroup(item: GroupNode): void {
     editingGroupId.value = item.id
@@ -228,6 +237,7 @@ export function useColorTableComponent() {
     closeMenu,
     convertRowToAlias,
     clearAliasForRow,
+    canConvertToAlias,
   } = useTokenGridContextMenu(rows, {
     async addRowBelowToken(row) {
       lastScrollPath.value = row.path
@@ -307,7 +317,7 @@ export function useColorTableComponent() {
     aliasSourcePath,
     currentAliasRow,
     aliasErrorMessage,
-    allTokenPaths,
+    aliasOptions,
     openAliasDialogForRow,
     confirmAliasForRow,
 
@@ -319,6 +329,8 @@ export function useColorTableComponent() {
     closeMenu,
     convertRowToAlias,
     clearAliasForRow,
+    canConvertToAlias,
+    updateTokenValueAny,
 
     editingGroupId,
     editingGroupName,

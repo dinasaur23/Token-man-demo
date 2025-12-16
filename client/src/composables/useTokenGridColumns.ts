@@ -4,6 +4,7 @@ import type { TableRow } from '@/utils/dtcg/token-table-types'
 import { srgbFromHex } from '@/utils/dtcg/color-display'
 import { HEX_PATTERN } from '@/utils/dtcg/color-conversion'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
+import type { JsonValue } from '@/utils/dtcg/resolver'
 
 const SRGB_PATTERN = /^srgb\(\s*([\d.]+)\s*,\s*([\d.]+)\s*,\s*([\d.]+)\s*(?:,\s*([\d.]+)\s*)?\)$/i
 
@@ -17,7 +18,10 @@ function srgbComponentsToHex(rStr: string, gStr: string, bStr: string): string {
   return `#${toByteHex(rStr)}${toByteHex(gStr)}${toByteHex(bStr)}`
 }
 
-export function useTokenGridColumns(onActionButtonClick: (row: TableRow, ev: MouseEvent) => void) {
+export function useTokenGridColumns(
+  onActionButtonClick: (row: TableRow, ev: MouseEvent) => void,
+  updateTokenValueAny: (row: TableRow, value: JsonValue) => Promise<void>,
+) {
   const workspaceStore = useTokenWorkspaceStore()
 
   const columnDefs = ref<ColDef<TableRow>[]>([
@@ -27,7 +31,7 @@ export function useTokenGridColumns(onActionButtonClick: (row: TableRow, ev: Mou
       field: 'name',
       editable: true,
       flex: 1,
-      onCellValueChanged: (params) => {
+      onCellValueChanged: async (params) => {
         const row = params.data
         if (!row?.path) return
 
@@ -51,82 +55,170 @@ export function useTokenGridColumns(onActionButtonClick: (row: TableRow, ev: Mou
     },
 
     // --- sRGB column ---
+    // {
+    //   headerName: 'sRGB',
+    //   field: 'value',
+    //   flex: 1.4,
+    //   editable: (params) => params.data?.type === 'color' && !params.data?.isAlias,
+    //   onCellValueChanged: (params: NewValueParams<TableRow, string>) => {
+    //     const row = params.data
+    //     if (!row || row.type !== 'color') return
+    //     const newVal = String(params.newValue ?? '').trim()
+    //     const node = params.node
+    //     if (!node || !row.path) return
+
+    //     if (HEX_PATTERN.test(newVal)) {
+    //       const srgb = srgbFromHex(newVal)
+    //       node.setDataValue('hex', newVal)
+    //       node.setDataValue('value', srgb)
+
+    //       workspaceStore.overrides = {
+    //         ...workspaceStore.overrides,
+    //         [row.path]: newVal,
+    //       }
+    //       void workspaceStore.saveToServer()
+
+    //       params.api.refreshCells({ rowNodes: [node], columns: ['hex'] })
+    //       return
+    //     }
+
+    //     const match = newVal.match(SRGB_PATTERN)
+    //     if (match) {
+    //       const [, rStr, gStr, bStr] = match
+    //       const hex = srgbComponentsToHex(rStr, gStr, bStr)
+
+    //       node.setDataValue('value', newVal)
+    //       node.setDataValue('hex', hex)
+
+    //       workspaceStore.overrides = {
+    //         ...workspaceStore.overrides,
+    //         [row.path]: hex,
+    //       }
+    //       void workspaceStore.saveToServer()
+    //       params.api.refreshCells({ rowNodes: [node], columns: ['hex'] })
+    //       return
+    //     }
+
+    //     node.setDataValue('value', params.oldValue ?? row.value)
+    //   },
+    // },
     {
-      headerName: 'sRGB',
+      headerName: 'Value',
       field: 'value',
       flex: 1.4,
       editable: (params) => !params.data?.isAlias,
-      onCellValueChanged: (params: NewValueParams<TableRow, string>) => {
-        const newVal = String(params.newValue ?? '').trim()
-        const node = params.node
+      onCellValueChanged: async (params: NewValueParams<TableRow, string>) => {
         const row = params.data
-        if (!node || !row || !row.path) return
+        const node = params.node
+        if (!row || !node || !row.path) return
 
-        if (HEX_PATTERN.test(newVal)) {
-          const srgb = srgbFromHex(newVal)
-          node.setDataValue('hex', newVal)
-          node.setDataValue('value', srgb)
+        const newVal = String(params.newValue ?? '').trim()
+        const oldVal = String(params.oldValue ?? row.value ?? '').trim()
 
-          workspaceStore.overrides = {
-            ...workspaceStore.overrides,
-            [row.path]: newVal,
+        const revert = () => {
+          row.value = oldVal
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+        }
+
+        // --- COLOR tokens: allow BOTH srgb(...) and #hex ---
+        if (row.type === 'color') {
+          if (HEX_PATTERN.test(newVal)) {
+            const srgb = srgbFromHex(newVal)
+
+            row.hex = newVal
+            row.value = srgb
+
+            await updateTokenValueAny(row, newVal)
+
+            params.api.refreshCells({ rowNodes: [node], columns: ['value', 'hex'] })
+            return
           }
-          void workspaceStore.saveToServer()
 
-          params.api.refreshCells({ rowNodes: [node], columns: ['hex'] })
+          // srgb(...) input
+          const match = newVal.match(SRGB_PATTERN)
+          if (match) {
+            const [, rStr, gStr, bStr] = match
+            const hex = srgbComponentsToHex(rStr, gStr, bStr)
+            const srgb = srgbFromHex(hex)
+
+            row.value = srgb
+            row.hex = hex
+
+            await updateTokenValueAny(row, hex)
+
+            params.api.refreshCells({ rowNodes: [node], columns: ['value', 'hex'] })
+            return
+          }
+          revert()
           return
         }
 
-        const match = newVal.match(SRGB_PATTERN)
-        if (match) {
-          const [, rStr, gStr, bStr] = match
-          const hex = srgbComponentsToHex(rStr, gStr, bStr)
+        // --- NON-COLOR tokens ---
 
-          node.setDataValue('value', newVal)
-          node.setDataValue('hex', hex)
+        let parsed: JsonValue
 
-          workspaceStore.overrides = {
-            ...workspaceStore.overrides,
-            [row.path]: hex,
+        if (row.type === 'number') {
+          const n = Number(newVal)
+          if (!Number.isFinite(n)) return revert()
+          parsed = n
+          row.value = String(n)
+        } else if (row.type === 'boolean') {
+          if (newVal === 'true' || newVal === '1') {
+            parsed = true
+            row.value = 'true'
+          } else if (newVal === 'false' || newVal === '0') {
+            parsed = false
+            row.value = 'false'
+          } else {
+            return revert()
           }
-          void workspaceStore.saveToServer()
-          params.api.refreshCells({ rowNodes: [node], columns: ['hex'] })
-          return
+        } else {
+          parsed = newVal
+          row.value = newVal
         }
 
-        node.setDataValue('value', params.oldValue ?? row.value)
+        await updateTokenValueAny(row, parsed)
+        params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
       },
     },
 
-    // --- Hex column ---
     {
       headerName: 'Hex',
       field: 'hex',
       flex: 1,
-      editable: (params) => !params.data?.isAlias,
-      onCellValueChanged: (params: NewValueParams<TableRow, string>) => {
-        const newVal = String(params.newValue ?? '').trim()
-        const node = params.node
+      editable: (params) => params.data?.type === 'color' && !params.data?.isAlias,
+      onCellValueChanged: async (params: NewValueParams<TableRow, string>) => {
         const row = params.data
-        if (!node || !row || !row.path) return
+        const node = params.node
+        if (!row || row.type !== 'color' || !node || !row.path) return
+
+        // normalize (allow users to paste without '#')
+        let newVal = String(params.newValue ?? '').trim()
+        if (newVal && !newVal.startsWith('#')) newVal = `#${newVal}`
+
+        const oldHex = String(params.oldValue ?? row.hex ?? '').trim()
+
+        const revert = () => {
+          row.hex = oldHex
+          params.api.refreshCells({ rowNodes: [node], columns: ['hex'] })
+        }
 
         if (!HEX_PATTERN.test(newVal)) {
-          node.setDataValue('hex', params.oldValue ?? row.hex)
+          revert()
           return
         }
 
         const srgb = srgbFromHex(newVal)
-        node.setDataValue('hex', newVal)
-        node.setDataValue('value', srgb)
+        row.hex = newVal
+        row.value = srgb
 
-        workspaceStore.overrides = {
-          ...workspaceStore.overrides,
-          [row.path]: newVal,
-        }
-        void workspaceStore.saveToServer()
-        params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+        await updateTokenValueAny(row, newVal)
+
+        // refresh both visible columns
+        params.api.refreshCells({ rowNodes: [node], columns: ['hex', 'value'] })
       },
     },
+
     {
       headerName: 'Alias path',
       field: 'aliasPath',
@@ -140,6 +232,13 @@ export function useTokenGridColumns(onActionButtonClick: (row: TableRow, ev: Mou
       field: 'hex',
       width: 120,
       cellRenderer: (params: ICellRendererParams<TableRow>) => {
+        const row = params.data
+        if (!row || row.type !== 'color') {
+          const span = document.createElement('span')
+          span.textContent = ''
+          return span
+        }
+
         const eInput = document.createElement('input')
         eInput.type = 'color'
 
@@ -156,7 +255,7 @@ export function useTokenGridColumns(onActionButtonClick: (row: TableRow, ev: Mou
           ev.stopPropagation()
         })
 
-        eInput.addEventListener('change', (event: Event) => {
+        eInput.addEventListener('change', async (event: Event) => {
           const newColor = (event.target as HTMLInputElement).value
 
           params.node.setDataValue('hex', newColor)
@@ -165,11 +264,7 @@ export function useTokenGridColumns(onActionButtonClick: (row: TableRow, ev: Mou
 
           const row = params.data
           if (row && row.path) {
-            workspaceStore.overrides = {
-              ...workspaceStore.overrides,
-              [row.path]: newColor,
-            }
-            void workspaceStore.saveToServer()
+            await updateTokenValueAny(row, newColor)
           }
         })
 

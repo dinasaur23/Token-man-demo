@@ -1,4 +1,3 @@
-//export type ColorTokenEntry = { path: string; value: string }
 export type ColorRow = {
   name: string
   value: string
@@ -7,13 +6,58 @@ export type ColorRow = {
   groupPath: string[]
 }
 
-// type DTCGNode = { [key: string]: unknown }
 type Json = unknown
 type JsonObject = Record<string, Json>
+
+export type TokenType = 'color' | 'number' | 'string' | 'boolean'
 
 export type ColorTokenEntry = {
   path: string
   value: Json
+  type: TokenType
+}
+export type TokenEntry = {
+  path: string
+  type: TokenType
+  value: Json
+}
+
+const isTokenType = (t: unknown): t is TokenType =>
+  t === 'color' || t === 'number' || t === 'string' || t === 'boolean'
+
+export function collectTokensWithPath(root: Json): TokenEntry[] {
+  const results: TokenEntry[] = []
+
+  function visit(node: Json, pathParts: string[], inheritedType?: TokenType): void {
+    if (!isObject(node)) return
+
+    const localTypeRaw = typeof node['$type'] === 'string' ? String(node['$type']) : undefined
+    const localType = isTokenType(localTypeRaw) ? localTypeRaw : undefined
+
+    const effectiveType = localType ?? inheritedType
+    const hasValue = Object.prototype.hasOwnProperty.call(node, '$value')
+
+    if (effectiveType && hasValue) {
+      results.push({
+        path: pathParts.join('.'),
+        value: (node as JsonObject)['$value'],
+        type: effectiveType,
+      })
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      if (key.startsWith('$')) continue // skip metadata
+      visit(value, [...pathParts, key], effectiveType)
+    }
+  }
+
+  if (isObject(root)) {
+    for (const [key, value] of Object.entries(root)) {
+      visit(value, [key], undefined)
+    }
+  }
+
+  return results
 }
 
 const AliasPattern = /^\{([^}]+)\}$/
@@ -36,6 +80,7 @@ export function collectColorTokensWithPath(root: Json): ColorTokenEntry[] {
       results.push({
         path: pathParts.join('.'),
         value: (node as JsonObject)['$value'],
+        type: 'color', // ✅ CHANGE 3: required by ColorTokenEntry
       })
     }
 
@@ -53,10 +98,11 @@ export function collectColorTokensWithPath(root: Json): ColorTokenEntry[] {
 
   return results
 }
+
 export function findEntryForTarget(
   target: string,
-  map: Record<string, ColorTokenEntry>,
-): ColorTokenEntry | null {
+  map: Record<string, TokenEntry>,
+): TokenEntry | null {
   if (map[target]) return map[target]
 
   const suffix = '.' + target
@@ -70,7 +116,7 @@ export function findEntryForTarget(
   return null
 }
 
-export function resolveValue(value: Json, map: Record<string, ColorTokenEntry>): Json | undefined {
+export function resolveValue(value: Json, map: Record<string, TokenEntry>): Json | undefined {
   // string alias
   if (typeof value === 'string') {
     const m = value.match(AliasPattern)
@@ -95,7 +141,7 @@ export function resolveValue(value: Json, map: Record<string, ColorTokenEntry>):
 
 export function resolveAlias(
   path: string,
-  map: Record<string, ColorTokenEntry>,
+  map: Record<string, TokenEntry>,
   seen: Set<string> = new Set(),
 ): Json | undefined {
   const entry = map[path]

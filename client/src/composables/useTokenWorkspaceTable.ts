@@ -8,10 +8,11 @@ import {
   type JsonValue,
 } from '@/utils/dtcg/resolver'
 import {
-  collectColorTokensWithPath,
+  //collectColorTokensWithPath,
+  collectTokensWithPath,
   resolveAlias,
   resolveValue,
-  type ColorTokenEntry,
+  type TokenEntry,
 } from '@/utils/dtcg/dtcg-parser'
 import { validateTokensStrict } from '@/utils/dtcg/dtcg-validator'
 import { buildGroupTree, extractGroupPath } from '@/utils/dtcg/grouping'
@@ -22,46 +23,7 @@ import { pruneEmptyChildren } from '@/utils/dtcg/grouping'
 import { useTokenCrud } from './useTokenCrud'
 import type { FigmaModifierOptions } from '@/stores/TokenWorkspace'
 
-// function computeDetectedModifiers(
-//   docs: Record<string, JsonValue>,
-//   wsModifiers: Record<string, unknown> | undefined,
-// ): DetectedModifier[] {
-//   const fromWorkspace: DetectedModifier[] = []
-
-//   if (wsModifiers && typeof wsModifiers === 'object') {
-//     for (const [name, raw] of Object.entries(wsModifiers)) {
-//       let values: string[] = []
-
-//       if (Array.isArray(raw)) {
-//         values = raw.map((v) => String(v))
-//       } else if (raw && typeof raw === 'object') {
-//         values = Object.keys(raw as Record<string, unknown>)
-//       } else {
-//         // scalar (string/number/boolean) → treat as "selected value only"
-//         // and ignore for detection – we’ll fall back to resolver docs.
-//       }
-
-//       if (values.length) {
-//         fromWorkspace.push({
-//           name,
-//           values,
-//           defaultValue: values[0],
-//         })
-//       }
-//     }
-//   }
-
-//   if (fromWorkspace.length) {
-//     console.log('[Table] detectedModifiers from workspace.modifiers', fromWorkspace)
-//     return fromWorkspace
-//   }
-
-//   const fromResolver = extractModifiersFromDocs(docs)
-//   console.log('[Table] detectedModifiers from resolver docs', fromResolver)
-//   return fromResolver
-// }
-
-function sortTokensByRowOrder(tokens: ColorTokenEntry[], rowOrder: string[]): ColorTokenEntry[] {
+function sortTokensByRowOrder(tokens: TokenEntry[], rowOrder: string[]): TokenEntry[] {
   const order = rowOrder
   const indexMap = new Map<string, number>()
   order.forEach((path: string, idx: number) => indexMap.set(path, idx))
@@ -363,10 +325,10 @@ export function useTokenWorkspaceTable() {
   async function populateTableFromDocument(doc: unknown): Promise<void> {
     const convertedDoc = convertHexColorsInDocument(doc)
     const validation = await validateTokensStrict(convertedDoc)
-    //console.log('✅ DTCG validation result:', validation)
+    //console.log('DTCG validation result:', validation)
 
     if (!validation.ok) {
-      //console.error('❌ DTCG validation errors:', validation.errors)
+      //console.error('DTCG validation errors:', validation.errors)
       const count = validation.errors.length
       errorMessage.value =
         `The uploaded JSON is not valid DTCG (${validation.kind} errors: ${count}). ` +
@@ -375,14 +337,16 @@ export function useTokenWorkspaceTable() {
       return
     }
 
-    const tokens = collectColorTokensWithPath(convertedDoc)
+    //const tokens = collectColorTokensWithPath(convertedDoc)
+    const tokens = collectTokensWithPath(convertedDoc)
 
     if (workspaceStore.rowOrder.length === 0) {
       workspaceStore.rowOrder = tokens.map((t) => t.path)
     }
 
     const orderedTokens = sortTokensByRowOrder(tokens, workspaceStore.rowOrder)
-    const map: Record<string, ColorTokenEntry> = {}
+    const map: Record<string, TokenEntry> = {}
+
     for (const t of tokens) {
       map[t.path] = t
       const match = t.path.match(/((?:global|alias)\.color\..+)$/)
@@ -411,22 +375,44 @@ export function useTokenWorkspaceTable() {
         resolved = workspaceStore.overrides[t.path]
       }
 
-      const display = makeDisplayColor(resolved)
-
       const groupPath = extractGroupPath(t.path)
       const groupLabel = groupPath.length ? groupPath[groupPath.length - 1] : ''
       const nameOverride = workspaceStore.nameOverrides[t.path]
       const fallbackName = t.path.split('.').pop() ?? t.path
       const name = nameOverride && nameOverride.trim().length > 0 ? nameOverride : fallbackName
 
+      let value = ''
+      let hex = '' // keep empty for non-color
+
+      if (t.type === 'color') {
+        const display = makeDisplayColor(resolved)
+        value = display.srgb
+        hex = display.hex
+      } else if (typeof resolved === 'string') {
+        value = resolved
+      } else if (typeof resolved === 'number') {
+        value = Number.isFinite(resolved) ? String(resolved) : ''
+      } else if (typeof resolved === 'boolean') {
+        value = resolved ? 'true' : 'false'
+      } else if (resolved == null) {
+        value = ''
+      } else {
+        try {
+          value = JSON.stringify(resolved)
+        } catch {
+          value = String(resolved)
+        }
+      }
+
       return {
         name,
-        value: display.srgb,
-        hex: display.hex,
+        value,
+        hex,
         raw: t.value,
         group: groupLabel,
         groupPath,
         path: t.path,
+        type: t.type,
         isAlias: !!aliasPath,
         aliasPath: aliasPath ?? '',
       }
@@ -688,6 +674,7 @@ export function useTokenWorkspaceTable() {
 
   const {
     updateTokenValue,
+    updateTokenValueAny,
     updateTokenName,
     deleteToken,
     duplicateToken,
@@ -737,6 +724,7 @@ export function useTokenWorkspaceTable() {
 
     // CRUD handlers (use these in ag-grid)
     updateTokenValue,
+    updateTokenValueAny,
     updateTokenName,
     deleteToken,
     duplicateToken,

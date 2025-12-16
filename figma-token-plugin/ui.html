@@ -78,20 +78,23 @@
       </div>
 
       <!-- ✅ CHANGED: DS id input -> DS dropdown (still stores designSystemId) -->
-      <label>
-        Design System
-        <select id="designSystemSelect" disabled>
-          <option value="">— Select —</option>
-        </select>
-      </label>
+      <div id="dsSection" class="hidden">
+        <label>
+          Design System
+          <select id="designSystemSelect" disabled>
+            <option value="">— Select —</option>
+          </select>
+        </label>
 
-      <button id="save">Save settings</button>
+        <button id="save">Save settings</button>
 
-      <div id="saveStatus" class="ok hidden"></div>
-      <div id="dsError" class="error hidden"></div>
+        <div id="saveStatus" class="ok hidden"></div>
+        <div id="dsError" class="error hidden"></div>
+      </div>
     </div>
 
     <script>
+      const dsSection = document.getElementById("dsSection");
       const apiInput = document.getElementById("apiUrl");
       const dsSelect = document.getElementById("designSystemSelect");
       const saveBtn = document.getElementById("save");
@@ -204,6 +207,7 @@
 
           hasJwt = true;
           setText(loginStatus, "Logged in ✓ Loading Design Systems…");
+          setHidden(dsSection, false);
 
           await loadDesignSystems(jwt);
           setText(loginStatus, "Logged in ✓");
@@ -214,7 +218,6 @@
         }
       }
 
-      // ✅ NEW: fetch design systems with jwt, populate dropdown
       async function loadDesignSystems(jwt) {
         setHidden(dsError, true);
         setText(dsError, "");
@@ -283,9 +286,9 @@
           apiInput.value = msg.apiUrl || "";
           initialDesignSystemId = msg.designSystemId || "";
           hasJwt = !!msg.hasJwt;
-
-          clearSelect(dsSelect);
+          setHidden(dsSection, true);
           dsSelect.disabled = true;
+          clearSelect(dsSelect);
 
           setText(
             loginStatus,

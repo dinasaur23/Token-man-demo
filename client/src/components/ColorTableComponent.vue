@@ -151,8 +151,8 @@
       <v-list-item @click="addRowBelow">
         <v-list-item-title>Add row below</v-list-item-title>
       </v-list-item>
-      <v-list-item @click="convertRowToAlias">
-        <v-list-item-title>Convert to alias…</v-list-item-title>
+      <v-list-item :disabled="!canConvertToAlias(menu.row, rows)" @click="convertRowToAlias"
+        >Create Alias
       </v-list-item>
       <v-list-item v-if="menu.row?.aliasPath" @click="clearAliasForRow">
         <v-list-item-title>Remove alias</v-list-item-title>
@@ -239,7 +239,7 @@
 
         <v-autocomplete
           v-model="aliasSourcePath"
-          :items="allTokenPaths"
+          :items="aliasOptions"
           label="Alias target (token path)"
           density="comfortable"
           variant="outlined"
@@ -323,7 +323,7 @@ const {
   aliasSourcePath,
   currentAliasRow,
   aliasErrorMessage,
-  allTokenPaths,
+  aliasOptions,
   confirmAliasForRow,
   menu,
   onActionButtonClick,
@@ -333,6 +333,8 @@ const {
   closeMenu,
   convertRowToAlias,
   clearAliasForRow,
+  canConvertToAlias,
+  updateTokenValueAny,
 
   editingGroupId,
   editingGroupName,
@@ -341,7 +343,8 @@ const {
   cancelRenameGroup,
 } = useColorTableComponent()
 
-const { columnDefs, defaultColDef } = useTokenGridColumns(onActionButtonClick)
+const { columnDefs, defaultColDef } = useTokenGridColumns(onActionButtonClick, updateTokenValueAny)
+
 const ws = useTokenWorkspaceStore()
 ;(window as unknown as { ws: typeof ws }).ws = ws
 </script>

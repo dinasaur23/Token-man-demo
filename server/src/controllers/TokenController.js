@@ -68,6 +68,32 @@ function applyGroupNameOverridesToTokens(rootTokens, groupNameOverrides) {
     delete parent[oldKey];
   }
 }
+const ALLOWED_TOKEN_TYPES = ["color", "number", "string", "boolean"];
+
+function validateToken(token) {
+  if (!token || typeof token !== "object") {
+    throw new Error("Invalid token object");
+  }
+
+  if (!ALLOWED_TOKEN_TYPES.includes(token.$type)) {
+    throw new Error(`Unsupported token type: ${token.$type}`);
+  }
+}
+
+function validateTokenTree(node) {
+  if (!node || typeof node !== "object") return;
+
+  // Token leaf (DTCG)
+  if (node.$type && node.$value !== undefined) {
+    validateToken(node);
+    return;
+  }
+
+  // Recurse into groups
+  for (const key of Object.keys(node)) {
+    validateTokenTree(node[key]);
+  }
+}
 
 export async function syncFigmaTokens(req, res, next) {
   try {
@@ -88,6 +114,14 @@ export async function syncFigmaTokens(req, res, next) {
       return res
         .status(400)
         .json({ ok: false, message: "Missing or invalid tokens payload" });
+    }
+    try {
+      validateTokenTree(tokens);
+    } catch (err) {
+      return res.status(400).json({
+        ok: false,
+        message: err.message,
+      });
     }
 
     const normalizedModifiers =

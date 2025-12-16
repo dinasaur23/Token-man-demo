@@ -1,6 +1,4 @@
-// client/src/utils/dtcg/dtcg-validator.ts
-
-import { createSchema } from 'w3c-design-tokens-standard-schema/zod'
+//import { createSchema } from 'w3c-design-tokens-standard-schema/zod'
 import { z } from 'zod'
 import type { Json } from './color-conversion'
 
@@ -13,18 +11,20 @@ const isObject = (value: Json): value is JsonObject =>
 
 // ---------- 1) Structural DTCG validation (W3C schema) --------------
 
-const schema = createSchema()
+// const schema = createSchema()
 
-type RawValidateResult = {
-  issues?: readonly unknown[]
-  value?: unknown
-}
+// type RawValidateResult = {
+//   issues?: readonly unknown[]
+//   value?: unknown
+// }
 
 export type DtcgStructuralResult = { ok: true } | { ok: false; errors: readonly unknown[] }
 
 export async function validateDtcgDocument(doc: Json): Promise<DtcgStructuralResult> {
   const errors: unknown[] = []
   let tokenCount = 0
+  const AliasPattern = /^\{[^}]+\}$/
+  const SIMPLE_TYPES = new Set(['number', 'string', 'boolean', 'color'])
 
   async function visit(node: Json, inheritedType?: string): Promise<void> {
     if (!isObject(node)) return
@@ -37,19 +37,25 @@ export async function validateDtcgDocument(doc: Json): Promise<DtcgStructuralRes
     if (effectiveType && hasValue) {
       tokenCount += 1
 
-      if (effectiveType !== 'color') {
-        const tokenNode: JsonObject = localType != null ? node : { ...node, $type: effectiveType }
-        let result = schema.DesignToken['~standard'].validate(tokenNode) as
-          | RawValidateResult
-          | Promise<RawValidateResult>
-        if (result instanceof Promise) {
-          result = await result
-        }
-        if (Array.isArray(result.issues) && result.issues.length > 0) {
-          errors.push(...result.issues)
-        }
+      // ---- local structural checks for supported token types ----
+      if (!SIMPLE_TYPES.has(effectiveType)) {
+        errors.push(`Unsupported $type "${effectiveType}"`)
+      } else if (effectiveType === 'number') {
+        const v = node['$value']
+        const ok = typeof v === 'number' || (typeof v === 'string' && AliasPattern.test(v))
+        if (!ok)
+          errors.push(`$value for type "number" must be a number or alias like {path.to.token}`)
+      } else if (effectiveType === 'string') {
+        const v = node['$value']
+        const ok = typeof v === 'string' // allow plain strings + alias strings
+        if (!ok) errors.push(`$value for type "string" must be a string`)
+      } else if (effectiveType === 'boolean') {
+        const v = node['$value']
+        const ok = typeof v === 'boolean' || (typeof v === 'string' && AliasPattern.test(v))
+        if (!ok)
+          errors.push(`$value for type "boolean" must be a boolean or alias like {path.to.token}`)
+      } else {
       }
-      // if effectiveType === 'color', skip library validation
     }
 
     for (const child of Object.values(node)) {
@@ -88,9 +94,11 @@ const StrictColorObject = z
     message: 'Color object must have hex or components',
   })
 
-// Allowed $value when effective type is "color"
+const HexPattern = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
+
 const ColorValueSchema = z.union([
   StrictColorObject,
+  z.string().regex(HexPattern, 'Expected hex color'),
   z.string().regex(AliasPattern, 'Expected alias like {path.to.token}'),
 ])
 

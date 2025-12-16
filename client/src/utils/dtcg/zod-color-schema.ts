@@ -1,16 +1,32 @@
 import { z } from 'zod'
 
-// "#RGB", "#RRGGBB", "#RRGGBBAA"
 export const Hex = z
   .string()
   .regex(/^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i, 'Expected hex color')
 
-// DTCG-style alias: "{path.to.token}"
 export const Alias = z.string().regex(/^\{[^}]+\}$/, 'Expected alias like {path.to.token}')
 
-// ---- leaf variants ---------------------------------------------
+export const NumberLeafSchema = z
+  .object({
+    $type: z.literal('number'),
+    $value: z.union([z.number(), Alias]),
+  })
+  .catchall(z.unknown())
 
-// Explicit token: { "$type": "color", "$value": "#AABBCC" | "{...}" }
+export const StringLeafSchema = z
+  .object({
+    $type: z.literal('string'),
+    $value: z.union([z.string(), Alias]),
+  })
+  .catchall(z.unknown())
+
+export const BooleanLeafSchema = z
+  .object({
+    $type: z.literal('boolean'),
+    $value: z.union([z.boolean(), Alias]),
+  })
+  .catchall(z.unknown())
+
 export const ExplicitHexOrAliasToken = z
   .object({
     $type: z.literal('color'),
@@ -18,7 +34,6 @@ export const ExplicitHexOrAliasToken = z
   })
   .catchall(z.unknown())
 
-// Explicit object token: { "$type":"color", "$value": { hex:"#..." } | { alias:"{...}" } }
 export const ExplicitObjectColorToken = z
   .object({
     $type: z.literal('color'),
@@ -29,7 +44,6 @@ export const ExplicitObjectColorToken = z
   })
   .catchall(z.unknown())
 
-// Inherited leaf inside a color group: { "$value":"#..." | "{...}" } or object with hex/alias
 const W3cColorObject = z
   .object({
     colorSpace: z.string(),
@@ -46,14 +60,20 @@ export const InheritedColorToken = z
       Alias,
       z.object({ hex: Hex }).catchall(z.unknown()),
       z.object({ alias: Alias }).catchall(z.unknown()),
-      W3cColorObject, // ✅ allow full W3C color object
+      W3cColorObject,
     ]),
   })
   .catchall(z.unknown())
 
-// Used by the validator while in a "$type: color" subtree
 export const ColorLeafSchema = z.union([
   ExplicitHexOrAliasToken,
   ExplicitObjectColorToken,
   InheritedColorToken,
+])
+
+export const LeafTokenSchema = z.union([
+  ColorLeafSchema,
+  NumberLeafSchema,
+  StringLeafSchema,
+  BooleanLeafSchema,
 ])

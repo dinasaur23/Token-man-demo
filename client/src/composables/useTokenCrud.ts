@@ -1,4 +1,3 @@
-// composables/useTokenCrud.ts
 import type { Ref } from 'vue'
 import type { JsonValue } from '@/utils/dtcg/resolver'
 import type { TableRow } from '@/utils/dtcg/token-table-types'
@@ -29,6 +28,54 @@ interface ResolverModifierLike {
 }
 
 type Json = unknown
+type TokenType = 'color' | 'number' | 'string' | 'boolean'
+
+function isTokenType(t: unknown): t is TokenType {
+  return t === 'color' || t === 'number' || t === 'string' || t === 'boolean'
+}
+function parseRowValueForDtcg(row: TableRow): JsonValue {
+  if (row.type === 'color') {
+    return row.hex || '#000000'
+  }
+
+  if (row.type === 'number') {
+    const n = Number(row.value)
+    return Number.isFinite(n) ? n : 0
+  }
+
+  if (row.type === 'boolean') {
+    const s = String(row.value ?? '')
+      .trim()
+      .toLowerCase()
+    return s === 'true'
+  }
+
+  // string
+  return String(row.value ?? '')
+}
+
+function parseRowLiteralValue(row: TableRow): JsonValue {
+  // used when we need a literal (non-alias) value for $value
+  if (row.type === 'color') return row.hex || '#000000'
+  if (row.type === 'number') {
+    const n = Number(row.value)
+    return Number.isFinite(n) ? n : 0
+  }
+  if (row.type === 'boolean') {
+    const s = String(row.value ?? '')
+      .trim()
+      .toLowerCase()
+    return s === 'true'
+  }
+  // string (and anything else) -> string
+  return String(row.value ?? '')
+}
+
+function getTokenTypeFromNode(node: Json): TokenType | null {
+  if (!isJsonRecord(node)) return null
+  const t = (node as JsonRecord)['$type']
+  return isTokenType(t) ? t : null
+}
 
 function normalizeAliasTarget(raw: string): string {
   let s = raw.trim()
@@ -180,6 +227,35 @@ export function useTokenCrud({
   workspaceStore,
   persistUploadedDocsAndReload,
 }: CrudDeps) {
+  async function updateTokenValueAny(row: TableRow, newValue: JsonValue): Promise<void> {
+    const segments = row.path.split('.')
+    const found = findDocContainingPath(uploadedDocs.value, segments)
+    if (!found) {
+      console.warn('updateTokenValueAny: path not found in any uploaded doc', row.path)
+      return
+    }
+
+    const { fileName, doc, token, parent, key } = found
+
+    const type = row.type
+
+    if (isJsonRecord(token)) {
+      const tokenRecord: JsonRecord = token
+      tokenRecord['$type'] = type
+      tokenRecord['$value'] = newValue
+    } else {
+      parent[key] = {
+        $type: type,
+        $value: newValue,
+      }
+    }
+
+    delete workspaceStore.overrides[row.path]
+
+    uploadedDocs.value[fileName] = doc
+    await persistUploadedDocsAndReload()
+  }
+
   async function updateTokenValue(row: TableRow, newHex: string): Promise<void> {
     const segments = row.path.split('.')
     const found = findDocContainingPath(uploadedDocs.value, segments)
@@ -303,13 +379,14 @@ export function useTokenCrud({
     const newKey = createDuplicateKey(parent, row.name || oldKey)
 
     let newToken: JsonValue
+
     if (isJsonRecord(original)) {
-      const originalRecord: JsonRecord = original
-      const copy = deepClone(originalRecord)
-      copy['$value'] = row.hex
+      const copy = deepClone(original as JsonRecord)
+      copy['$type'] = row.type
+      copy['$value'] = row.isAlias ? (copy['$value'] as JsonValue) : parseRowValueForDtcg(row)
       newToken = copy
     } else {
-      newToken = { $type: 'color', $value: row.hex }
+      newToken = { $type: row.type, $value: row.isAlias ? original : parseRowValueForDtcg(row) }
     }
 
     parent[newKey] = newToken
@@ -338,10 +415,16 @@ export function useTokenCrud({
 
     const baseName = row.name || 'new-token'
     const newKey = createDuplicateKey(parent, baseName)
-
     const newToken: JsonValue = {
-      $type: 'color',
-      $value: '#000000',
+      $type: row.type,
+      $value:
+        row.type === 'color'
+          ? '#000000'
+          : row.type === 'number'
+            ? 0
+            : row.type === 'boolean'
+              ? false
+              : '',
     }
 
     parent[newKey] = newToken
@@ -571,21 +654,29 @@ export function useTokenCrud({
     }
 
     const targetSegments = targetNormalized.split('.')
-
-    // 1) Check that the alias target exists in *some* uploaded document
     let targetExists = false
+    let targetType: TokenType | null = null
+
     for (const raw of Object.values(docs)) {
       if (!isJsonRecord(raw)) continue
-      if (getNodeAtPath(raw as JsonRecord, targetSegments) !== undefined) {
+      const node = getNodeAtPath(raw as JsonRecord, targetSegments)
+      if (node !== undefined) {
         targetExists = true
+        targetType = getTokenTypeFromNode(node)
         break
       }
     }
+
     if (!targetExists) {
       throw new Error(`Alias target "${targetNormalized}" does not exist.`)
     }
 
-    // 2) Decide which document to edit for THIS token (resolver + mode aware)
+    if (targetType && targetType !== row.type) {
+      throw new Error(
+        `Alias target type mismatch: "${row.path}" is "${row.type}" but "${targetNormalized}" is "${targetType}".`,
+      )
+    }
+
     const picked = pickDocForRowPath(docs, row.path, workspaceStore)
     if (!picked) {
       throw new Error(`Token "${row.path}" was not found in any uploaded document.`)
@@ -595,15 +686,13 @@ export function useTokenCrud({
 
     const fromSegments = row.path.split('.')
 
-    // 3) Cycle detection within the chosen document (as before)
     if (wouldCreateAliasCycle(doc, fromSegments, targetSegments)) {
       throw new Error(
         `Alias "${row.path}" → "${targetNormalized}" would create a circular reference.`,
       )
     }
 
-    // 4) Actually write alias value into the correct document
-    const pathSegments = row.path.split('.') // e.g. ["alias","color","background"]
+    const pathSegments = row.path.split('.')
     const key = pathSegments.pop()!
     const parentPath = pathSegments
 
@@ -614,7 +703,7 @@ export function useTokenCrud({
         ? trimmedInput
         : `{${targetNormalized}}`
 
-    parent[key] = { $type: 'color', $value: aliasValue }
+    parent[key] = { $type: row.type, $value: aliasValue }
 
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
@@ -669,16 +758,15 @@ export function useTokenCrud({
 
     const { fileName, doc } = picked
 
-    const pathSegments = row.path.split('.') // e.g. ["alias","color","background"]
+    const pathSegments = row.path.split('.')
     const key = pathSegments.pop()!
     const parentPath = pathSegments
 
     const parent = ensurePath(doc, parentPath)
-    const hex = row.hex
-
+    const literal = parseRowLiteralValue(row)
     parent[key] = {
-      $type: 'color',
-      $value: hex,
+      $type: row.type,
+      $value: literal,
     }
 
     uploadedDocs.value[fileName] = doc
@@ -687,6 +775,7 @@ export function useTokenCrud({
 
   return {
     updateTokenValue,
+    updateTokenValueAny,
     updateTokenName,
     deleteToken,
     duplicateToken,
