@@ -65,6 +65,11 @@ export function extractGroupPath(path: string): string[] {
 
   const parts = rest.split('.')
   parts.pop()
-  const cleaned = parts.filter((p) => p !== 'global' && p !== 'alias' && p !== 'color')
+  const cleaned = parts.filter((p, i) => {
+    if (p === 'alias') return false
+    if (p === 'color' && parts[i - 1] === 'alias') return false
+    return true
+  })
+
   return collection ? [collection, ...cleaned] : cleaned
 }

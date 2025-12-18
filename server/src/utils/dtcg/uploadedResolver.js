@@ -149,8 +149,22 @@ function applySelectedContextsToDoc(doc, input) {
               (defaultMode ? map[defaultMode] : undefined) ??
               (keys.length ? map[keys[0]] : undefined);
 
-            if (typeof chosen === "string") {
-              out.$value = chosen;
+            const tokenType = obj.$type;
+
+            if (chosen !== undefined && tokenType) {
+              if (
+                (tokenType === "color" || tokenType === "string") &&
+                typeof chosen === "string"
+              ) {
+                out.$value = chosen;
+              } else if (tokenType === "number" && typeof chosen === "number") {
+                out.$value = chosen;
+              } else if (
+                tokenType === "boolean" &&
+                typeof chosen === "boolean"
+              ) {
+                out.$value = chosen;
+              }
             }
           }
         }
