@@ -116,38 +116,44 @@ function resolveModifier(name, modifier, docs, input) {
 }
 
 // --- Figma mode handling: applySelectedContextsToDoc -------------------------
+function pickSelectedModeForToken(fig, input) {
+  if (!fig || typeof fig !== "object") return null;
+  const valuesByMode = fig.valuesByMode;
+  if (!valuesByMode || typeof valuesByMode !== "object") return null;
 
+  if (typeof input.mode === "string" && input.mode in valuesByMode)
+    return input.mode;
+
+  for (const [k, v] of Object.entries(input)) {
+    if (k === "scopedModifiers") continue;
+    if (typeof v === "string" && v in valuesByMode) return v;
+  }
+  return null;
+}
 function applySelectedContextsToDoc(doc, input) {
-  const selectedMode = input.mode || null;
-
   function visit(value) {
-    if (Array.isArray(value)) {
-      return value.map(visit);
-    }
+    if (Array.isArray(value)) return value.map(visit);
 
     if (isJsonObject(value)) {
       const obj = value;
       const out = {};
 
-      for (const [key, v] of Object.entries(obj)) {
-        out[key] = visit(v);
-      }
+      for (const [key, v] of Object.entries(obj)) out[key] = visit(v);
 
-      if (selectedMode && obj.$extensions && isJsonObject(obj.$extensions)) {
-        const ext = obj.$extensions;
-        const fig = ext.figma;
+      if (obj.$extensions && isJsonObject(obj.$extensions)) {
+        const fig = obj.$extensions.figma;
+        const selectedMode = pickSelectedModeForToken(fig, input);
 
-        if (fig && typeof fig === "object") {
+        if (selectedMode && fig && typeof fig === "object") {
           const valuesByMode = fig.valuesByMode;
           if (valuesByMode && typeof valuesByMode === "object") {
             const defaultMode = fig.defaultMode;
             const keys = Object.keys(valuesByMode);
-            const map = valuesByMode;
 
             const chosen =
-              map[selectedMode] ??
-              (defaultMode ? map[defaultMode] : undefined) ??
-              (keys.length ? map[keys[0]] : undefined);
+              valuesByMode[selectedMode] ??
+              (defaultMode ? valuesByMode[defaultMode] : undefined) ??
+              (keys.length ? valuesByMode[keys[0]] : undefined);
 
             const tokenType = obj.$type;
 
@@ -222,11 +228,9 @@ export function resolveUploadedDocuments(docs, input = {}) {
     return applySelectedContextsToDoc(merged, input);
   }
 
-  const resolverValue = resolverEntry[1];
-  if (!isResolverDocument(resolverValue)) {
-    throw new Error("Resolver document has wrong shape.");
-  }
+  const resolverDoc = resolverEntry[1];
+  const resolved = resolveWithResolverDocument(resolverDoc, docs, input);
 
-  const resolverDoc = resolverValue;
-  return resolveWithResolverDocument(resolverDoc, docs, input);
+  // ✅ apply figma valuesByMode AFTER resolver merge
+  return applySelectedContextsToDoc(resolved, input);
 }

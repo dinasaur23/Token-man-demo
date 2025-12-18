@@ -25,7 +25,7 @@
               ? modeOptionsForActiveGroup
               : mod.values
           "
-          :model-value="selectedModifiers[mod.name]"
+          :model-value="uiSelectedModifiers[mod.name]"
           @update:model-value="(value) => onModifierChange(mod.name, value)"
           variant="outlined"
           density="compact"
@@ -70,7 +70,6 @@
           item-value="id"
           density="compact"
           activatable
-          open-all
           rounded
           style="height: 70vh"
         >
@@ -131,7 +130,7 @@
         rowSelection.mode="multiRow"
         style="height: 70vh"
         class="mr-5 mt-9"
-        @grid-ready="onGridReady"
+        @grid-ready="handleGridReady"
         @model-updated="onModelUpdated"
       />
     </v-col>
@@ -151,8 +150,10 @@
       <v-list-item @click="addRowBelow">
         <v-list-item-title>Add row below</v-list-item-title>
       </v-list-item>
-      <v-list-item :disabled="!canConvertToAlias(menu.row, rows)" @click="convertRowToAlias"
-        >Create Alias
+      <v-list-item :disabled="!canConvertToAlias(menu.row, rows)" @click="convertRowToAlias">
+        <v-list-item-title>
+          {{ menu.row?.isAlias ? 'Change alias' : 'Create alias' }}
+        </v-list-item-title>
       </v-list-item>
       <v-list-item v-if="menu.row?.aliasPath" @click="clearAliasForRow">
         <v-list-item-title>Remove alias</v-list-item-title>
@@ -272,7 +273,8 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { ref, watch } from 'vue'
+import type { GridApi, GridReadyEvent } from 'ag-grid-community'
 import { AgGridVue } from 'ag-grid-vue3'
 import { themeQuartz } from 'ag-grid-community'
 import TokenExportDialog from './TokenExportDialog.vue'
@@ -289,7 +291,9 @@ const {
   errorMessage,
   activeNodeIds,
   //detectedModifiers,
-  selectedModifiers,
+  activeGroupId,
+  //selectedModifiers,
+  uiSelectedModifiers,
   groupTreeItems,
   filteredRows,
   groupScopedModifierName,
@@ -343,7 +347,22 @@ const {
   cancelRenameGroup,
 } = useColorTableComponent()
 
-const { columnDefs, defaultColDef } = useTokenGridColumns(onActionButtonClick, updateTokenValueAny)
+const gridApi = ref<GridApi | null>(null)
+
+function handleGridReady(e: GridReadyEvent) {
+  gridApi.value = e.api
+  onGridReady(e)
+}
+
+watch(activeGroupId, () => {
+  gridApi.value?.refreshCells({ columns: ['name'], force: true })
+})
+
+const { columnDefs, defaultColDef } = useTokenGridColumns(
+  onActionButtonClick,
+  updateTokenValueAny,
+  activeGroupId,
+)
 
 const ws = useTokenWorkspaceStore()
 ;(window as unknown as { ws: typeof ws }).ws = ws

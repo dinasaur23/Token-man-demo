@@ -1,4 +1,4 @@
-import { ref } from 'vue'
+import { ref, type Ref } from 'vue'
 import type { ColDef, ICellRendererParams, NewValueParams } from 'ag-grid-community'
 import type { TableRow } from '@/utils/dtcg/token-table-types'
 import { srgbFromHex } from '@/utils/dtcg/color-display'
@@ -18,9 +18,24 @@ function srgbComponentsToHex(rStr: string, gStr: string, bStr: string): string {
   return `#${toByteHex(rStr)}${toByteHex(gStr)}${toByteHex(bStr)}`
 }
 
+function formatNameWithRelativeGroup(row: TableRow, activeGroupId: string | null): string {
+  if (!activeGroupId) return row.name
+
+  const activeSegs = activeGroupId.split('.').filter(Boolean)
+  const rowSegs = row.groupPath ?? []
+
+  // same group (or higher) → normal name
+  if (rowSegs.length <= activeSegs.length) return row.name
+
+  // token is in a child group of the active group → prefix like "font/lineheight"
+  const rel = rowSegs.slice(activeSegs.length).join('/')
+  return rel ? `${rel}/${row.name}` : row.name
+}
+
 export function useTokenGridColumns(
   onActionButtonClick: (row: TableRow, ev: MouseEvent) => void,
   updateTokenValueAny: (row: TableRow, value: JsonValue) => Promise<void>,
+  activeGroupIdRef: Ref<string | null>,
 ) {
   const workspaceStore = useTokenWorkspaceStore()
 
@@ -31,6 +46,12 @@ export function useTokenGridColumns(
       field: 'name',
       editable: true,
       flex: 1,
+      valueFormatter: (params) => {
+        const row = params.data as TableRow | undefined
+        if (!row) return ''
+        return formatNameWithRelativeGroup(row, activeGroupIdRef.value)
+      },
+
       onCellValueChanged: async (params) => {
         const row = params.data
         if (!row?.path) return

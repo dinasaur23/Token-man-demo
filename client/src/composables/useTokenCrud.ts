@@ -30,6 +30,34 @@ interface ResolverModifierLike {
 type Json = unknown
 type TokenType = 'color' | 'number' | 'string' | 'boolean'
 
+function isFigmaSyncedToken(node: unknown): boolean {
+  if (!isJsonRecord(node)) return false
+  const ext = (node as JsonRecord).$extensions
+  if (!isJsonRecord(ext)) return false
+  const fig = (ext as JsonRecord).figma
+  if (!isJsonRecord(fig)) return false
+  const variableId = (fig as JsonRecord).variableId
+  return typeof variableId === 'string' && variableId.length > 0
+}
+// function isFigmaSyncedRow(row: TableRow): boolean {
+//   // Figma-synced rows have $extensions.figma in the *raw* token object (row.raw)
+//   if (!isJsonRecord(row.raw)) return false
+//   const ext = (row.raw as JsonRecord).$extensions
+//   if (!isJsonRecord(ext)) return false
+//   const fig = (ext as JsonRecord).figma
+//   return isJsonRecord(fig)
+// }
+
+function getFigmaOrder(node: JsonValue): number | undefined {
+  if (typeof node !== 'object' || node === null) return undefined
+  const ext = (node as Record<string, unknown>).$extensions
+  if (typeof ext !== 'object' || ext === null) return undefined
+  const figma = (ext as Record<string, unknown>).figma
+  if (typeof figma !== 'object' || figma === null) return undefined
+  const order = (figma as Record<string, unknown>).order
+  return typeof order === 'number' ? order : undefined
+}
+
 function isTokenType(t: unknown): t is TokenType {
   return t === 'color' || t === 'number' || t === 'string' || t === 'boolean'
 }
@@ -156,6 +184,24 @@ function ensureRowOrder(store: WorkspaceStore): string[] {
   return store.rowOrder
 }
 
+function seedRowOrderForGroupIfMissing(
+  store: WorkspaceStore,
+  groupPath: string[],
+  parent: JsonRecord,
+) {
+  const order = ensureRowOrder(store)
+  const prefix = groupPath.length ? groupPath.join('.') + '.' : ''
+
+  // build current sibling paths based on parent key order
+  const siblingPaths = Object.keys(parent).map((k) => prefix + k)
+
+  // only seed if NONE of the siblings are tracked yet
+  const hasAny = siblingPaths.some((p) => order.includes(p))
+  if (hasAny) return
+
+  order.push(...siblingPaths)
+}
+
 function isResolverDocument(value: JsonValue): value is JsonRecord {
   return isJsonRecord(value) && Array.isArray((value as JsonRecord).resolutionOrder)
 }
@@ -237,8 +283,19 @@ export function useTokenCrud({
 
     const { fileName, doc, token, parent, key } = found
 
-    const type = row.type
+    // ✅ Figma variables: store override only (do NOT mutate figma-sync.json)
+    if (isFigmaSyncedToken(token)) {
+      workspaceStore.overrides = {
+        ...workspaceStore.overrides,
+        [row.path]: newValue,
+      }
+      await workspaceStore.saveToServer()
+      await persistUploadedDocsAndReload()
+      return
+    }
 
+    // normal tokens: mutate original JSON
+    const type = row.type
     if (isJsonRecord(token)) {
       const tokenRecord: JsonRecord = token
       tokenRecord['$type'] = type
@@ -250,7 +307,13 @@ export function useTokenCrud({
       }
     }
 
-    delete workspaceStore.overrides[row.path]
+    // if we wrote to source, remove any override for this path
+    if (workspaceStore.overrides[row.path] !== undefined) {
+      const copy = { ...workspaceStore.overrides }
+      delete copy[row.path]
+      workspaceStore.overrides = copy
+      await workspaceStore.saveToServer()
+    }
 
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
@@ -411,10 +474,14 @@ export function useTokenCrud({
       return
     }
 
-    const { fileName, doc, parent } = found
+    const { fileName, doc, parent, key: clickedKey } = found
+    const groupPath = segments.slice(0, -1)
+
+    seedRowOrderForGroupIfMissing(workspaceStore, groupPath, parent)
 
     const baseName = row.name || 'new-token'
     const newKey = createDuplicateKey(parent, baseName)
+
     const newToken: JsonValue = {
       $type: row.type,
       $value:
@@ -427,13 +494,24 @@ export function useTokenCrud({
               : '',
     }
 
+    // ---- Figma order handling (CRITICAL FIX) ----
+    const clickedNode = parent[clickedKey]
+    const clickedOrder = getFigmaOrder(clickedNode)
+
+    if (clickedOrder !== undefined) {
+      ;(newToken as Record<string, unknown>).$extensions = {
+        figma: {
+          order: clickedOrder + 0.01,
+        },
+      }
+    }
+
     parent[newKey] = newToken
 
-    const newPathSegments = [...segments.slice(0, -1), newKey]
-    const newPath = newPathSegments.join('.')
-
+    const newPath = [...groupPath, newKey].join('.')
     const order = ensureRowOrder(workspaceStore)
-    const idx = order.indexOf(row.path)
+    const clickedPath = [...groupPath, clickedKey].join('.')
+    const idx = order.indexOf(clickedPath)
     const insertIndex = idx >= 0 ? idx + 1 : order.length
     order.splice(insertIndex, 0, newPath)
 
@@ -579,62 +657,7 @@ export function useTokenCrud({
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
-  // async function setTokenAlias(row: TableRow, aliasPath: string): Promise<void> {
-  //   const trimmedInput = aliasPath.trim()
-  //   if (!trimmedInput) {
-  //     throw new Error('Alias path cannot be empty.')
-  //   }
 
-  //   const targetNormalized = normalizeAliasTarget(trimmedInput)
-
-  //   if (targetNormalized === row.path) {
-  //     throw new Error('A token cannot alias itself.')
-  //   }
-
-  //   const docs = uploadedDocs.value
-  //   const fileNames = Object.keys(docs)
-  //   if (!fileNames.length) {
-  //     throw new Error('No token files are loaded.')
-  //   }
-
-  //   const fileName = fileNames[0]
-  //   const rawDoc = docs[fileName]
-  //   if (!isJsonRecord(rawDoc)) {
-  //     throw new Error('First uploaded token file is not an object.')
-  //   }
-
-  //   const doc = rawDoc as JsonRecord
-
-  //   const fromSegments = row.path.split('.')
-  //   const targetSegments = targetNormalized.split('.')
-
-  //   const targetNode = getNodeAtPath(doc, targetSegments)
-  //   if (!targetNode) {
-  //     throw new Error(`Alias target "${targetNormalized}" does not exist.`)
-  //   }
-
-  //   if (wouldCreateAliasCycle(doc, fromSegments, targetSegments)) {
-  //     throw new Error(
-  //       `Alias "${row.path}" → "${targetNormalized}" would create a circular reference.`,
-  //     )
-  //   }
-
-  //   const pathSegments = row.path.split('.')
-  //   const key = pathSegments.pop()!
-  //   const parentPath = pathSegments
-
-  //   const parent = ensurePath(doc, parentPath)
-
-  //   const aliasValue =
-  //     trimmedInput.startsWith('{') && trimmedInput.endsWith('}')
-  //       ? trimmedInput
-  //       : `{${targetNormalized}}`
-
-  //   parent[key] = { $type: 'color', $value: aliasValue }
-
-  //   uploadedDocs.value[fileName] = doc
-  //   await persistUploadedDocsAndReload()
-  // }
   async function setTokenAlias(row: TableRow, aliasPath: string): Promise<void> {
     const trimmedInput = aliasPath.trim()
     if (!trimmedInput) {
@@ -676,6 +699,26 @@ export function useTokenCrud({
         `Alias target type mismatch: "${row.path}" is "${row.type}" but "${targetNormalized}" is "${targetType}".`,
       )
     }
+    {
+      const seg = row.path.split('.')
+      const found = findDocContainingPath(uploadedDocs.value, seg)
+
+      if (found && isFigmaSyncedToken(found.token)) {
+        const aliasValue =
+          trimmedInput.startsWith('{') && trimmedInput.endsWith('}')
+            ? trimmedInput
+            : `{${targetNormalized}}`
+
+        workspaceStore.overrides = {
+          ...workspaceStore.overrides,
+          [row.path]: aliasValue,
+        }
+
+        await workspaceStore.saveToServer()
+        await persistUploadedDocsAndReload()
+        return
+      }
+    }
 
     const picked = pickDocForRowPath(docs, row.path, workspaceStore)
     if (!picked) {
@@ -703,7 +746,25 @@ export function useTokenCrud({
         ? trimmedInput
         : `{${targetNormalized}}`
 
-    parent[key] = { $type: row.type, $value: aliasValue }
+    const existing = parent[key]
+
+    // if (isFigmaSyncedToken(existing)) {
+    //   workspaceStore.overrides = {
+    //     ...workspaceStore.overrides,
+    //     [row.path]: aliasValue,
+    //   }
+
+    //   await workspaceStore.saveToServer()
+    //   await persistUploadedDocsAndReload()
+    //   return
+    // }
+
+    if (isJsonRecord(existing)) {
+      ;(existing as JsonRecord).$value = aliasValue
+      if (!(existing as JsonRecord).$type) (existing as JsonRecord).$type = row.type
+    } else {
+      parent[key] = { $type: row.type, $value: aliasValue }
+    }
 
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
@@ -717,26 +778,37 @@ export function useTokenCrud({
   //     return
   //   }
 
-  //   const fileName = fileNames[0]
-  //   const rawDoc = docs[fileName]
-  //   if (!isJsonRecord(rawDoc)) {
-  //     console.warn('clearTokenAlias: first uploaded doc is not an object')
+  //   const picked = pickDocForRowPath(docs, row.path, workspaceStore)
+  //   if (!picked) {
+  //     console.warn('clearTokenAlias: token not found in any uploaded doc', row.path)
   //     return
   //   }
 
-  //   const doc = rawDoc as JsonRecord
+  //   const { fileName, doc } = picked
 
-  //   const pathSegments = row.path.split('.') // e.g. ["global","palette","neutral","50"]
+  //   const pathSegments = row.path.split('.')
   //   const key = pathSegments.pop()!
   //   const parentPath = pathSegments
 
   //   const parent = ensurePath(doc, parentPath)
+  //   const literal = parseRowLiteralValue(row)
+  //   const existing = parent[key]
 
-  //   const hex = row.hex
+  //   if (isFigmaSyncedToken(existing)) {
+  //     const copy = { ...workspaceStore.overrides }
+  //     delete copy[row.path]
+  //     workspaceStore.overrides = copy
 
-  //   parent[key] = {
-  //     $type: 'color',
-  //     $value: hex,
+  //     await workspaceStore.saveToServer()
+  //     await persistUploadedDocsAndReload()
+  //     return
+  //   }
+
+  //   if (isJsonRecord(existing)) {
+  //     ;(existing as JsonRecord).$value = literal
+  //     if (!(existing as JsonRecord).$type) (existing as JsonRecord).$type = row.type
+  //   } else {
+  //     parent[key] = { $type: row.type, $value: literal }
   //   }
 
   //   uploadedDocs.value[fileName] = doc
@@ -764,9 +836,26 @@ export function useTokenCrud({
 
     const parent = ensurePath(doc, parentPath)
     const literal = parseRowLiteralValue(row)
-    parent[key] = {
-      $type: row.type,
-      $value: literal,
+    const existing = parent[key]
+
+    if (isFigmaSyncedToken(existing)) {
+      const literal = parseRowLiteralValue(row)
+
+      workspaceStore.overrides = {
+        ...workspaceStore.overrides,
+        [row.path]: literal,
+      }
+
+      await workspaceStore.saveToServer()
+      await persistUploadedDocsAndReload()
+      return
+    }
+
+    if (isJsonRecord(existing)) {
+      ;(existing as JsonRecord).$value = literal
+      if (!(existing as JsonRecord).$type) (existing as JsonRecord).$type = row.type
+    } else {
+      parent[key] = { $type: row.type, $value: literal }
     }
 
     uploadedDocs.value[fileName] = doc

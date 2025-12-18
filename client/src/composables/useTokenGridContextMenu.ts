@@ -34,9 +34,8 @@ export function useTokenGridContextMenu(rows: Ref<TableRow[]>, actions: ContextM
     const list = Array.isArray(rows) ? rows : rows?.value
     if (!list) return false
 
-    if (row.isAlias) return false
-
-    return list.some((r) => r.path !== row.path && r.type === row.type && !r.isAlias)
+    // ✅ allow alias → alias change
+    return list.some((r) => r.path !== row.path && r.type === row.type)
   }
 
   function onActionButtonClick(row: TableRow, ev: MouseEvent): void {

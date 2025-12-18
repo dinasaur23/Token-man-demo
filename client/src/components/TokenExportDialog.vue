@@ -47,12 +47,12 @@
 import { ref } from 'vue'
 import axios from 'axios'
 import { useDesignSystemStore } from '@/stores/DesignSystem'
-import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
+//import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 
 type ExportFormat = 'css' | 'tailwind' | 'swift' | 'android' | 'json'
 
 const dsStore = useDesignSystemStore()
-const wsStore = useTokenWorkspaceStore()
+//const wsStore = useTokenWorkspaceStore()
 
 const dialog = ref(false)
 const loading = ref(false)
@@ -81,10 +81,9 @@ async function downloadOne(format: ExportFormat) {
   console.log('[Export] downloading', format, 'for DS', designSystemId)
 
   const url = `/api/tokens/export/${encodeURIComponent(designSystemId)}`
-  const modifierParams = wsStore.modifiers ?? {}
 
   const res = await axios.get(url, {
-    params: { format, ...modifierParams },
+    params: { format, bundle: 1 },
     responseType: 'blob',
     withCredentials: true,
   })
@@ -108,7 +107,7 @@ async function downloadOne(format: ExportFormat) {
   document.body.appendChild(a)
   a.click()
   a.remove()
-  window.URL.revokeObjectURL(url)
+  window.URL.revokeObjectURL(urlObject)
 }
 
 async function exportNow() {

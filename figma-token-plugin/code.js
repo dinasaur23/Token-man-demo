@@ -68,28 +68,45 @@ function figmaVariablesToDtcg() {
   const groupModeKeySet = {};
   const variablesById = {};
   const pathMap = {};
+  let orderCounter = 0;
+
+  function clamp01(x) {
+    return Math.max(0, Math.min(1, x));
+  }
+
+  // function linearToSrgb(c) {
+  //   c = clamp01(c);
+  //   return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
+  // }
+
+  function colorToHex(color) {
+    const r = clamp01(color.r);
+    const g = clamp01(color.g);
+    const b = clamp01(color.b);
+    const a = color.a != null ? clamp01(color.a) : 1;
+
+    let hex =
+      "#" +
+      toHexChannel(r * 255) +
+      toHexChannel(g * 255) +
+      toHexChannel(b * 255);
+
+    if (a < 0.999) {
+      hex += toHexChannel(a * 255);
+    }
+
+    return hex;
+  }
 
   function toHexChannel(n) {
     const clamped = Math.max(0, Math.min(255, Math.round(n)));
     return clamped.toString(16).padStart(2, "0");
   }
 
-  function colorToHex(color) {
-    const r8 = color.r * 255;
-    const g8 = color.g * 255;
-    const b8 = color.b * 255;
-    const a = color.a != null ? color.a : 1;
-
-    let hex = "#" + toHexChannel(r8) + toHexChannel(g8) + toHexChannel(b8);
-    if (a < 0.999) {
-      hex += toHexChannel(a * 255);
-    }
-    return hex;
-  }
-
   function slugify(name) {
     return String(name || "")
       .trim()
+      .toLowerCase()
       .replace(/\s+/g, "-");
   }
 
@@ -138,7 +155,11 @@ function figmaVariablesToDtcg() {
   function rawValueToDtcgValue(resolvedType, raw) {
     if (raw == null) return null;
 
-    if (resolvedType === "COLOR") return colorToHex(raw);
+    if (resolvedType === "COLOR") {
+      console.log("[color-raw]", raw);
+      return colorToHex(raw);
+    }
+
     if (resolvedType === "FLOAT") return raw;
     if (resolvedType === "STRING") return raw;
     if (resolvedType === "BOOLEAN") return raw;
@@ -146,9 +167,41 @@ function figmaVariablesToDtcg() {
     return null;
   }
 
+  function buildOrderedVariables(collections, variables, collectionsById) {
+    const varsById = {};
+    for (let i = 0; i < variables.length; i++)
+      varsById[variables[i].id] = variables[i];
+
+    const seen = {};
+    const ordered = [];
+
+    // go collection-by-collection in the order Figma gives collections
+    for (let c = 0; c < collections.length; c++) {
+      const col = collections[c];
+      const ids = Array.isArray(col.variableIds) ? col.variableIds : [];
+
+      for (let j = 0; j < ids.length; j++) {
+        const v = varsById[ids[j]];
+        if (v && !seen[v.id]) {
+          seen[v.id] = true;
+          ordered.push(v);
+        }
+      }
+    }
+
+    // fallback: append any variables not listed in variableIds
+    for (let i = 0; i < variables.length; i++) {
+      const v = variables[i];
+      if (!seen[v.id]) ordered.push(v);
+    }
+
+    return ordered;
+  }
+  const orderedVariables = buildOrderedVariables(collections, variables);
   // -------- build pathMap --------
-  for (let i = 0; i < variables.length; i++) {
-    const variable = variables[i];
+
+  for (let i = 0; i < orderedVariables.length; i++) {
+    const variable = orderedVariables[i];
     variablesById[variable.id] = variable;
 
     if (!isSupportedResolvedType(variable.resolvedType)) continue;
@@ -174,8 +227,8 @@ function figmaVariablesToDtcg() {
   }
 
   // -------- build tokens --------
-  for (let i = 0; i < variables.length; i++) {
-    const variable = variables[i];
+  for (let i = 0; i < orderedVariables.length; i++) {
+    const variable = orderedVariables[i];
 
     if (!isSupportedResolvedType(variable.resolvedType)) continue;
 
@@ -198,9 +251,18 @@ function figmaVariablesToDtcg() {
     const groupSegments = rawParts.slice(0, -1);
     const containerPath = [collectionKey].concat(groupSegments);
 
-    const valuesByMode = variable.valuesByMode || null;
-    const modeIds = valuesByMode ? Object.keys(valuesByMode) : [];
-    const hasModes = modeIds.length > 1;
+    const valuesByMode = variable.valuesByMode;
+    const modeIds =
+      valuesByMode && typeof valuesByMode === "object"
+        ? Object.keys(valuesByMode)
+        : [];
+    const collectionModeCount =
+      collection &&
+      collection.modes &&
+      typeof collection.modes.length === "number"
+        ? collection.modes.length
+        : 0;
+    const hasModes = collectionModeCount > 1;
 
     let token = null;
 
@@ -208,11 +270,19 @@ function figmaVariablesToDtcg() {
       const valueByMode = {};
       const modesExt = {};
 
-      for (let m = 0; m < modeIds.length; m++) {
-        const modeId = modeIds[m];
-        const raw = valuesByMode[modeId];
+      const modeList =
+        collection && Array.isArray(collection.modes) ? collection.modes : [];
+
+      for (let m = 0; m < modeList.length; m++) {
+        const modeId = modeList[m].modeId;
+
+        const raw =
+          valuesByMode && typeof valuesByMode === "object"
+            ? valuesByMode[modeId]
+            : undefined;
 
         if (raw === undefined || raw === null) continue;
+
         const modeKey = getModeKey(collection, modeId);
 
         let modeValue = null;
@@ -229,10 +299,10 @@ function figmaVariablesToDtcg() {
 
         valueByMode[modeKey] = modeValue;
         modesExt[modeKey] = modeId;
+
         globalModeKeySet[modeKey] = true;
-        if (!groupModeKeySet[collectionKey]) {
+        if (!groupModeKeySet[collectionKey])
           groupModeKeySet[collectionKey] = {};
-        }
         groupModeKeySet[collectionKey][modeKey] = true;
       }
 
@@ -248,10 +318,25 @@ function figmaVariablesToDtcg() {
             variableId: variable.id,
             defaultMode: defaultModeKey,
             modes: modesExt,
-            valuesByMode,
+            valuesByMode: valueByMode,
+            order: orderCounter++,
           },
         },
       };
+      console.log("[Plugin][mode-debug]", {
+        name: variable.name,
+        dtcgPath: containerPath.concat(tokenKey).join("."),
+        defaultModeKey,
+        valuesByModeKeys: Object.keys(
+          token.$extensions.figma.valuesByMode || {}
+        ),
+        sampleChosenType: typeof (token.$extensions.figma.valuesByMode || {})[
+          defaultModeKey
+        ],
+        sampleChosenValue: (token.$extensions.figma.valuesByMode || {})[
+          defaultModeKey
+        ],
+      });
     } else {
       let raw = null;
       if (valuesByMode && modeIds.length) raw = valuesByMode[modeIds[0]];
@@ -278,6 +363,7 @@ function figmaVariablesToDtcg() {
           figma: {
             collection: collectionKey,
             variableId: variable.id,
+            order: orderCounter++,
           },
         },
       };

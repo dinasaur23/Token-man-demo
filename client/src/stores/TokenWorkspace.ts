@@ -29,6 +29,7 @@ export interface TokenWorkspaceDto {
   figmaTokens?: Record<string, unknown>
   figmaModifierOptions?: FigmaModifierOptions
   groupNameOverrides?: Record<string, string>
+  scopedModifiers?: Record<string, Record<string, string>>
 }
 
 interface TokenWorkspaceState {
@@ -44,6 +45,7 @@ interface TokenWorkspaceState {
   figmaTokens: Record<string, unknown>
   figmaModifierOptions: FigmaModifierOptions
   groupNameOverrides: Record<string, string>
+  scopedModifiers: Record<string, Record<string, string>>
 }
 function buildWorkspaceUrl(designSystemId: string | null): string {
   if (!designSystemId) {
@@ -67,6 +69,7 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
     figmaTokens: {},
     figmaModifierOptions: {},
     groupNameOverrides: {} as Record<string, string>,
+    scopedModifiers: {},
   }),
 
   actions: {
@@ -88,6 +91,7 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
       this.figmaTokens = {}
       this.figmaModifierOptions = {}
       this.groupNameOverrides = {}
+      this.scopedModifiers = {}
     },
     async loadFromServer(): Promise<void> {
       try {
@@ -105,6 +109,9 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
         console.log('GET', url, 'status', res.status)
 
         if (!res.ok) {
+          this.files = []
+          this.modifiers = {}
+          this.scopedModifiers = {}
           this.loaded = true
           return
         }
@@ -118,6 +125,7 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
 
         this.files = Array.isArray(data.files) ? data.files : []
         this.modifiers = data.modifiers ?? {}
+        this.scopedModifiers = data.scopedModifiers ?? {}
         this.overrides = data.overrides ?? {}
         this.nameOverrides = data.nameOverrides ?? {}
         this.addedRows = Array.isArray(data.addedRows) ? data.addedRows : []
@@ -177,6 +185,7 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
         const payload: TokenWorkspaceDto = {
           files: this.files,
           modifiers: this.modifiers,
+          scopedModifiers: this.scopedModifiers,
           overrides: this.overrides,
           nameOverrides: this.nameOverrides,
           addedRows: this.addedRows,

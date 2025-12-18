@@ -44,42 +44,58 @@ export interface ResolverDocument extends JsonObject {
   resolutionOrder: ResolverOrderEntry[]
 }
 
-export type ResolverInput = Record<string, string>
+export type ResolverInput = Record<string, string> & {
+  scopedModifiers?: Record<string, Record<string, string>>
+}
 
 export interface GroupScopedModifierInfo {
   modifierName: string
   groupModes: Record<string, string[]>
 }
-
+function unwrapTokensRoot(obj: JsonObject): JsonObject {
+  const maybe = (obj as Record<string, unknown>).tokens
+  return isJsonObject(maybe) ? (maybe as JsonObject) : obj
+}
 // ---------- small helpers ----------------------------------------------------
-
 export function applySelectedContextsToDoc(doc: JsonObject, input: ResolverInput): JsonObject {
-  const selectedMode = input.mode || null
-
-  console.log('[Resolver] applySelectedContextsToDoc start. Selected mode =', selectedMode)
-
-  // helper type for the figma extension we actually use
   type FigmaExtension = {
     valuesByMode?: Record<string, JsonValue>
     defaultMode?: string
   }
 
-  function visit(value: JsonValue): JsonValue {
-    // arrays
+  // global fallback (still useful)
+  const globalMode = input.mode || null
+
+  function pickModeForGroup(groupKey: string | null): string | null {
+    if (!groupKey) return globalMode
+    const scopedName = 'mode' // keep as 'mode' unless you pass the actual scoped modifier name in input
+    const scoped = input.scopedModifiers?.[scopedName]?.[groupKey]
+
+    return scoped ?? globalMode
+  }
+
+  function visit(value: JsonValue, topGroupKey: string | null): JsonValue {
     if (Array.isArray(value)) {
-      return (value as JsonArray).map(visit)
+      return (value as JsonArray).map((v) => visit(v, topGroupKey))
     }
 
-    // objects
     if (isJsonObject(value)) {
       const obj = value as JsonObject
       const out: JsonObject = {}
 
       for (const [key, v] of Object.entries(obj)) {
-        out[key] = visit(v as JsonValue)
+        // top-level group is the first key under the root doc
+        const nextTopGroupKey = topGroupKey ?? key
+        out[key] = visit(v as JsonValue, nextTopGroupKey)
       }
 
-      // ---------- Figma-mode handling ----------
+      // ---------- Figma-mode handling (GROUP AWARE) ----------
+
+      const selectedMode = pickModeForGroup(topGroupKey)
+      // if (topGroupKey && selectedMode) {
+      //   console.log('[Resolver] mode for group', topGroupKey, '=', selectedMode)
+      // }
+
       if (selectedMode && obj.$extensions && isJsonObject(obj.$extensions)) {
         const ext = obj.$extensions as { figma?: FigmaExtension }
         const fig = ext.figma
@@ -89,7 +105,6 @@ export function applySelectedContextsToDoc(doc: JsonObject, input: ResolverInput
           if (valuesByMode && typeof valuesByMode === 'object') {
             const defaultMode: string | undefined = fig.defaultMode
             const keys = Object.keys(valuesByMode)
-
             const map = valuesByMode as Record<string, JsonValue>
 
             const chosen: JsonValue | undefined =
@@ -98,7 +113,6 @@ export function applySelectedContextsToDoc(doc: JsonObject, input: ResolverInput
               (keys.length ? map[keys[0]] : undefined)
 
             if (typeof chosen === 'string') {
-              // ✅ override $value with final scalar used by table & exporter
               out.$value = chosen
             }
           }
@@ -108,55 +122,10 @@ export function applySelectedContextsToDoc(doc: JsonObject, input: ResolverInput
       return out
     }
 
-    // primitives
     return value
   }
 
-  const resolved = visit(doc) as JsonObject
-
-  // DEBUG: log a sample token after resolution
-  ;(() => {
-    const cKeys = Object.keys(resolved)
-    if (!cKeys.length) {
-      console.log('[Resolver][DEBUG] No tokens after applySelectedContextsToDoc')
-      return
-    }
-
-    const firstCollection = cKeys[0]
-    const groupValue = resolved[firstCollection]
-
-    if (!isJsonObject(groupValue)) {
-      console.log('[Resolver][DEBUG] First collection not an object')
-      return
-    }
-
-    const group = groupValue as JsonObject
-    const tKeys = Object.keys(group)
-    if (!tKeys.length) {
-      console.log('[Resolver][DEBUG] First collection has no tokens')
-      return
-    }
-
-    const firstTokenKey = tKeys[0]
-    const tokenValue = group[firstTokenKey]
-
-    if (!isJsonObject(tokenValue)) {
-      console.log('[Resolver][DEBUG] First token is not an object')
-      return
-    }
-
-    const token = tokenValue as JsonObject & { $value?: JsonValue }
-
-    console.log(
-      '[Resolver][DEBUG] Sample AFTER resolution:',
-      `${firstCollection}/${firstTokenKey}`,
-      'typeof $value =',
-      typeof token.$value,
-      'value =',
-      token.$value,
-    )
-  })()
-
+  const resolved = visit(doc, null) as JsonObject
   console.log('[Resolver] applySelectedContextsToDoc end')
   return resolved
 }
@@ -354,9 +323,9 @@ export function resolveUploadedDocuments(
   const resolverEntry = Object.entries(docs).find(([, value]) => isResolverDocument(value))
 
   if (!resolverEntry) {
-    console.log(
-      '[Resolver] no resolver doc found → simple mergeAllDocs + applySelectedContextsToDoc',
-    )
+    // console.log(
+    //   '[Resolver] no resolver doc found → simple mergeAllDocs + applySelectedContextsToDoc',
+    // )
     const merged = mergeAllDocs(docs)
     console.log('[Resolver] merged document sample:', JSON.stringify(merged, null, 2).slice(0, 500))
     const applied = applySelectedContextsToDoc(merged, input)
@@ -379,7 +348,8 @@ export function resolveUploadedDocuments(
     '[Resolver] resolveWithResolverDocument finished, sample:',
     JSON.stringify(resolved, null, 2).slice(0, 500),
   )
-  return resolved
+  const applied = applySelectedContextsToDoc(resolved, input)
+  return applied
 }
 
 export function extractModifiersFromDocs(docs: Record<string, JsonValue>): DetectedModifier[] {
@@ -422,55 +392,69 @@ export function extractGroupModesFromResolverDocs(
   const modifierNames = Object.keys(modifiers)
   if (modifierNames.length === 0) return null
 
-  // helper: only return name if it actually exists in the resolver
   const pickIfExists = (name: string): string | null => (name in modifiers ? name : null)
 
   let modifierName: string | null = null
 
-  // 1. explicit preferred name, if it exists
   if (preferredModifierName) {
     modifierName = pickIfExists(preferredModifierName)
   }
-
-  // 2. otherwise try our common names in order
   if (!modifierName) {
-    modifierName =
-      pickIfExists('mode') ?? // old case (light/dark)
-      pickIfExists('density') ?? // your example5.resolver
-      null
+    modifierName = pickIfExists('mode') ?? null
   }
 
-  // 3. final fallback → first modifier defined in the resolver
   if (!modifierName) {
-    modifierName = modifierNames[0]
+    // IMPORTANT: don't guess "density" here — pick the first modifier defined in the resolver
+    modifierName = modifierNames[0] ?? null
   }
 
   const modifier = modifiers[modifierName]
   if (!modifier) return null
 
-  const groupMap = new Map<string, Set<string>>()
+  // groupKey -> contextValue -> serialized subtree snapshot
+  const snapshots = new Map<string, Map<string, string>>()
 
   for (const [contextValue, sources] of Object.entries(modifier.contexts ?? {})) {
     for (const src of sources) {
       const tokensObject = loadTokenSource(src, docs)
       if (!isJsonObject(tokensObject)) continue
 
-      for (const groupKey of Object.keys(tokensObject)) {
+      const root = unwrapTokensRoot(tokensObject)
+
+      for (const groupKey of Object.keys(root)) {
         if (!groupKey) continue
-        let set = groupMap.get(groupKey)
-        if (!set) {
-          set = new Set<string>()
-          groupMap.set(groupKey, set)
+
+        const subtree = (root as Record<string, JsonValue>)[groupKey]
+
+        let serialized = ''
+        try {
+          serialized = JSON.stringify(subtree)
+        } catch {
+          serialized = String(subtree)
         }
-        set.add(contextValue)
+
+        let byContext = snapshots.get(groupKey)
+        if (!byContext) {
+          byContext = new Map<string, string>()
+          snapshots.set(groupKey, byContext)
+        }
+
+        byContext.set(contextValue, serialized)
       }
     }
   }
 
+  // Only keep groups where at least 2 contexts produce different content
   const groupModes: Record<string, string[]> = {}
-  for (const [groupKey, set] of groupMap.entries()) {
-    groupModes[groupKey] = Array.from(set)
+
+  for (const [groupKey, byContext] of snapshots.entries()) {
+    const unique = new Set(byContext.values())
+    if (unique.size <= 1) continue // identical across contexts => NOT scoped => no dropdown
+
+    groupModes[groupKey] = Array.from(byContext.keys())
   }
+
+  if (Object.keys(groupModes).length === 0) return null
 
   return {
     modifierName,

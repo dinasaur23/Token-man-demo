@@ -30,7 +30,10 @@ const tokenWorkspaceSchema = new Schema(
       type: Schema.Types.Mixed,
       default: {},
     },
-
+    scopedModifiers: {
+      type: Schema.Types.Mixed,
+      default: {},
+    },
     overrides: {
       type: Schema.Types.Mixed,
       default: {},
