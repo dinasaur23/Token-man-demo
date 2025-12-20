@@ -23,6 +23,50 @@ import { pruneEmptyChildren } from '@/utils/dtcg/grouping'
 import { useTokenCrud } from './useTokenCrud'
 import type { FigmaModifierOptions } from '@/stores/TokenWorkspace'
 
+type TokenType = TableRow['type']
+
+interface ModeAddedRow {
+  path: string
+  type: TokenType
+  value: JsonValue
+  name?: string
+  raw?: JsonValue
+}
+
+function isModeAddedRow(v: unknown): v is ModeAddedRow {
+  if (typeof v !== 'object' || v === null) return false
+  const r = v as Record<string, unknown>
+  return typeof r.path === 'string' && typeof r.type === 'string' && 'value' in r
+}
+
+function getModeAddedRowsFor(
+  store: ReturnType<typeof useTokenWorkspaceStore>,
+  mode: string,
+  groupKey: string,
+): ModeAddedRow[] {
+  const map = store.modeAddedRows ?? {}
+  const key = `${mode}::${groupKey}`
+  const raw = map[key]
+
+  if (!Array.isArray(raw)) return []
+
+  const out: ModeAddedRow[] = []
+  for (const item of raw) {
+    if (isModeAddedRow(item)) out.push(item)
+  }
+  return out
+}
+
+function isDeletedInMode(
+  store: ReturnType<typeof useTokenWorkspaceStore>,
+  mode: string,
+  tokenPath: string,
+): boolean {
+  const map = store.modeDeletedPaths ?? {}
+  const arr = map[mode]
+  return Array.isArray(arr) && arr.includes(tokenPath)
+}
+
 function collectFigmaOrderMap(doc: unknown): Map<string, number> {
   const map = new Map<string, number>()
 
@@ -183,6 +227,24 @@ export function useTokenWorkspaceTable() {
     if (firstSeg && map[firstSeg]) return firstSeg
 
     return null
+  }
+  function groupKeyHasModes(groupKey: string): boolean {
+    const map = groupScopedModeOptions.value
+    if (map[groupKey]) return true
+
+    const firstSeg = groupKey.split('.')[0]
+    if (firstSeg && map[firstSeg]) return true
+
+    return false
+  }
+
+  function getEffectiveModeForGroupKey(groupKey: string): string {
+    // ✅ No-mode collections must always use "default"
+    if (!groupKeyHasModes(groupKey)) return 'default'
+
+    const globalMode = uiSelectedModifiers.value.mode ?? null
+    const scopedMode = workspaceStore.scopedModifiers?.mode?.[groupKey]
+    return scopedMode ?? globalMode ?? 'default'
   }
 
   const filteredRows = computed<TableRow[]>(() => {
@@ -350,9 +412,13 @@ export function useTokenWorkspaceTable() {
   )
 
   watch(
-    [() => uploadedDocs.value, () => workspaceStore.overrides],
+    [
+      () => uploadedDocs.value,
+      () => workspaceStore.overrides,
+      () => workspaceStore.modeDeletedPaths,
+      () => workspaceStore.modeAddedRows,
+    ],
     () => {
-      // only run when docs are non-empty (optional)
       if (Object.keys(uploadedDocs.value).length > 0) {
         resolveAndPopulateFromUploadedDocs().catch((err) => {
           console.error('Watch-triggered table refresh failed:', err)
@@ -493,92 +559,197 @@ export function useTokenWorkspaceTable() {
       }
     }
 
-    const newRows: TableRow[] = orderedTokens.map((t) => {
-      let aliasPath = extractAliasPath(t.value)
+    const newRows: TableRow[] = orderedTokens
+      .map((t) => {
+        let aliasPath = extractAliasPath(t.value)
 
-      let resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? t.value
+        let resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? t.value
 
-      const hasDirectOv = Object.prototype.hasOwnProperty.call(workspaceStore.overrides, t.path)
-      const directOv = workspaceStore.overrides[t.path]
+        const groupPath = extractGroupPath(t.path)
+        const groupKey = groupPath?.[0] ?? t.path.split('.')[0] ?? ''
+        const effectiveMode = getEffectiveModeForGroupKey(groupKey)
+        // console.log('[table row]', {
+        //   path: t.path,
+        //   effectiveMode,
+        //   deleted: isDeletedInMode(workspaceStore, effectiveMode, t.path),
+        //   modeDeletedPaths: workspaceStore.modeDeletedPaths,
+        // })
+        if (isDeletedInMode(workspaceStore, effectiveMode, t.path)) {
+          return null
+        }
 
-      if (typeof directOv === 'string') {
-        const ovAlias = extractAliasPath(directOv)
+        // mode-scoped override key + legacy fallback
+        const directKey = `${effectiveMode}::${t.path}`
+        const hasDirectOv =
+          Object.prototype.hasOwnProperty.call(workspaceStore.overrides, directKey) ||
+          Object.prototype.hasOwnProperty.call(workspaceStore.overrides, t.path)
 
-        if (ovAlias) {
-          aliasPath = ovAlias
-          resolved = resolveValue(directOv, map) ?? directOv
-        } else {
+        const directOv = workspaceStore.overrides[directKey] ?? workspaceStore.overrides[t.path]
+
+        if (typeof directOv === 'string') {
+          const ovAlias = extractAliasPath(directOv)
+
+          if (ovAlias) {
+            aliasPath = ovAlias
+            resolved = resolveValue(directOv, map) ?? directOv
+          } else {
+            aliasPath = null
+            resolved = directOv
+          }
+        } else if (hasDirectOv) {
           aliasPath = null
           resolved = directOv
         }
-      } else if (hasDirectOv) {
-        aliasPath = null
-        resolved = directOv
-      }
 
-      const overridePath = aliasPath ?? t.path
-      if (
-        overridePath !== t.path &&
-        Object.prototype.hasOwnProperty.call(workspaceStore.overrides, overridePath)
-      ) {
-        resolved = workspaceStore.overrides[overridePath]
-      }
-
-      //console.log('TOKEN PATH:', t.path)
-      const groupPath = extractGroupPath(t.path)
-      const groupLabel = groupPath.length ? groupPath[groupPath.length - 1] : ''
-      const nameOverride = workspaceStore.nameOverrides[t.path]
-      const fallbackName = t.path.split('.').pop() ?? t.path
-      const name = nameOverride && nameOverride.trim().length > 0 ? nameOverride : fallbackName
-
-      let value = ''
-      let hex = ''
-
-      if (t.type === 'color') {
-        const display = makeDisplayColor(resolved)
-        value = display.srgb
-        hex = display.hex
-      } else if (typeof resolved === 'string') {
-        value = resolved
-      } else if (typeof resolved === 'number') {
-        value = Number.isFinite(resolved) ? String(resolved) : ''
-      } else if (typeof resolved === 'boolean') {
-        value = resolved ? 'true' : 'false'
-      } else if (resolved == null) {
-        value = ''
-      } else {
-        try {
-          value = JSON.stringify(resolved)
-        } catch {
-          value = String(resolved)
+        const overridePath = aliasPath ?? t.path
+        if (overridePath !== t.path) {
+          const aliasKey = `${effectiveMode}::${overridePath}`
+          if (
+            Object.prototype.hasOwnProperty.call(workspaceStore.overrides, aliasKey) ||
+            Object.prototype.hasOwnProperty.call(workspaceStore.overrides, overridePath)
+          ) {
+            resolved = workspaceStore.overrides[aliasKey] ?? workspaceStore.overrides[overridePath]
+          }
         }
-      }
 
-      return {
-        name,
-        value,
-        hex,
-        raw: t.value,
-        group: groupLabel,
-        groupPath,
-        path: t.path,
-        type: t.type,
-        isAlias: !!aliasPath,
-        aliasPath: aliasPath ?? '',
+        //console.log('TOKEN PATH:', t.path)
+
+        const groupLabel = groupPath.length ? groupPath[groupPath.length - 1] : ''
+        const nameOverride = workspaceStore.nameOverrides[t.path]
+        const fallbackName = t.path.split('.').pop() ?? t.path
+        const name = nameOverride && nameOverride.trim().length > 0 ? nameOverride : fallbackName
+
+        let value = ''
+        let hex = ''
+
+        if (t.type === 'color') {
+          const display = makeDisplayColor(resolved)
+          value = display.srgb
+          hex = display.hex
+        } else if (typeof resolved === 'string') {
+          value = resolved
+        } else if (typeof resolved === 'number') {
+          value = Number.isFinite(resolved) ? String(resolved) : ''
+        } else if (typeof resolved === 'boolean') {
+          value = resolved ? 'true' : 'false'
+        } else if (resolved == null) {
+          value = ''
+        } else {
+          try {
+            value = JSON.stringify(resolved)
+          } catch {
+            value = String(resolved)
+          }
+        }
+
+        return {
+          name,
+          value,
+          hex,
+          raw: t.value,
+          group: groupLabel,
+          groupPath,
+          path: t.path,
+          type: t.type,
+          isAlias: !!aliasPath,
+          aliasPath: aliasPath ?? '',
+        } as TableRow
+      })
+      .filter((r): r is TableRow => r !== null)
+
+    //const globalMode = uiSelectedModifiers.value.mode ?? 'default'
+
+    const existingPaths = new Set(newRows.map((r) => r.path))
+
+    const topGroups = new Set<string>()
+    for (const r of newRows) {
+      const g0 = r.groupPath?.[0]
+      if (g0) topGroups.add(g0)
+    }
+
+    for (const groupKey of topGroups) {
+      const effectiveMode = getEffectiveModeForGroupKey(groupKey)
+      const added = getModeAddedRowsFor(workspaceStore, effectiveMode, groupKey)
+
+      for (const a of added) {
+        const path = a.path
+        if (!path) continue
+        if (existingPaths.has(path)) continue
+        if (isDeletedInMode(workspaceStore, effectiveMode, path)) continue
+
+        const groupPath = extractGroupPath(path)
+        const groupLabel = groupPath.length ? groupPath[groupPath.length - 1] : ''
+        const name = a.name && a.name.trim().length > 0 ? a.name : (path.split('.').pop() ?? path)
+
+        // ✅ alias detection for added/duplicated rows
+        const rawValue: JsonValue = a.raw ?? a.value
+        const aliasPath = extractAliasPath(rawValue)
+
+        // resolve value like normal rows do
+        let resolved: unknown = rawValue
+        if (typeof rawValue === 'string') {
+          resolved = resolveValue(rawValue, map) ?? rawValue
+        }
+
+        let value = ''
+        let hex = ''
+
+        if (a.type === 'color') {
+          const display = makeDisplayColor(resolved)
+          value = display.srgb
+          hex = display.hex
+        } else if (typeof resolved === 'string') {
+          value = resolved
+        } else if (typeof resolved === 'number') {
+          value = Number.isFinite(resolved) ? String(resolved) : ''
+        } else if (typeof resolved === 'boolean') {
+          value = resolved ? 'true' : 'false'
+        } else if (resolved == null) {
+          value = ''
+        } else {
+          try {
+            value = JSON.stringify(resolved)
+          } catch {
+            value = String(resolved)
+          }
+        }
+
+        newRows.push({
+          name,
+          value,
+          hex,
+          raw: rawValue,
+          group: groupLabel,
+          groupPath,
+          path,
+          type: a.type,
+          isAlias: !!aliasPath,
+          aliasPath: aliasPath ?? '',
+        })
+
+        existingPaths.add(path)
       }
-    })
-    // token order map is already by tokenPath -> order
+    }
+
     const tokenOrderByPath = figmaOrderMap
+
+    const rowOrderIndex = new Map<string, number>()
+    workspaceStore.rowOrder.forEach((p: string, i: number) => rowOrderIndex.set(p, i))
 
     newRows.sort((a, b) => {
       const aGroupKey = buildGroupOrderKey(a.groupPath, tokenOrderByPath)
       const bGroupKey = buildGroupOrderKey(b.groupPath, tokenOrderByPath)
 
-      // 1) group hierarchy order (keeps Padding rows together, Margin rows together, etc.)
+      // 1) keep your existing group hierarchy ordering
       const g = compareNumberArrays(aGroupKey, bGroupKey)
       if (g !== 0) return g
 
-      // 2) within same group, sort by token order
+      // 2) within same group: use rowOrder if present (this fixes "add/duplicate below")
+      const ai = rowOrderIndex.get(a.path) ?? Number.MAX_SAFE_INTEGER
+      const bi = rowOrderIndex.get(b.path) ?? Number.MAX_SAFE_INTEGER
+      if (ai !== bi) return ai - bi
+
+      // 3) fallback to figma order
       const ao = tokenOrderByPath.get(a.path) ?? Number.MAX_SAFE_INTEGER
       const bo = tokenOrderByPath.get(b.path) ?? Number.MAX_SAFE_INTEGER
       if (ao !== bo) return ao - bo
@@ -810,6 +981,10 @@ export function useTokenWorkspaceTable() {
     uploadedDocs,
     workspaceStore,
     persistUploadedDocsAndReload,
+    getEffectiveModeForPath: (tokenPath: string) => {
+      const groupKey = extractGroupPath(tokenPath)?.[0] ?? tokenPath.split('.')[0] ?? ''
+      return getEffectiveModeForGroupKey(groupKey)
+    },
   })
 
   async function addSiblingGroupForActiveGroup(newGroupName: string): Promise<void> {

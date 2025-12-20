@@ -52,6 +52,8 @@ const tokenWorkspaceSchema = new Schema(
       type: Object,
       default: {},
     },
+    modeAddedRows: { type: Object, default: {} },
+    modeDeletedPaths: { type: Object, default: {} },
   },
 
   { timestamps: true }

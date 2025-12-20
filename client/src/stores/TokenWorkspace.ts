@@ -30,6 +30,8 @@ export interface TokenWorkspaceDto {
   figmaModifierOptions?: FigmaModifierOptions
   groupNameOverrides?: Record<string, string>
   scopedModifiers?: Record<string, Record<string, string>>
+  modeAddedRows?: Record<string, unknown[]> // key: `${mode}::${groupKey}`
+  modeDeletedPaths?: Record<string, string[]>
 }
 
 interface TokenWorkspaceState {
@@ -46,6 +48,8 @@ interface TokenWorkspaceState {
   figmaModifierOptions: FigmaModifierOptions
   groupNameOverrides: Record<string, string>
   scopedModifiers: Record<string, Record<string, string>>
+  modeAddedRows: Record<string, unknown[]>
+  modeDeletedPaths: Record<string, string[]>
 }
 function buildWorkspaceUrl(designSystemId: string | null): string {
   if (!designSystemId) {
@@ -70,6 +74,8 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
     figmaModifierOptions: {},
     groupNameOverrides: {} as Record<string, string>,
     scopedModifiers: {},
+    modeAddedRows: {} as Record<string, unknown[]>,
+    modeDeletedPaths: {} as Record<string, string[]>,
   }),
 
   actions: {
@@ -92,6 +98,8 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
       this.figmaModifierOptions = {}
       this.groupNameOverrides = {}
       this.scopedModifiers = {}
+      this.modeAddedRows = {}
+      this.modeDeletedPaths = {}
     },
     async loadFromServer(): Promise<void> {
       try {
@@ -134,6 +142,12 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
         this.figmaTokens = data.figmaTokens ?? {}
         this.figmaModifierOptions = data.figmaModifierOptions ?? {}
         this.groupNameOverrides = data.groupNameOverrides ?? {}
+        this.modeAddedRows =
+          data.modeAddedRows && typeof data.modeAddedRows === 'object' ? data.modeAddedRows : {}
+        this.modeDeletedPaths =
+          data.modeDeletedPaths && typeof data.modeDeletedPaths === 'object'
+            ? data.modeDeletedPaths
+            : {}
         console.log('[WorkspaceStore] after assigning from DTO:', {
           files: this.files.map((f) => f.name),
           modifiers: this.modifiers,
@@ -192,6 +206,8 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
           deletedPaths: this.deletedPaths,
           rowOrder: this.rowOrder,
           groupNameOverrides: this.groupNameOverrides,
+          modeAddedRows: this.modeAddedRows,
+          modeDeletedPaths: this.modeDeletedPaths,
         }
 
         const res = await fetch(url, {

@@ -13,6 +13,123 @@ import {
 } from "../utils/dtcg/cleanupWorkspaceTokens.js";
 import { resolveUploadedDocuments } from "../utils/dtcg/uploadedResolver.js";
 import archiver from "archiver";
+function isRecord(v) {
+  return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+
+function ensureContainer(root, pathSegments) {
+  let cur = root;
+  for (const seg of pathSegments) {
+    const next = cur[seg];
+    if (!isRecord(next)) cur[seg] = {};
+    cur = cur[seg];
+  }
+  return cur;
+}
+
+function setTokenAtPath(tokensRoot, tokenPath, type, value) {
+  const seg = String(tokenPath).split(".").filter(Boolean);
+  if (!seg.length) return;
+
+  const key = seg[seg.length - 1];
+  const parent = ensureContainer(tokensRoot, seg.slice(0, -1));
+
+  const existing = parent[key];
+  if (isRecord(existing)) {
+    existing.$type = type;
+    existing.$value = value;
+  } else {
+    parent[key] = { $type: type, $value: value };
+  }
+}
+
+function deleteAtPathIfExistsInTree(tokensRoot, tokenPath) {
+  const seg = String(tokenPath).split(".").filter(Boolean);
+  if (seg.length === 0) return;
+
+  const key = seg[seg.length - 1];
+  const parentSeg = seg.slice(0, -1);
+
+  let parent = tokensRoot;
+  for (const s of parentSeg) {
+    if (!isRecord(parent)) return;
+    parent = parent[s];
+  }
+  if (!isRecord(parent)) return;
+
+  if (Object.prototype.hasOwnProperty.call(parent, key)) {
+    delete parent[key];
+  }
+}
+
+function applyWorkspaceEditsForCollectionMode(
+  mergedTokens,
+  workspace,
+  collection,
+  modeName
+) {
+  if (!mergedTokens || typeof mergedTokens !== "object") return;
+
+  const tokensRoot =
+    mergedTokens.tokens && isRecord(mergedTokens.tokens)
+      ? mergedTokens.tokens
+      : mergedTokens;
+
+  if (!isRecord(tokensRoot)) return;
+
+  // ---- 1) mode deletions ----
+  const del = workspace.modeDeletedPaths?.[modeName];
+  if (Array.isArray(del)) {
+    for (const p of del) {
+      if (typeof p !== "string") continue;
+      if (p === collection || p.startsWith(collection + ".")) {
+        deleteAtPathIfExistsInTree(tokensRoot, p);
+      }
+    }
+  }
+
+  const key = `${modeName}::${collection}`;
+  const added = workspace.modeAddedRows?.[key];
+  if (Array.isArray(added)) {
+    for (const r of added) {
+      if (!r || typeof r.path !== "string" || typeof r.type !== "string")
+        continue;
+      if (r.path !== collection && !r.path.startsWith(collection + "."))
+        continue;
+      setTokenAtPath(tokensRoot, r.path, r.type, r.value);
+    }
+  }
+
+  const overrides = workspace.overrides ?? {};
+
+  for (const [k, v] of Object.entries(overrides)) {
+    if (typeof k !== "string") continue;
+
+    const prefix = modeName + "::";
+    if (k.startsWith(prefix)) {
+      const tokenPath = k.slice(prefix.length);
+      if (tokenPath === collection || tokenPath.startsWith(collection + ".")) {
+        // infer type if possible; otherwise keep "string"
+        const t = "string";
+        setTokenAtPath(tokensRoot, tokenPath, t, v);
+      }
+    }
+  }
+
+  for (const [tokenPath, v] of Object.entries(overrides)) {
+    if (typeof tokenPath !== "string") continue;
+    if (tokenPath.includes("::")) continue; // skip mode:: keys
+    if (tokenPath !== collection && !tokenPath.startsWith(collection + "."))
+      continue;
+
+    const modeKey = `${modeName}::${tokenPath}`;
+    if (Object.prototype.hasOwnProperty.call(overrides, modeKey)) continue;
+
+    const t = "string";
+    setTokenAtPath(tokensRoot, tokenPath, t, v);
+  }
+}
+
 function isFigmaIdString(v) {
   return typeof v === "string" && /^\d+:\d+$/.test(v);
 }
@@ -410,6 +527,8 @@ export async function syncFigmaTokens(req, res, next) {
         rowOrder: [],
         figmaTokens: tokens,
         figmaModifierOptions: normalizedModifiers,
+        modeAddedRows: {},
+        modeDeletedPaths: {},
       });
     } else {
       workspace.figmaTokens = tokens;
@@ -470,6 +589,8 @@ export async function getWorkspace(req, res, next) {
         figmaModifierOptions: {},
         groupNameOverrides: {},
         scopedModifiers: {},
+        modeAddedRows: {},
+        modeDeletedPaths: {},
       });
     }
     const designSystemId = getDesignSystemIdFromReq(req);
@@ -505,6 +626,8 @@ export async function getWorkspace(req, res, next) {
         figmaModifierOptions: {},
         groupNameOverrides: {},
         scopedModifiers: {},
+        modeAddedRows: {},
+        modeDeletedPaths: {},
       });
     }
     res.json({
@@ -519,6 +642,8 @@ export async function getWorkspace(req, res, next) {
       figmaModifierOptions: workspace.figmaModifierOptions ?? {},
       groupNameOverrides: workspace.groupNameOverrides ?? {},
       scopedModifiers: workspace.scopedModifiers ?? {},
+      modeAddedRows: workspace.modeAddedRows ?? {},
+      modeDeletedPaths: workspace.modeDeletedPaths ?? {},
     });
   } catch (err) {
     console.error("getWorkspace error", err);
@@ -552,6 +677,8 @@ export async function saveWorkspace(req, res, next) {
       rowOrder,
       groupNameOverrides,
       scopedModifiers,
+      modeAddedRows,
+      modeDeletedPaths,
     } = req.body;
 
     console.log(
@@ -575,6 +702,8 @@ export async function saveWorkspace(req, res, next) {
       rowOrder: Array.isArray(rowOrder) ? rowOrder : [],
       groupNameOverrides: groupNameOverrides ?? {},
       scopedModifiers: scopedModifiers ?? {},
+      modeAddedRows: isPlainObject(modeAddedRows) ? modeAddedRows : {},
+      modeDeletedPaths: isPlainObject(modeDeletedPaths) ? modeDeletedPaths : {},
     };
 
     const query = { user: userId, designSystem: designSystemId };
@@ -601,6 +730,8 @@ export async function saveWorkspace(req, res, next) {
       deletedPaths: workspace.deletedPaths,
       groupNameOverrides: workspace.groupNameOverrides ?? {},
       scopedModifiers: workspace.scopedModifiers ?? {},
+      modeAddedRows: workspace.modeAddedRows ?? {},
+      modeDeletedPaths: workspace.modeDeletedPaths ?? {},
     });
   } catch (err) {
     console.error("saveWorkspace error", err);
@@ -734,6 +865,14 @@ export async function exportTokens(req, res) {
         mergedTokens,
         workspace.groupNameOverrides ?? {}
       );
+      for (const col of collectionsWithoutModes) {
+        applyWorkspaceEditsForCollectionMode(
+          mergedTokens,
+          workspace,
+          col,
+          "default"
+        );
+      }
 
       for (const col of collectionsWithoutModes) {
         const colTree = pickCollectionTree(mergedTokens, col);
@@ -757,6 +896,14 @@ export async function exportTokens(req, res) {
         mergedTokens,
         workspace.groupNameOverrides ?? {}
       );
+      for (const col of collectionsWithoutModes) {
+        applyWorkspaceEditsForCollectionMode(
+          mergedTokens,
+          workspace,
+          col,
+          "default"
+        );
+      }
 
       normalizeDtcgForCss(mergedTokens);
 
@@ -825,6 +972,21 @@ export async function exportTokens(req, res) {
       );
       applyValuesByModeToValueInPlace(mergedTokens, combo);
       resolveFigmaIdValuesInPlace(mergedTokens);
+
+      for (const col of collections) {
+        if (!isComboAllowedForCollection(combo, col, allowedModesByCollection))
+          continue;
+
+        const hasModes = collectionHasModes(col, allowedModesByCollection);
+        const modeName = hasModes ? combo?.mode || "default" : "default";
+
+        applyWorkspaceEditsForCollectionMode(
+          mergedTokens,
+          workspace,
+          col,
+          modeName
+        );
+      }
 
       if (!mergedTokens || Object.keys(mergedTokens).length === 0) continue;
 

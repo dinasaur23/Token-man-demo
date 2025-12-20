@@ -21,7 +21,9 @@ interface CrudDeps {
   uploadedDocs: Ref<Record<string, JsonValue>>
   workspaceStore: WorkspaceStore
   persistUploadedDocsAndReload: () => Promise<void>
+  getEffectiveModeForPath: (tokenPath: string) => string
 }
+
 interface ResolverModifierLike {
   default?: string
   contexts?: Record<string, Array<{ $ref: string }> | JsonValue>
@@ -39,14 +41,6 @@ function isFigmaSyncedToken(node: unknown): boolean {
   const variableId = (fig as JsonRecord).variableId
   return typeof variableId === 'string' && variableId.length > 0
 }
-// function isFigmaSyncedRow(row: TableRow): boolean {
-//   // Figma-synced rows have $extensions.figma in the *raw* token object (row.raw)
-//   if (!isJsonRecord(row.raw)) return false
-//   const ext = (row.raw as JsonRecord).$extensions
-//   if (!isJsonRecord(ext)) return false
-//   const fig = (ext as JsonRecord).figma
-//   return isJsonRecord(fig)
-// }
 
 function getFigmaOrder(node: JsonValue): number | undefined {
   if (typeof node !== 'object' || node === null) return undefined
@@ -268,12 +262,139 @@ function pickDocForRowPath(
   }
 }
 
+function pushModeDeletedPath(store: WorkspaceStore, mode: string, tokenPath: string) {
+  const next = { ...(store.modeDeletedPaths ?? {}) }
+  const arr = Array.isArray(next[mode]) ? [...next[mode]] : []
+  if (!arr.includes(tokenPath)) arr.push(tokenPath)
+  next[mode] = arr
+  store.modeDeletedPaths = next
+}
+interface ModeAddedRow {
+  path: string
+  type: TokenType
+  value: JsonValue
+  name?: string
+  raw?: JsonValue
+}
+
+function isModeAddedRow(v: unknown): v is ModeAddedRow {
+  if (typeof v !== 'object' || v === null) return false
+  const r = v as Record<string, unknown>
+  return typeof r.path === 'string' && typeof r.type === 'string' && 'value' in r
+}
+
+function getGroupKeyFromPath(tokenPath: string): string {
+  return tokenPath.split('.')[0] ?? ''
+}
+
+function getModeAddedKey(mode: string, groupKey: string): string {
+  return `${mode}::${groupKey}`
+}
+
+function readModeAddedRows(store: WorkspaceStore, mode: string, groupKey: string): ModeAddedRow[] {
+  const map = store.modeAddedRows ?? {}
+  const key = getModeAddedKey(mode, groupKey)
+  const raw = map[key]
+  if (!Array.isArray(raw)) return []
+  const out: ModeAddedRow[] = []
+  for (const item of raw) {
+    if (isModeAddedRow(item)) out.push(item)
+  }
+  return out
+}
+
+function writeModeAddedRows(
+  store: WorkspaceStore,
+  mode: string,
+  groupKey: string,
+  rows: ModeAddedRow[],
+) {
+  const key = getModeAddedKey(mode, groupKey)
+  const next = { ...(store.modeAddedRows ?? {}) }
+  next[key] = rows
+  store.modeAddedRows = next
+}
+
+function findModeAddedRow(
+  store: WorkspaceStore,
+  mode: string,
+  tokenPath: string,
+): { groupKey: string; key: string; rows: ModeAddedRow[]; index: number } | null {
+  const groupKey = getGroupKeyFromPath(tokenPath)
+  const key = getModeAddedKey(mode, groupKey)
+  const rows = readModeAddedRows(store, mode, groupKey)
+  const index = rows.findIndex((r) => r.path === tokenPath)
+  if (index < 0) return null
+  return { groupKey, key, rows, index }
+}
+
+function getParentPath(path: string): string {
+  const seg = path.split('.')
+  seg.pop()
+  return seg.join('.')
+}
+
+function getLeafKey(path: string): string {
+  const seg = path.split('.')
+  return seg[seg.length - 1] ?? path
+}
+
+function buildSiblingKeyRecord(rows: ModeAddedRow[], parentPath: string): JsonRecord {
+  const rec: JsonRecord = {}
+  for (const r of rows) {
+    if (getParentPath(r.path) !== parentPath) continue
+    const leaf = getLeafKey(r.path)
+    rec[leaf] = true
+  }
+  return rec
+}
+
+function removeOverridesForPath(store: WorkspaceStore, mode: string, tokenPath: string) {
+  const modeKey = `${mode}::${tokenPath}`
+
+  if (store.overrides[modeKey] !== undefined) {
+    const copy = { ...store.overrides }
+    delete copy[modeKey]
+    store.overrides = copy
+  }
+
+  if (store.overrides[tokenPath] !== undefined) {
+    const copy = { ...store.overrides }
+    delete copy[tokenPath]
+    store.overrides = copy
+  }
+}
+
 export function useTokenCrud({
   uploadedDocs,
   workspaceStore,
   persistUploadedDocsAndReload,
+  getEffectiveModeForPath,
 }: CrudDeps) {
   async function updateTokenValueAny(row: TableRow, newValue: JsonValue): Promise<void> {
+    const mode = getEffectiveModeForPath(row.path)
+
+    // ✅ mode-added row: update in modeAddedRows (do NOT touch uploadedDocs)
+    {
+      const hit = findModeAddedRow(workspaceStore, mode, row.path)
+      if (hit) {
+        const nextRows = [...hit.rows]
+        const existing = nextRows[hit.index]
+        nextRows[hit.index] = {
+          ...existing,
+          value: newValue,
+          raw: newValue,
+          type: row.type,
+        }
+
+        writeModeAddedRows(workspaceStore, mode, hit.groupKey, nextRows)
+
+        await workspaceStore.saveToServer()
+        await persistUploadedDocsAndReload()
+        return
+      }
+    }
+
     const segments = row.path.split('.')
     const found = findDocContainingPath(uploadedDocs.value, segments)
     if (!found) {
@@ -285,10 +406,9 @@ export function useTokenCrud({
 
     // ✅ Figma variables: store override only (do NOT mutate figma-sync.json)
     if (isFigmaSyncedToken(token)) {
-      workspaceStore.overrides = {
-        ...workspaceStore.overrides,
-        [row.path]: newValue,
-      }
+      const k = `${mode}::${row.path}`
+      workspaceStore.overrides = { ...workspaceStore.overrides, [k]: newValue }
+
       await workspaceStore.saveToServer()
       await persistUploadedDocsAndReload()
       return
@@ -320,6 +440,29 @@ export function useTokenCrud({
   }
 
   async function updateTokenValue(row: TableRow, newHex: string): Promise<void> {
+    const mode = getEffectiveModeForPath(row.path)
+
+    // ✅ mode-added row: update in modeAddedRows
+    {
+      const hit = findModeAddedRow(workspaceStore, mode, row.path)
+      if (hit) {
+        const nextRows = [...hit.rows]
+        const existing = nextRows[hit.index]
+        nextRows[hit.index] = {
+          ...existing,
+          value: newHex,
+          raw: newHex,
+          type: 'color',
+        }
+
+        writeModeAddedRows(workspaceStore, mode, hit.groupKey, nextRows)
+
+        await workspaceStore.saveToServer()
+        await persistUploadedDocsAndReload()
+        return
+      }
+    }
+
     const segments = row.path.split('.')
     const found = findDocContainingPath(uploadedDocs.value, segments)
     if (!found) {
@@ -402,6 +545,52 @@ export function useTokenCrud({
     }
 
     const segments = row.path.split('.')
+    {
+      const mode = getEffectiveModeForPath(row.path)
+      const hit = findModeAddedRow(workspaceStore, mode, row.path)
+      if (hit) {
+        const nextRows = hit.rows.filter((r) => r.path !== row.path)
+        writeModeAddedRows(workspaceStore, mode, hit.groupKey, nextRows)
+
+        removeOverridesForPath(workspaceStore, mode, row.path)
+        delete workspaceStore.nameOverrides[row.path]
+
+        await workspaceStore.saveToServer()
+        await persistUploadedDocsAndReload()
+        return
+      }
+    }
+    {
+      const found = findDocContainingPath(uploadedDocs.value, segments)
+      if (found && isFigmaSyncedToken(found.token)) {
+        const mode = getEffectiveModeForPath(row.path)
+        console.log('[deleteToken figma] mode=', mode, 'path=', row.path)
+        console.log('[deleteToken figma] BEFORE modeDeletedPaths=', workspaceStore.modeDeletedPaths)
+
+        pushModeDeletedPath(workspaceStore, mode, row.path)
+        console.log('[deleteToken figma] AFTER modeDeletedPaths=', workspaceStore.modeDeletedPaths)
+
+        const k = `${mode}::${row.path}`
+        if (workspaceStore.overrides[k] !== undefined) {
+          const copy = { ...workspaceStore.overrides }
+          delete copy[k]
+          workspaceStore.overrides = copy
+        }
+
+        if (workspaceStore.overrides[row.path] !== undefined) {
+          const copy = { ...workspaceStore.overrides }
+          delete copy[row.path]
+          workspaceStore.overrides = copy
+        }
+
+        delete workspaceStore.nameOverrides[row.path]
+
+        await workspaceStore.saveToServer()
+        await persistUploadedDocsAndReload()
+        return
+      }
+    }
+
     let changedFile: string | null = null
 
     for (const [fileName, rawDoc] of Object.entries(uploadedDocs.value)) {
@@ -421,7 +610,23 @@ export function useTokenCrud({
       return
     }
 
-    delete workspaceStore.overrides[row.path]
+    const mode = getEffectiveModeForPath(row.path)
+    const k = `${mode}::${row.path}`
+
+    // remove mode-scoped override (new format)
+    if (workspaceStore.overrides[k] !== undefined) {
+      const copy = { ...workspaceStore.overrides }
+      delete copy[k]
+      workspaceStore.overrides = copy
+    }
+
+    // optional: remove legacy override (old format) so old data doesn't leak
+    if (workspaceStore.overrides[row.path] !== undefined) {
+      const copy = { ...workspaceStore.overrides }
+      delete copy[row.path]
+      workspaceStore.overrides = copy
+    }
+
     delete workspaceStore.nameOverrides[row.path]
 
     removeAliasReferencesInDocs(uploadedDocs.value, row.path)
@@ -430,6 +635,51 @@ export function useTokenCrud({
   }
 
   async function duplicateToken(row: TableRow): Promise<void> {
+    const mode = getEffectiveModeForPath(row.path)
+
+    // ✅ MODE-ADDED: duplicate inside modeAddedRows (no uploadedDocs mutation)
+    {
+      const hit = findModeAddedRow(workspaceStore, mode, row.path)
+      if (hit) {
+        const original = hit.rows[hit.index]
+        const parentPath = getParentPath(original.path)
+        const siblingsRec = buildSiblingKeyRecord(hit.rows, parentPath)
+        const newLeaf = createDuplicateKey(siblingsRec, row.name || getLeafKey(original.path))
+        const newPath = parentPath ? `${parentPath}.${newLeaf}` : newLeaf
+
+        const newRow: ModeAddedRow = {
+          path: newPath,
+          type: original.type,
+          value: original.value,
+          name: original.name ? `${original.name}-copy` : undefined,
+          raw: original.raw ?? original.value,
+        }
+
+        const nextRows = [...hit.rows]
+        nextRows.splice(hit.index + 1, 0, newRow)
+        writeModeAddedRows(workspaceStore, mode, hit.groupKey, nextRows)
+
+        // copy mode-scoped override (if any)
+        const fromKey = `${mode}::${row.path}`
+        const toKey = `${mode}::${newPath}`
+        if (Object.prototype.hasOwnProperty.call(workspaceStore.overrides, fromKey)) {
+          workspaceStore.overrides = {
+            ...workspaceStore.overrides,
+            [toKey]: workspaceStore.overrides[fromKey],
+          }
+        }
+
+        const order = ensureRowOrder(workspaceStore)
+        const idx = order.indexOf(row.path)
+        const insertIndex = idx >= 0 ? idx + 1 : order.length
+        order.splice(insertIndex, 0, newPath)
+
+        await workspaceStore.saveToServer()
+        await persistUploadedDocsAndReload()
+        return
+      }
+    }
+
     const segments = row.path.split('.')
     const found = findDocContainingPath(uploadedDocs.value, segments)
     if (!found) {
@@ -437,12 +687,64 @@ export function useTokenCrud({
       return
     }
 
-    const { fileName, doc, parent, key: oldKey } = found
+    const { fileName, doc, token, parent, key: oldKey } = found
     const original: JsonValue = parent[oldKey]
+
+    // ✅ FIGMA SYNCED: duplicate into modeAddedRows (do NOT mutate figma-sync.json)
+    if (isFigmaSyncedToken(token)) {
+      const parentPath = segments.slice(0, -1).join('.')
+      const groupKey = getGroupKeyFromPath(row.path)
+      const existingAdded = readModeAddedRows(workspaceStore, mode, groupKey)
+
+      // build sibling name set within the same parent path (includes existing mode-added)
+      const siblingsRec = buildSiblingKeyRecord(existingAdded, parentPath)
+      // also include current base sibling keys from JSON (so we don’t collide)
+      for (const k of Object.keys(parent)) siblingsRec[k] = true
+
+      const newLeaf = createDuplicateKey(siblingsRec, row.name || oldKey)
+      const newPath = parentPath ? `${parentPath}.${newLeaf}` : newLeaf
+
+      const value: JsonValue = row.isAlias
+        ? row.aliasPath
+          ? `{${row.aliasPath}}`
+          : String(row.raw ?? '')
+        : parseRowValueForDtcg(row)
+
+      const newRow: ModeAddedRow = {
+        path: newPath,
+        type: row.type,
+        value,
+        raw: value,
+      }
+
+      // insert after the clicked token (approx): append is fine, table ordering uses rowOrder anyway
+      const nextRows = [...existingAdded, newRow]
+      writeModeAddedRows(workspaceStore, mode, groupKey, nextRows)
+
+      // copy override from original (mode-scoped)
+      const fromKey = `${mode}::${row.path}`
+      const toKey = `${mode}::${newPath}`
+      if (Object.prototype.hasOwnProperty.call(workspaceStore.overrides, fromKey)) {
+        workspaceStore.overrides = {
+          ...workspaceStore.overrides,
+          [toKey]: workspaceStore.overrides[fromKey],
+        }
+      }
+
+      const order = ensureRowOrder(workspaceStore)
+      const idx = order.indexOf(row.path)
+      const insertIndex = idx >= 0 ? idx + 1 : order.length
+      order.splice(insertIndex, 0, newPath)
+
+      await workspaceStore.saveToServer()
+      await persistUploadedDocsAndReload()
+      return
+    }
+
+    // ✅ NORMAL TOKENS: keep your current behavior (mutate JSON)
     const newKey = createDuplicateKey(parent, row.name || oldKey)
 
     let newToken: JsonValue
-
     if (isJsonRecord(original)) {
       const copy = deepClone(original as JsonRecord)
       copy['$type'] = row.type
@@ -457,6 +759,25 @@ export function useTokenCrud({
     const newPathSegments = [...segments.slice(0, -1), newKey]
     const newPath = newPathSegments.join('.')
 
+    const fromKey = `${mode}::${row.path}`
+    const toKey = `${mode}::${newPath}`
+
+    if (Object.prototype.hasOwnProperty.call(workspaceStore.overrides, fromKey)) {
+      workspaceStore.overrides = {
+        ...workspaceStore.overrides,
+        [toKey]: workspaceStore.overrides[fromKey],
+      }
+      await workspaceStore.saveToServer()
+    }
+
+    if (Object.prototype.hasOwnProperty.call(workspaceStore.overrides, row.path)) {
+      workspaceStore.overrides = {
+        ...workspaceStore.overrides,
+        [toKey]: workspaceStore.overrides[row.path],
+      }
+      await workspaceStore.saveToServer()
+    }
+
     const order = ensureRowOrder(workspaceStore)
     const idx = order.indexOf(row.path)
     const insertIndex = idx >= 0 ? idx + 1 : order.length
@@ -467,6 +788,49 @@ export function useTokenCrud({
   }
 
   async function addRowBelowToken(row: TableRow): Promise<void> {
+    const mode = getEffectiveModeForPath(row.path)
+
+    // ✅ MODE-ADDED: add row below inside modeAddedRows
+    {
+      const hit = findModeAddedRow(workspaceStore, mode, row.path)
+      if (hit) {
+        const parentPath = getParentPath(row.path)
+        const siblingsRec = buildSiblingKeyRecord(hit.rows, parentPath)
+        const baseName = row.name || 'new-token'
+        const newLeaf = createDuplicateKey(siblingsRec, baseName)
+        const newPath = parentPath ? `${parentPath}.${newLeaf}` : newLeaf
+
+        const newValue: JsonValue =
+          row.type === 'color'
+            ? '#000000'
+            : row.type === 'number'
+              ? 0
+              : row.type === 'boolean'
+                ? false
+                : ''
+
+        const newRow: ModeAddedRow = {
+          path: newPath,
+          type: row.type,
+          value: newValue,
+          raw: newValue,
+        }
+
+        const nextRows = [...hit.rows]
+        nextRows.splice(hit.index + 1, 0, newRow)
+        writeModeAddedRows(workspaceStore, mode, hit.groupKey, nextRows)
+
+        const order = ensureRowOrder(workspaceStore)
+        const idx = order.indexOf(row.path)
+        const insertIndex = idx >= 0 ? idx + 1 : order.length
+        order.splice(insertIndex, 0, newPath)
+
+        await workspaceStore.saveToServer()
+        await persistUploadedDocsAndReload()
+        return
+      }
+    }
+
     const segments = row.path.split('.')
     const found = findDocContainingPath(uploadedDocs.value, segments)
     if (!found) {
@@ -474,9 +838,53 @@ export function useTokenCrud({
       return
     }
 
-    const { fileName, doc, parent, key: clickedKey } = found
+    const { fileName, doc, token, parent, key: clickedKey } = found
     const groupPath = segments.slice(0, -1)
 
+    // ✅ FIGMA SYNCED: create modeAddedRow (do NOT mutate figma-sync.json)
+    if (isFigmaSyncedToken(token)) {
+      const parentPath = groupPath.join('.')
+      const groupKey = getGroupKeyFromPath(row.path)
+      const existingAdded = readModeAddedRows(workspaceStore, mode, groupKey)
+
+      // sibling names include JSON siblings + existing mode-added siblings (same parent path)
+      const siblingsRec = buildSiblingKeyRecord(existingAdded, parentPath)
+      for (const k of Object.keys(parent)) siblingsRec[k] = true
+
+      const baseName = row.name || 'new-token'
+      const newLeaf = createDuplicateKey(siblingsRec, baseName)
+      const newPath = parentPath ? `${parentPath}.${newLeaf}` : newLeaf
+
+      const newValue: JsonValue =
+        row.type === 'color'
+          ? '#000000'
+          : row.type === 'number'
+            ? 0
+            : row.type === 'boolean'
+              ? false
+              : ''
+
+      const newRow: ModeAddedRow = {
+        path: newPath,
+        type: row.type,
+        value: newValue,
+        raw: newValue,
+      }
+
+      // insert roughly after clicked token: just append; rowOrder controls visible placement
+      writeModeAddedRows(workspaceStore, mode, groupKey, [...existingAdded, newRow])
+
+      const order = ensureRowOrder(workspaceStore)
+      const idx = order.indexOf(row.path)
+      const insertIndex = idx >= 0 ? idx + 1 : order.length
+      order.splice(insertIndex, 0, newPath)
+
+      await workspaceStore.saveToServer()
+      await persistUploadedDocsAndReload()
+      return
+    }
+
+    // ✅ NORMAL TOKENS: keep your existing behavior
     seedRowOrderForGroupIfMissing(workspaceStore, groupPath, parent)
 
     const baseName = row.name || 'new-token'
@@ -494,7 +902,7 @@ export function useTokenCrud({
               : '',
     }
 
-    // ---- Figma order handling (CRITICAL FIX) ----
+    // ---- Figma order handling (keep your existing logic) ----
     const clickedNode = parent[clickedKey]
     const clickedOrder = getFigmaOrder(clickedNode)
 
@@ -679,6 +1087,37 @@ export function useTokenCrud({
     const targetSegments = targetNormalized.split('.')
     let targetExists = false
     let targetType: TokenType | null = null
+    // ✅ MODE-ADDED: store alias directly in modeAddedRows (no uploadedDocs mutation)
+    {
+      const mode = getEffectiveModeForPath(row.path)
+      const hit = findModeAddedRow(workspaceStore, mode, row.path)
+
+      if (hit) {
+        const aliasValue =
+          trimmedInput.startsWith('{') && trimmedInput.endsWith('}')
+            ? trimmedInput
+            : `{${targetNormalized}}`
+
+        const nextRows = [...hit.rows]
+        const existing = nextRows[hit.index]
+
+        nextRows[hit.index] = {
+          ...existing,
+          type: row.type,
+          value: aliasValue,
+          raw: aliasValue,
+        }
+
+        writeModeAddedRows(workspaceStore, mode, hit.groupKey, nextRows)
+
+        // remove any override for this path in this mode (avoid double sources)
+        removeOverridesForPath(workspaceStore, mode, row.path)
+
+        await workspaceStore.saveToServer()
+        await persistUploadedDocsAndReload()
+        return
+      }
+    }
 
     for (const raw of Object.values(docs)) {
       if (!isJsonRecord(raw)) continue
@@ -709,9 +1148,12 @@ export function useTokenCrud({
             ? trimmedInput
             : `{${targetNormalized}}`
 
+        const mode = getEffectiveModeForPath(row.path)
+        const k = `${mode}::${row.path}`
+
         workspaceStore.overrides = {
           ...workspaceStore.overrides,
-          [row.path]: aliasValue,
+          [k]: aliasValue,
         }
 
         await workspaceStore.saveToServer()
@@ -815,6 +1257,36 @@ export function useTokenCrud({
   //   await persistUploadedDocsAndReload()
   // }
   async function clearTokenAlias(row: TableRow): Promise<void> {
+    const mode = getEffectiveModeForPath(row.path)
+
+    // ✅ MODE-ADDED: clear alias by writing a literal back into modeAddedRows
+    {
+      const hit = findModeAddedRow(workspaceStore, mode, row.path)
+      if (hit) {
+        const literal = parseRowLiteralValue(row)
+
+        const nextRows = [...hit.rows]
+        const existing = nextRows[hit.index]
+
+        nextRows[hit.index] = {
+          ...existing,
+          type: row.type,
+          value: literal,
+          raw: literal,
+        }
+
+        writeModeAddedRows(workspaceStore, mode, hit.groupKey, nextRows)
+
+        // avoid double sources (override + modeAddedRows)
+        removeOverridesForPath(workspaceStore, mode, row.path)
+
+        await workspaceStore.saveToServer()
+        await persistUploadedDocsAndReload()
+        return
+      }
+    }
+
+    // ---- existing logic (unchanged) ----
     const docs = uploadedDocs.value
     const fileNames = Object.keys(docs)
     if (!fileNames.length) {
@@ -839,11 +1311,11 @@ export function useTokenCrud({
     const existing = parent[key]
 
     if (isFigmaSyncedToken(existing)) {
-      const literal = parseRowLiteralValue(row)
+      const k = `${mode}::${row.path}`
 
       workspaceStore.overrides = {
         ...workspaceStore.overrides,
-        [row.path]: literal,
+        [k]: literal,
       }
 
       await workspaceStore.saveToServer()
