@@ -22,6 +22,7 @@ import { convertHexColorsInDocument } from '@/utils/dtcg/color-conversion'
 import { pruneEmptyChildren } from '@/utils/dtcg/grouping'
 import { useTokenCrud } from './useTokenCrud'
 import type { FigmaModifierOptions } from '@/stores/TokenWorkspace'
+import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
 
 type TokenType = TableRow['type']
 
@@ -31,6 +32,89 @@ interface ModeAddedRow {
   value: JsonValue
   name?: string
   raw?: JsonValue
+}
+
+function buildOverrideRules(overrides: Record<string, string>) {
+  // Sort longest path first so "a.b" applies before "a"
+  return Object.entries(overrides)
+    .filter(([k, v]) => typeof k === 'string' && typeof v === 'string' && v.trim().length > 0)
+    .sort((a, b) => b[0].split('.').length - a[0].split('.').length)
+}
+
+function mapPathSegmentsByOverrides(
+  path: string,
+  overrides: Record<string, string>,
+  direction: 'toDisplay' | 'toReal',
+): string {
+  if (!path || !path.includes('.')) return path
+
+  const seg = path.split('.')
+  const rules = buildOverrideRules(overrides)
+
+  for (const [groupId, newLabel] of rules) {
+    const gidSeg = groupId.split('.')
+    const parentSeg = gidSeg.slice(0, -1)
+    const oldKey = gidSeg[gidSeg.length - 1]
+    const idx = parentSeg.length
+
+    // must match parent path exactly
+    let parentMatches = true
+    for (let i = 0; i < parentSeg.length; i++) {
+      if (seg[i] !== parentSeg[i]) {
+        parentMatches = false
+        break
+      }
+    }
+    if (!parentMatches) continue
+    if (idx >= seg.length) continue
+
+    if (direction === 'toDisplay') {
+      if (seg[idx] === oldKey) seg[idx] = newLabel
+    } else {
+      // toReal: reverse mapping
+      if (seg[idx] === newLabel) seg[idx] = oldKey
+    }
+  }
+
+  return seg.join('.')
+}
+
+function rewriteRefsInJsonValue(
+  v: JsonValue,
+  overrides: Record<string, string>,
+  direction: 'toDisplay' | 'toReal',
+): JsonValue {
+  if (typeof v === 'string') {
+    // handle "{path}" references
+    const m = v.match(/^\{(.+)\}$/)
+    if (m) {
+      const inner = m[1]
+      const mapped = mapPathSegmentsByOverrides(inner, overrides, direction)
+      return `{${mapped}}`
+    }
+
+    // sometimes you store raw path strings too (your alias picker / overrides)
+    if (v.includes('.')) {
+      return mapPathSegmentsByOverrides(v, overrides, direction)
+    }
+
+    return v
+  }
+
+  if (Array.isArray(v)) {
+    return v.map((x) => rewriteRefsInJsonValue(x as JsonValue, overrides, direction)) as JsonValue
+  }
+
+  if (v && typeof v === 'object') {
+    const obj = v as Record<string, JsonValue>
+    const out: Record<string, JsonValue> = {}
+    for (const [k, val] of Object.entries(obj)) {
+      out[k] = rewriteRefsInJsonValue(val, overrides, direction)
+    }
+    return out as JsonValue
+  }
+
+  return v
 }
 
 function isModeAddedRow(v: unknown): v is ModeAddedRow {
@@ -173,6 +257,110 @@ export function useTokenWorkspaceTable() {
   const workspaceStore = useTokenWorkspaceStore()
   const groupScopedModifierName = ref<string | null>(null)
   const groupScopedModeOptions = ref<Record<string, string[]>>({})
+
+  function debugAliasResolution(
+    label: string,
+    tokens: TokenEntry[],
+    map: Record<string, TokenEntry>,
+    watchPaths: string[],
+  ): void {
+    console.group(`[ALIAS DEBUG] ${label}`)
+
+    for (const aliasPath of watchPaths) {
+      const aliasEntry = tokens.find((t) => t.path === aliasPath)
+
+      if (!aliasEntry) {
+        console.log('❌ alias token not found:', aliasPath)
+        continue
+      }
+
+      const rawValue = aliasEntry.value
+      const rawString = typeof rawValue === 'string' ? rawValue : JSON.stringify(rawValue)
+
+      const match = typeof rawValue === 'string' ? rawValue.match(/^\{(.+)\}$/) : null
+
+      const targetPath = match?.[1] ?? null
+
+      console.log('---')
+      console.log('alias token:', aliasPath)
+      console.log('raw $value:', rawString)
+      console.log('parsed target:', targetPath)
+
+      if (targetPath) {
+        const targetEntry = map[targetPath]
+        console.log('map has target:', Boolean(targetEntry))
+        console.log('target entry value:', targetEntry?.value)
+        console.log('resolved target:', targetEntry ? resolveAlias(targetPath, map) : undefined)
+      }
+
+      console.log('resolved alias (resolveAlias):', resolveAlias(aliasPath, map))
+
+      console.log('resolved alias (resolveValue):', resolveValue(rawValue, map))
+    }
+
+    console.groupEnd()
+  }
+
+  function toDisplayTokenPath(realPath: string): string {
+    const groupOv = workspaceStore.groupNameOverrides ?? {}
+    const nameOvFixed = expandNameOverrides(
+      workspaceStore.nameOverrides ?? {},
+      workspaceStore.groupNameOverrides ?? {},
+    )
+    const afterGroup = mapPathSegmentsByOverrides(realPath, groupOv, 'toDisplay')
+    return nameOvFixed[afterGroup] ?? afterGroup
+  }
+  function toRealTokenPath(displayPath: string): string {
+    const groupOv = workspaceStore.groupNameOverrides ?? {}
+
+    // Build "display -> real" map for renamed tokens
+    const nameOvFixed = expandNameOverrides(
+      workspaceStore.nameOverrides ?? {},
+      workspaceStore.groupNameOverrides ?? {},
+    )
+
+    const reverseName: Record<string, string> = {}
+    for (const [real, display] of Object.entries(nameOvFixed)) {
+      reverseName[display] = real
+    }
+
+    // 1) reverse token rename (grey.1000test -> grey.1000)
+    const afterName = reverseName[displayPath] ?? displayPath
+
+    // 2) reverse group rename (brand.colors -> brand.color) if you have that kind of rename
+    return mapPathSegmentsByOverrides(afterName, groupOv, 'toReal')
+  }
+
+  function forceTableRefresh(): void {
+    // 1) force Vue watchers + ag-grid to see a new reference
+    rows.value = [...rows.value]
+  }
+  function rewriteRefsByToRealTokenPath(v: JsonValue): JsonValue {
+    if (typeof v === 'string') {
+      const m = v.match(/^\{(.+)\}$/)
+      if (m) return `{${toRealTokenPath(m[1])}}`
+
+      // sometimes you store raw dot paths too
+      if (v.includes('.')) return toRealTokenPath(v)
+
+      return v
+    }
+
+    if (Array.isArray(v)) {
+      return v.map((x) => rewriteRefsByToRealTokenPath(x as JsonValue)) as JsonValue
+    }
+
+    if (v && typeof v === 'object') {
+      const obj = v as Record<string, JsonValue>
+      const out: Record<string, JsonValue> = {}
+      for (const [k, val] of Object.entries(obj)) {
+        out[k] = rewriteRefsByToRealTokenPath(val)
+      }
+      return out as JsonValue
+    }
+
+    return v
+  }
 
   //const groupTreeItems = computed<GroupNode[]>(() => pruneEmptyChildren(buildGroupTree(rows.value)))
   const groupTreeItems = computed<GroupNode[]>(() => {
@@ -417,6 +605,10 @@ export function useTokenWorkspaceTable() {
       () => workspaceStore.overrides,
       () => workspaceStore.modeDeletedPaths,
       () => workspaceStore.modeAddedRows,
+
+      // 🔑 ADD THESE TWO
+      () => workspaceStore.nameOverrides,
+      () => workspaceStore.groupNameOverrides,
     ],
     () => {
       if (Object.keys(uploadedDocs.value).length > 0) {
@@ -495,6 +687,21 @@ export function useTokenWorkspaceTable() {
 
     return null
   }
+  function makeNameOverridesFixed(): Record<string, string> {
+    return expandNameOverrides(
+      workspaceStore.nameOverrides ?? {},
+      workspaceStore.groupNameOverrides ?? {},
+    )
+  }
+
+  function rewriteAliasPathForUi(p: string): string {
+    const groupOv = workspaceStore.groupNameOverrides ?? {}
+    const nameOvFixed = makeNameOverridesFixed()
+
+    const afterGroup = mapPathSegmentsByOverrides(p, groupOv, 'toDisplay')
+
+    return nameOvFixed[p] ?? afterGroup
+  }
 
   // ---- persist helper used by CRUD composable -------------------------
 
@@ -559,11 +766,39 @@ export function useTokenWorkspaceTable() {
       }
     }
 
+    for (const [realPath, entry] of Object.entries(map)) {
+      const displayPath = toDisplayTokenPath(realPath)
+      if (displayPath && displayPath !== realPath && !map[displayPath]) {
+        map[displayPath] = entry
+      }
+    }
+    debugAliasResolution('after map build', tokens, map, [
+      'alias.color.primary.dark',
+      'alias.color.primary.black',
+    ])
     const newRows: TableRow[] = orderedTokens
       .map((t) => {
-        let aliasPath = extractAliasPath(t.value)
+        const aliasRaw = extractAliasPath(t.value)
+        const aliasPathReal = aliasRaw ? toRealTokenPath(aliasRaw) : null
+        const aliasPathDisplay = aliasPathReal ? rewriteAliasPathForUi(aliasPathReal) : null
 
-        let resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? t.value
+        // These are the ones we will actually use after overrides are applied
+        let aliasPathRealFinal: string | null = aliasPathReal
+        let aliasPathDisplayFinal: string | null = aliasPathDisplay
+
+        let resolved: unknown
+        if (aliasPathReal) {
+          // force resolve using REAL alias target
+          resolved = resolveValue(`{${aliasPathReal}}`, map) ?? t.value
+        } else {
+          resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? t.value
+        }
+
+        if (aliasPathReal && typeof t.value === 'string') {
+          resolved = resolveValue(`{${aliasPathReal}}`, map) ?? resolveAlias(t.path, map) ?? t.value
+        } else {
+          resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? t.value
+        }
 
         const groupPath = extractGroupPath(t.path)
         const groupKey = groupPath?.[0] ?? t.path.split('.')[0] ?? ''
@@ -587,28 +822,38 @@ export function useTokenWorkspaceTable() {
         const directOv = workspaceStore.overrides[directKey] ?? workspaceStore.overrides[t.path]
 
         if (typeof directOv === 'string') {
-          const ovAlias = extractAliasPath(directOv)
+          const ovAliasRaw = extractAliasPath(directOv)
+          const ovAliasReal = ovAliasRaw ? toRealTokenPath(ovAliasRaw) : null
+          const ovAliasDisplay = ovAliasReal ? rewriteAliasPathForUi(ovAliasReal) : null
 
-          if (ovAlias) {
-            aliasPath = ovAlias
-            resolved = resolveValue(directOv, map) ?? directOv
+          if (ovAliasReal) {
+            // override becomes an alias -> keep alias info + resolve via REAL target
+            aliasPathRealFinal = ovAliasReal
+            aliasPathDisplayFinal = ovAliasDisplay
+            resolved = resolveValue(`{${ovAliasReal}}`, map) ?? directOv
           } else {
-            aliasPath = null
+            // override is a literal -> clear alias
+            aliasPathRealFinal = null
+            aliasPathDisplayFinal = null
             resolved = directOv
           }
         } else if (hasDirectOv) {
-          aliasPath = null
+          // non-string override -> literal value
+          aliasPathRealFinal = null
+          aliasPathDisplayFinal = null
           resolved = directOv
         }
 
-        const overridePath = aliasPath ?? t.path
-        if (overridePath !== t.path) {
-          const aliasKey = `${effectiveMode}::${overridePath}`
+        const overridePathReal = aliasPathRealFinal ?? t.path
+
+        if (overridePathReal !== t.path) {
+          const aliasKey = `${effectiveMode}::${overridePathReal}`
           if (
             Object.prototype.hasOwnProperty.call(workspaceStore.overrides, aliasKey) ||
-            Object.prototype.hasOwnProperty.call(workspaceStore.overrides, overridePath)
+            Object.prototype.hasOwnProperty.call(workspaceStore.overrides, overridePathReal)
           ) {
-            resolved = workspaceStore.overrides[aliasKey] ?? workspaceStore.overrides[overridePath]
+            resolved =
+              workspaceStore.overrides[aliasKey] ?? workspaceStore.overrides[overridePathReal]
           }
         }
 
@@ -651,8 +896,8 @@ export function useTokenWorkspaceTable() {
           groupPath,
           path: t.path,
           type: t.type,
-          isAlias: !!aliasPath,
-          aliasPath: aliasPath ?? '',
+          isAlias: !!aliasPathDisplayFinal,
+          aliasPath: aliasPathDisplayFinal ?? '',
         } as TableRow
       })
       .filter((r): r is TableRow => r !== null)
@@ -683,7 +928,8 @@ export function useTokenWorkspaceTable() {
 
         // ✅ alias detection for added/duplicated rows
         const rawValue: JsonValue = a.raw ?? a.value
-        const aliasPath = extractAliasPath(rawValue)
+        let aliasPath = extractAliasPath(rawValue)
+        if (aliasPath) aliasPath = rewriteAliasPathForUi(aliasPath)
 
         // resolve value like normal rows do
         let resolved: unknown = rawValue
@@ -760,9 +1006,50 @@ export function useTokenWorkspaceTable() {
     rows.value.splice(0, rows.value.length, ...newRows)
   }
 
+  // async function resolveAndPopulateFromUploadedDocs(): Promise<void> {
+  //   const docs = uploadedDocs.value
+  //   if (Object.keys(docs).length === 0) return
+  //   const overrides = workspaceStore.groupNameOverrides ?? {}
+  //   const normalizedDocs: Record<string, JsonValue> = {}
+  //   for (const [name, content] of Object.entries(docs)) {
+  //     normalizedDocs[name] = rewriteRefsInJsonValue(content, overrides, 'toReal')
+  //   }
+
+  //   try {
+  //     type ResolverInput = Record<string, string> & {
+  //       scopedModifiers?: Record<string, Record<string, string>>
+  //     }
+
+  //     const input: ResolverInput = { ...uiSelectedModifiers.value }
+  //     input.scopedModifiers = workspaceStore.scopedModifiers ?? {}
+
+  //     const resolvedDoc = resolveUploadedDocuments(docs, input)
+
+  //     console.log('[Table] resolvedDoc sample:', JSON.stringify(resolvedDoc, null, 2).slice(0, 500))
+
+  //     await populateTableFromDocument(resolvedDoc)
+  //     if (rows.value.length > 0) {
+  //       errorMessage.value = null
+  //     }
+  //   } catch (err) {
+  //     console.error('Error resolving tokens:', err)
+  //     errorMessage.value =
+  //       err instanceof Error ? err.message : 'Error resolving tokens with current modifier values.'
+  //     rows.value = []
+  //   }
+  // }
   async function resolveAndPopulateFromUploadedDocs(): Promise<void> {
     const docs = uploadedDocs.value
     if (Object.keys(docs).length === 0) return
+
+    const overrides = workspaceStore.groupNameOverrides ?? {}
+    const normalizedDocs: Record<string, JsonValue> = {}
+    for (const [name, content] of Object.entries(docs)) {
+      // 1) group override mapping
+      const step1 = rewriteRefsInJsonValue(content, overrides, 'toReal')
+      // 2) token rename mapping (nameOverrides + groupNameOverrides via toRealTokenPath)
+      normalizedDocs[name] = rewriteRefsByToRealTokenPath(step1)
+    }
 
     try {
       type ResolverInput = Record<string, string> & {
@@ -772,7 +1059,8 @@ export function useTokenWorkspaceTable() {
       const input: ResolverInput = { ...uiSelectedModifiers.value }
       input.scopedModifiers = workspaceStore.scopedModifiers ?? {}
 
-      const resolvedDoc = resolveUploadedDocuments(docs, input)
+      // ✅ IMPORTANT: resolve using normalized docs (real paths)
+      const resolvedDoc = resolveUploadedDocuments(normalizedDocs, input)
 
       console.log('[Table] resolvedDoc sample:', JSON.stringify(resolvedDoc, null, 2).slice(0, 500))
 
@@ -787,6 +1075,7 @@ export function useTokenWorkspaceTable() {
       rows.value = []
     }
   }
+
   function onModifierChange(name: string, value: string | null): void {
     const isGroupScoped = groupScopedModifierName.value === name && groupHasModes.value
 
@@ -986,6 +1275,7 @@ export function useTokenWorkspaceTable() {
       return getEffectiveModeForGroupKey(groupKey)
     },
   })
+  console.warn('[WIRE DEBUG] updateTokenName function =', updateTokenName)
 
   async function addSiblingGroupForActiveGroup(newGroupName: string): Promise<void> {
     const trimmed = newGroupName.trim()
@@ -1033,5 +1323,10 @@ export function useTokenWorkspaceTable() {
     addSiblingGroupForActiveGroup,
     setTokenAlias,
     clearTokenAlias,
+    buildOverrideRules,
+    mapPathSegmentsByOverrides,
+    toDisplayTokenPath,
+    toRealTokenPath,
+    forceTableRefresh,
   }
 }

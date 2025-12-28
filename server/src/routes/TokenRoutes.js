@@ -12,7 +12,6 @@ const router = express.Router();
 router.get("/workspace", requireAuth, getWorkspace);
 router.put("/workspace", requireAuth, saveWorkspace);
 router.get("/export/:designSystemId", requireAuth, exportTokens);
-
 router.post("/figma-sync", requireAuth, syncFigmaTokens);
 
 export default router;

@@ -96,53 +96,97 @@ export function createDuplicateKey(obj: JsonRecord, baseName: string): string {
   return candidate
 }
 
+// export function updateAliasReferencesInDocs(
+//   docs: Record<string, JsonValue>,
+//   oldPath: string,
+//   newPath: string | null,
+// ): void {
+//   const targetAlias = `{${oldPath}}`
+//   const replacement = newPath ? `{${newPath}}` : null
+
+//   function visit(parent: JsonValue): void {
+//     if (Array.isArray(parent)) {
+//       for (let i = 0; i < parent.length; i += 1) {
+//         const value = parent[i]
+
+//         if (typeof value === 'string') {
+//           if (value === targetAlias) {
+//             if (replacement === null) {
+//               parent.splice(i, 1)
+//               i -= 1
+//             } else {
+//               parent[i] = replacement
+//             }
+//           }
+//         } else {
+//           visit(value)
+//         }
+//       }
+//     } else if (isJsonRecord(parent)) {
+//       for (const key of Object.keys(parent)) {
+//         const value = parent[key]
+
+//         if (typeof value === 'string') {
+//           if (value === targetAlias) {
+//             if (replacement === null) {
+//               delete parent[key]
+//             } else {
+//               parent[key] = replacement
+//             }
+//           }
+//         } else {
+//           visit(value)
+//         }
+//       }
+//     }
+//   }
+
+//   for (const value of Object.values(docs)) {
+//     visit(value)
+//   }
+// }
 export function updateAliasReferencesInDocs(
   docs: Record<string, JsonValue>,
   oldPath: string,
   newPath: string | null,
 ): void {
-  const targetAlias = `{${oldPath}}`
-  const replacement = newPath ? `{${newPath}}` : null
+  const targetBraced = `{${oldPath}}`
+  const replacementBraced = newPath ? `{${newPath}}` : null
 
-  function visit(parent: JsonValue): void {
-    if (Array.isArray(parent)) {
-      for (let i = 0; i < parent.length; i += 1) {
-        const value = parent[i]
-
-        if (typeof value === 'string') {
-          if (value === targetAlias) {
-            if (replacement === null) {
-              parent.splice(i, 1)
-              i -= 1
-            } else {
-              parent[i] = replacement
-            }
-          }
-        } else {
-          visit(value)
-        }
-      }
-    } else if (isJsonRecord(parent)) {
-      for (const key of Object.keys(parent)) {
-        const value = parent[key]
-
-        if (typeof value === 'string') {
-          if (value === targetAlias) {
-            if (replacement === null) {
-              delete parent[key]
-            } else {
-              parent[key] = replacement
-            }
-          }
-        } else {
-          visit(value)
-        }
-      }
+  function visit(node: JsonValue): JsonValue {
+    // string: replace both "{old}" and "old"
+    if (typeof node === 'string') {
+      if (node === targetBraced) return replacementBraced ?? node
+      if (node === oldPath) return newPath ?? node
+      return node
     }
+
+    if (Array.isArray(node)) {
+      const next = node.map((item) => visit(item)).filter((v) => v !== undefined) as JsonValue[]
+      return next
+    }
+
+    if (isJsonRecord(node)) {
+      // special-case: { alias: "{...}" }
+      const rec = node as JsonRecord
+      const out: JsonRecord = {}
+
+      for (const [k, v] of Object.entries(rec)) {
+        // if deleting: remove the property entirely
+        if (replacementBraced === null && (v === targetBraced || v === oldPath)) {
+          continue
+        }
+        out[k] = visit(v)
+      }
+
+      return out
+    }
+
+    return node
   }
 
-  for (const value of Object.values(docs)) {
-    visit(value)
+  for (const [fileName, value] of Object.entries(docs)) {
+    docs[fileName] = visit(value)
   }
 }
 
@@ -153,30 +197,60 @@ export function removeAliasReferencesInDocs(
   updateAliasReferencesInDocs(docs, oldPath, null)
 }
 
+// export function countAliasReferencesInDocs(
+//   docs: Record<string, JsonValue>,
+//   targetPath: string,
+// ): number {
+//   const alias = `{${targetPath}}`
+//   let count = 0
+
+//   function visit(node: JsonValue): void {
+//     if (typeof node === 'string') {
+//       if (node === alias) count += 1
+//       return
+//     }
+
+//     if (Array.isArray(node)) {
+//       for (const item of node) {
+//         visit(item)
+//       }
+//       return
+//     }
+
+//     if (isJsonRecord(node)) {
+//       for (const value of Object.values(node)) {
+//         visit(value)
+//       }
+//     }
+//   }
+
+//   for (const value of Object.values(docs)) {
+//     visit(value)
+//   }
+
+//   return count
+// }
 export function countAliasReferencesInDocs(
   docs: Record<string, JsonValue>,
   targetPath: string,
 ): number {
   const alias = `{${targetPath}}`
+  const raw = targetPath
   let count = 0
 
   function visit(node: JsonValue): void {
     if (typeof node === 'string') {
-      if (node === alias) count += 1
+      if (node === alias || node === raw) count += 1
       return
     }
 
     if (Array.isArray(node)) {
-      for (const item of node) {
-        visit(item)
-      }
+      for (const item of node) visit(item)
       return
     }
 
     if (isJsonRecord(node)) {
-      for (const value of Object.values(node)) {
-        visit(value)
-      }
+      for (const value of Object.values(node)) visit(value)
     }
   }
 

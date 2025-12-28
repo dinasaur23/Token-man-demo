@@ -31,6 +31,7 @@ export function useColorTableComponent() {
     onFileChange,
     onModifierChange,
     updateTokenValueAny,
+    toDisplayTokenPath,
   } = useTokenWorkspaceTable()
 
   const gridApi = ref<GridApi<TableRow> | null>(null)
@@ -56,13 +57,16 @@ export function useColorTableComponent() {
   const currentAliasRow = ref<TableRow | null>(null)
   const aliasErrorMessage = ref<string | null>(null)
 
-  const aliasOptions = computed<string[]>(() => {
+  const aliasOptions = computed(() => {
     const base = currentAliasRow.value
     if (!base) return []
 
     return rows.value
       .filter((r) => r.path !== base.path && r.type === base.type && !r.isAlias)
-      .map((r) => r.path)
+      .map((r) => ({
+        title: toDisplayTokenPath(r.path), // what user sees
+        value: r.path, // real path you store/use
+      }))
   })
 
   function startRenameGroup(item: GroupNode): void {
@@ -90,7 +94,7 @@ export function useColorTableComponent() {
 
   function openAliasDialogForRow(row: TableRow): void {
     currentAliasRow.value = row
-    aliasSourcePath.value = '' // or row.aliasPath ?? ''
+    aliasSourcePath.value = row.isAlias ? (row.aliasPath ?? '') : ''
     addAliasDialog.value = true
   }
 

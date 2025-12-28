@@ -3,7 +3,6 @@ import fs from "fs";
 import os from "os";
 import path from "path";
 import StyleDictionary from "style-dictionary";
-//import { mergeWorkspaceFiles } from "../utils/dtcg/mergeWorkspaceFiles.js";
 import { applyOverridesToTokens } from "../utils/dtcg/applyOverrides.js";
 import { normalizeDtcgForCss } from "../utils/dtcg/normalizeDtcgForCss.js";
 import { createSdConfig } from "../utils/sd/index.js";
@@ -13,8 +12,257 @@ import {
 } from "../utils/dtcg/cleanupWorkspaceTokens.js";
 import { resolveUploadedDocuments } from "../utils/dtcg/uploadedResolver.js";
 import archiver from "archiver";
+
+function getTokensRoot(root) {
+  if (
+    root &&
+    typeof root === "object" &&
+    root.tokens &&
+    typeof root.tokens === "object"
+  ) {
+    return root.tokens;
+  }
+  return root;
+}
+
+function buildOverrideRules(overrides) {
+  return (
+    Object.entries(overrides || {})
+      .filter(
+        ([k, v]) =>
+          typeof k === "string" && typeof v === "string" && v.trim().length > 0
+      )
+      // deepest first
+      .sort((a, b) => b[0].split(".").length - a[0].split(".").length)
+  );
+}
+
+function mapPathSegmentsByOverrides(
+  pathStr,
+  overrides,
+  direction /* "toDisplay" | "toReal" */
+) {
+  if (!pathStr || typeof pathStr !== "string" || !pathStr.includes("."))
+    return pathStr;
+
+  const seg = pathStr.split(".");
+  const rules = buildOverrideRules(overrides);
+
+  for (const [groupId, newLabelRaw] of rules) {
+    const newLabel = String(newLabelRaw).trim();
+    if (!newLabel) continue;
+
+    const gidSeg = groupId.split(".");
+    const parentSeg = gidSeg.slice(0, -1);
+    const oldKey = gidSeg[gidSeg.length - 1];
+    const idx = parentSeg.length;
+
+    // parent must match exactly
+    let parentMatches = true;
+    for (let i = 0; i < parentSeg.length; i++) {
+      if (seg[i] !== parentSeg[i]) {
+        parentMatches = false;
+        break;
+      }
+    }
+    if (!parentMatches) continue;
+    if (idx >= seg.length) continue;
+
+    if (direction === "toDisplay") {
+      if (seg[idx] === oldKey) seg[idx] = newLabel;
+    } else {
+      if (seg[idx] === newLabel) seg[idx] = oldKey;
+    }
+  }
+
+  return seg.join(".");
+}
+// function normalizeNameOverrides(nameOverrides, groupNameOverrides) {
+//   const out = {};
+//   if (!nameOverrides || typeof nameOverrides !== "object") return out;
+
+//   for (const [oldPath, newPath] of Object.entries(nameOverrides)) {
+//     if (typeof oldPath !== "string" || typeof newPath !== "string") continue;
+
+//     const oldNorm = mapPathSegmentsByOverrides(
+//       oldPath,
+//       groupNameOverrides,
+//       "toDisplay"
+//     );
+//     const newNorm = mapPathSegmentsByOverrides(
+//       newPath,
+//       groupNameOverrides,
+//       "toDisplay"
+//     );
+
+//     out[oldNorm] = newNorm;
+//   }
+//   return out;
+// }
+
+function rewriteRefsInTokenTreeInPlace(root, groupNameOverrides) {
+  if (!root || typeof root !== "object") return;
+
+  const rewriteString = (s) => {
+    if (typeof s !== "string") return s;
+    const m = s.match(/^\{(.+)\}$/);
+    if (!m) return s;
+    const inner = m[1];
+    const mapped = mapPathSegmentsByOverrides(
+      inner,
+      groupNameOverrides,
+      "toDisplay"
+    );
+    return `{${mapped}}`;
+  };
+
+  const walk = (node) => {
+    if (Array.isArray(node)) {
+      for (let i = 0; i < node.length; i++) {
+        const v = node[i];
+        if (typeof v === "string") node[i] = rewriteString(v);
+        else walk(v);
+      }
+      return;
+    }
+
+    if (!node || typeof node !== "object") return;
+
+    for (const [k, v] of Object.entries(node)) {
+      if (typeof v === "string") {
+        node[k] = rewriteString(v);
+      } else {
+        walk(v);
+      }
+    }
+  };
+
+  const tokensRoot =
+    root.tokens && typeof root.tokens === "object" && root.tokens !== null
+      ? root.tokens
+      : root;
+
+  walk(tokensRoot);
+}
+function rewriteRefsByTokenNameOverrides(
+  root,
+  nameOverrides,
+  groupNameOverrides
+) {
+  if (!nameOverrides || typeof nameOverrides !== "object") return;
+
+  const normalize = (p) =>
+    mapPathSegmentsByOverrides(p, groupNameOverrides, "toDisplay");
+
+  const normalizedMap = Object.entries(nameOverrides).map(
+    ([oldPath, newPath]) => [normalize(oldPath), normalize(newPath)]
+  );
+
+  const rewriteString = (s) => {
+    if (typeof s !== "string") return s;
+    const m = s.match(/^\{(.+)\}$/);
+    if (!m) return s;
+
+    let ref = m[1];
+    for (const [oldNorm, newNorm] of normalizedMap) {
+      if (ref === oldNorm) {
+        return `{${newNorm}}`;
+      }
+    }
+    return s;
+  };
+
+  (function walk(node) {
+    if (!node || typeof node !== "object") return;
+
+    if (Array.isArray(node)) {
+      node.forEach((v, i) => {
+        if (typeof v === "string") node[i] = rewriteString(v);
+        else walk(v);
+      });
+      return;
+    }
+
+    for (const k of Object.keys(node)) {
+      const v = node[k];
+      if (typeof v === "string") node[k] = rewriteString(v);
+      else walk(v);
+    }
+  })(root.tokens ?? root);
+}
+function expandNameOverrides(nameOverrides, groupNameOverrides) {
+  const out = {};
+  for (const [oldPath, newPathRaw] of Object.entries(nameOverrides || {})) {
+    if (typeof oldPath !== "string" || typeof newPathRaw !== "string") continue;
+
+    const newPath = newPathRaw.trim();
+    if (!newPath) continue;
+
+    // If UI stored only the last segment (like "1000test"),
+    // rebuild full path using the same parent as oldPath.
+    if (!newPath.includes(".")) {
+      const parent = oldPath.split(".").slice(0, -1).join(".");
+      out[oldPath] = parent ? `${parent}.${newPath}` : newPath;
+    } else {
+      out[oldPath] = newPath;
+    }
+  }
+
+  // OPTIONAL: apply groupNameOverrides to both sides so they match your renamed tree
+  if (groupNameOverrides && typeof groupNameOverrides === "object") {
+    const normalized = {};
+    for (const [a, b] of Object.entries(out)) {
+      const aa = mapPathSegmentsByOverrides(a, groupNameOverrides, "toDisplay");
+      const bb = mapPathSegmentsByOverrides(b, groupNameOverrides, "toDisplay");
+      normalized[aa] = bb;
+    }
+    return normalized;
+  }
+
+  return out;
+}
+
 function isRecord(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
+}
+function findMissingReferences(tokenTree) {
+  // Build a set of all existing token paths like "brand1.color.blue.700"
+  const existing = new Set();
+
+  const collectPaths = (obj, path = []) => {
+    if (!obj || typeof obj !== "object") return;
+
+    // treat any object that has a "value" as a token node
+    if (Object.prototype.hasOwnProperty.call(obj, "$value")) {
+      existing.add(path.join("."));
+    }
+
+    for (const [k, v] of Object.entries(obj)) {
+      if (k === "value") continue;
+      collectPaths(v, [...path, k]);
+    }
+  };
+
+  const refs = [];
+  const collectRefs = (obj, path = []) => {
+    if (!obj || typeof obj !== "object") return;
+
+    for (const [k, v] of Object.entries(obj)) {
+      const p = [...path, k];
+      if (k === "$value" && typeof v === "string") {
+        const m = v.match(/^\{(.+)\}$/); // DTCG-style reference
+        if (m) refs.push({ at: path.join("."), ref: m[1] });
+      } else {
+        collectRefs(v, p);
+      }
+    }
+  };
+
+  collectPaths(tokenTree);
+  collectRefs(tokenTree);
+
+  const missing = refs.filter((r) => !existing.has(r.ref));
+  return missing;
 }
 
 function ensureContainer(root, pathSegments) {
@@ -407,8 +655,11 @@ function getDesignSystemIdFromReq(req) {
   return null;
 }
 
-function applyGroupNameOverridesToTokens(rootTokens, groupNameOverrides) {
+function applyGroupNameOverridesToTokens(rootMaybeWrapped, groupNameOverrides) {
   if (!groupNameOverrides || typeof groupNameOverrides !== "object") return;
+
+  const rootTokens = getTokensRoot(rootMaybeWrapped);
+  if (!rootTokens || typeof rootTokens !== "object") return;
 
   for (const [groupId, newLabel] of Object.entries(groupNameOverrides)) {
     if (typeof newLabel !== "string") continue;
@@ -450,6 +701,41 @@ function applyGroupNameOverridesToTokens(rootTokens, groupNameOverrides) {
     delete parent[oldKey];
   }
 }
+function applyTokenNameOverridesToTokens(rootMaybeWrapped, nameOverrides) {
+  if (!nameOverrides || typeof nameOverrides !== "object") return;
+
+  const rootTokens = getTokensRoot(rootMaybeWrapped);
+  if (!rootTokens || typeof rootTokens !== "object") return;
+
+  for (const [oldPath, newPath] of Object.entries(nameOverrides)) {
+    if (!oldPath.includes(".") || !newPath.includes(".")) continue;
+
+    const oldSeg = oldPath.split(".");
+    const newSeg = newPath.split(".");
+
+    const oldKey = oldSeg.pop();
+    const newKey = newSeg.pop();
+
+    // parent paths MUST be identical for token rename
+    if (oldSeg.join(".") !== newSeg.join(".")) continue;
+
+    let parent = rootTokens;
+    for (const s of oldSeg) {
+      if (!parent || typeof parent !== "object") {
+        parent = null;
+        break;
+      }
+      parent = parent[s];
+    }
+    if (!parent || typeof parent !== "object") continue;
+    if (!(oldKey in parent)) continue;
+
+    // overwrite-safe move
+    parent[newKey] = parent[oldKey];
+    delete parent[oldKey];
+  }
+}
+
 const ALLOWED_TOKEN_TYPES = ["color", "number", "string", "boolean"];
 
 function validateToken(token) {
@@ -756,11 +1042,74 @@ export async function exportTokens(req, res) {
     if (designSystemId) query.designSystem = designSystemId;
 
     const workspace = await TokenWorkspace.findOne(query).lean();
+
     if (!workspace) {
       return res
         .status(400)
         .json({ ok: false, stage, message: "No workspace found" });
     }
+    const groupNameOverrides = workspace.groupNameOverrides ?? {};
+
+    const nameOverridesFixed = expandNameOverrides(
+      workspace.nameOverrides ?? {},
+      groupNameOverrides
+    );
+
+    console.log("groupNameOverrides:", groupNameOverrides);
+    console.log("nameOverrides raw:", workspace.nameOverrides);
+    console.log("nameOverrides fixed:", nameOverridesFixed);
+    // ===== remap workspace-stored paths to the renamed paths =====
+    const mapPath = (p) =>
+      typeof p === "string" && nameOverridesFixed[p]
+        ? nameOverridesFixed[p]
+        : p;
+
+    const overridesFixed = {};
+    for (const [k, v] of Object.entries(workspace.overrides ?? {})) {
+      if (typeof k !== "string") continue;
+
+      if (k.includes("::")) {
+        const [mode, tokenPath] = k.split("::");
+        overridesFixed[`${mode}::${mapPath(tokenPath)}`] = v;
+      } else {
+        overridesFixed[mapPath(k)] = v;
+      }
+    }
+    const overridesFixedBaseOnly = Object.fromEntries(
+      Object.entries(overridesFixed).filter(
+        ([k]) => typeof k === "string" && !k.includes("::")
+      )
+    );
+
+    const deletedPathsFixed = (workspace.deletedPaths ?? []).map(mapPath);
+
+    const modeDeletedPathsFixed = {};
+    for (const [mode, arr] of Object.entries(
+      workspace.modeDeletedPaths ?? {}
+    )) {
+      modeDeletedPathsFixed[mode] = Array.isArray(arr) ? arr.map(mapPath) : arr;
+    }
+
+    const modeAddedRowsFixed = {};
+    for (const [key, rows] of Object.entries(workspace.modeAddedRows ?? {})) {
+      modeAddedRowsFixed[key] = Array.isArray(rows)
+        ? rows.map((r) =>
+            r && typeof r.path === "string"
+              ? { ...r, path: mapPath(r.path) }
+              : r
+          )
+        : rows;
+    }
+
+    // ✅ THIS IS THE PIECE FROM YOUR SCREENSHOT:
+    const workspaceExport = {
+      ...workspace,
+      overrides: overridesFixed,
+      deletedPaths: deletedPathsFixed,
+      modeDeletedPaths: modeDeletedPathsFixed,
+      modeAddedRows: modeAddedRowsFixed,
+    };
+
     if (!Array.isArray(workspace.files) || workspace.files.length === 0) {
       return res
         .status(400)
@@ -800,18 +1149,48 @@ export async function exportTokens(req, res) {
     }
 
     stage = "resolveBaseForCollections";
+    for (const [fileName, doc] of Object.entries(docs)) {
+      const scan = (obj, path = []) => {
+        if (!obj || typeof obj !== "object") return;
+        for (const [k, v] of Object.entries(obj)) {
+          const p = [...path, k];
+          if (k === "value" && typeof v === "string" && v.startsWith("{")) {
+            console.log("[ref-check]", fileName, p.join("."), "=>", v);
+          } else {
+            scan(v, p);
+          }
+        }
+      };
+      scan(doc);
+    }
     const baseResolved = resolveUploadedDocuments(docs, {}); // empty input
     const baseMerged = baseResolved;
 
-    pruneDeletedTokens(baseMerged, workspace.deletedPaths ?? []);
+    pruneDeletedTokens(baseMerged, deletedPathsFixed);
     const cleanedOverridesBase = buildCleanOverrides(
       baseMerged,
-      workspace.overrides ?? {}
+      overridesFixedBaseOnly
     );
+    console.log(
+      "groupNameOverrides keys:",
+      Object.keys(workspace.groupNameOverrides ?? {}).slice(0, 10)
+    );
+    console.log(
+      "nameOverrides keys:",
+      Object.keys(workspace.nameOverrides ?? {}).slice(0, 10)
+    );
+    console.log("has root.tokens?", !!baseMerged.tokens);
+
     applyOverridesToTokens(baseMerged, cleanedOverridesBase);
-    applyGroupNameOverridesToTokens(
+    applyGroupNameOverridesToTokens(baseMerged, groupNameOverrides);
+    applyTokenNameOverridesToTokens(baseMerged, nameOverridesFixed);
+
+    rewriteRefsInTokenTreeInPlace(baseMerged, groupNameOverrides);
+
+    rewriteRefsByTokenNameOverrides(
       baseMerged,
-      workspace.groupNameOverrides ?? {}
+      nameOverridesFixed,
+      groupNameOverrides
     );
 
     const collections = listTopLevelCollections(baseMerged);
@@ -855,25 +1234,39 @@ export async function exportTokens(req, res) {
     const exported = new Set();
     if (format === "json" && collectionsWithoutModes.length > 0) {
       const mergedTokens = resolveUploadedDocuments(docs, {}); // NO MODE
-      pruneDeletedTokens(mergedTokens, workspace.deletedPaths ?? []);
+      pruneDeletedTokens(mergedTokens, deletedPathsFixed);
       const cleanedOverrides = buildCleanOverrides(
         mergedTokens,
-        workspace.overrides ?? {}
+        overridesFixedBaseOnly
       );
       applyOverridesToTokens(mergedTokens, cleanedOverrides);
-      applyGroupNameOverridesToTokens(
-        mergedTokens,
-        workspace.groupNameOverrides ?? {}
-      );
+
+      applyGroupNameOverridesToTokens(mergedTokens, groupNameOverrides);
+      applyTokenNameOverridesToTokens(mergedTokens, nameOverridesFixed);
+
       for (const col of collectionsWithoutModes) {
         applyWorkspaceEditsForCollectionMode(
           mergedTokens,
-          workspace,
+          workspaceExport,
           col,
           "default"
         );
       }
-
+      rewriteRefsInTokenTreeInPlace(mergedTokens, groupNameOverrides);
+      rewriteRefsByTokenNameOverrides(
+        mergedTokens,
+        nameOverridesFixed,
+        groupNameOverrides
+      );
+      if (process.env.DEBUG_EXPORT === "1") {
+        const dumpPath = path.join(buildBaseRoot, `debug-nomode-json.json`);
+        fs.writeFileSync(
+          dumpPath,
+          JSON.stringify(mergedTokens, null, 2),
+          "utf8"
+        );
+        console.log("[exportTokens] wrote debug dump:", dumpPath);
+      }
       for (const col of collectionsWithoutModes) {
         const colTree = pickCollectionTree(mergedTokens, col);
         const jsonOut = JSON.stringify(colTree, null, 2);
@@ -886,25 +1279,44 @@ export async function exportTokens(req, res) {
     if (format !== "json" && collectionsWithoutModes.length > 0) {
       const mergedTokens = resolveUploadedDocuments(docs, {}); // NO MODE
 
-      pruneDeletedTokens(mergedTokens, workspace.deletedPaths ?? []);
+      pruneDeletedTokens(mergedTokens, deletedPathsFixed);
       const cleanedOverrides = buildCleanOverrides(
         mergedTokens,
-        workspace.overrides ?? {}
+        overridesFixedBaseOnly
       );
       applyOverridesToTokens(mergedTokens, cleanedOverrides);
-      applyGroupNameOverridesToTokens(
-        mergedTokens,
-        workspace.groupNameOverrides ?? {}
-      );
+
+      applyGroupNameOverridesToTokens(mergedTokens, groupNameOverrides);
+      applyTokenNameOverridesToTokens(mergedTokens, nameOverridesFixed);
+
       for (const col of collectionsWithoutModes) {
         applyWorkspaceEditsForCollectionMode(
           mergedTokens,
-          workspace,
+          workspaceExport,
           col,
           "default"
         );
       }
+      rewriteRefsInTokenTreeInPlace(mergedTokens, groupNameOverrides);
 
+      rewriteRefsByTokenNameOverrides(
+        mergedTokens,
+        nameOverridesFixed,
+        groupNameOverrides
+      );
+
+      if (process.env.DEBUG_EXPORT === "1") {
+        const dumpPath = path.join(
+          buildBaseRoot,
+          `debug-nomode-before-normalize.json`
+        );
+        fs.writeFileSync(
+          dumpPath,
+          JSON.stringify(mergedTokens, null, 2),
+          "utf8"
+        );
+        console.log("[exportTokens] wrote debug dump:", dumpPath);
+      }
       normalizeDtcgForCss(mergedTokens);
 
       const jsonFilePath = path.join(buildBaseRoot, `tokens-nomode.json`);
@@ -937,6 +1349,25 @@ export async function exportTokens(req, res) {
       fs.mkdirSync(platformConfig.buildPath, { recursive: true });
 
       const sd = new StyleDictionary(sdConfig);
+      const missing = findMissingReferences(mergedTokens);
+      if (missing.length) {
+        console.error("Missing token references (showing up to 30):");
+        for (const m of missing.slice(0, 30)) {
+          console.error(
+            `- token at "${m.at}" references "{${m.ref}}" (not found)`
+          );
+        }
+        throw new Error(
+          `Reference Error: ${missing.length} token references could not be found.`
+        );
+      }
+      console.log(
+        "[exportTokens] sample rewritten ref:",
+        JSON.stringify(mergedTokens).includes("{brand.")
+          ? "STILL HAS {brand.}"
+          : "OK"
+      );
+
       await sd.buildAllPlatforms();
 
       for (const col of collectionsWithoutModes) {
@@ -960,16 +1391,16 @@ export async function exportTokens(req, res) {
       stage = `resolveTokens:${variantFolder}`;
       let mergedTokens = resolveUploadedDocuments(docs, combo);
 
-      pruneDeletedTokens(mergedTokens, workspace.deletedPaths ?? []);
+      pruneDeletedTokens(mergedTokens, deletedPathsFixed);
       const cleanedOverrides = buildCleanOverrides(
         mergedTokens,
-        workspace.overrides ?? {}
+        overridesFixedBaseOnly
       );
       applyOverridesToTokens(mergedTokens, cleanedOverrides);
-      applyGroupNameOverridesToTokens(
-        mergedTokens,
-        workspace.groupNameOverrides ?? {}
-      );
+
+      applyGroupNameOverridesToTokens(mergedTokens, groupNameOverrides);
+      applyTokenNameOverridesToTokens(mergedTokens, nameOverridesFixed);
+
       applyValuesByModeToValueInPlace(mergedTokens, combo);
       resolveFigmaIdValuesInPlace(mergedTokens);
 
@@ -982,10 +1413,30 @@ export async function exportTokens(req, res) {
 
         applyWorkspaceEditsForCollectionMode(
           mergedTokens,
-          workspace,
+          workspaceExport,
           col,
           modeName
         );
+      }
+      rewriteRefsInTokenTreeInPlace(mergedTokens, groupNameOverrides);
+
+      rewriteRefsByTokenNameOverrides(
+        mergedTokens,
+        nameOverridesFixed,
+        groupNameOverrides
+      );
+      if (process.env.DEBUG_EXPORT === "1") {
+        const dumpPath = path.join(
+          buildBaseRoot,
+          `debug-${variantFolder}.json`
+        );
+        fs.mkdirSync(path.dirname(dumpPath), { recursive: true });
+        fs.writeFileSync(
+          dumpPath,
+          JSON.stringify(mergedTokens, null, 2),
+          "utf8"
+        );
+        console.log("[exportTokens] wrote debug dump:", dumpPath);
       }
 
       if (!mergedTokens || Object.keys(mergedTokens).length === 0) continue;
@@ -1091,6 +1542,25 @@ export async function exportTokens(req, res) {
       }
 
       const sd = new StyleDictionary(sdConfig);
+      const missing = findMissingReferences(mergedTokens);
+      if (missing.length) {
+        console.error("Missing token references (showing up to 30):");
+        for (const m of missing.slice(0, 30)) {
+          console.error(
+            `- token at "${m.at}" references "{${m.ref}}" (not found)`
+          );
+        }
+        throw new Error(
+          `Reference Error: ${missing.length} token references could not be found.`
+        );
+      }
+      console.log(
+        "[exportTokens] sample rewritten ref:",
+        JSON.stringify(mergedTokens).includes("{brand.")
+          ? "STILL HAS {brand.}"
+          : "OK"
+      );
+
       await sd.buildAllPlatforms();
 
       for (const col of allowedCollections) {

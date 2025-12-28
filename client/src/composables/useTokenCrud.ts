@@ -14,6 +14,7 @@ import {
   countAliasReferencesInDocs,
 } from '@/utils/dtcg/json-path-helpers'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
+import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
 
 type WorkspaceStore = ReturnType<typeof useTokenWorkspaceStore>
 
@@ -31,6 +32,48 @@ interface ResolverModifierLike {
 
 type Json = unknown
 type TokenType = 'color' | 'number' | 'string' | 'boolean'
+function buildOverrideRules(overrides: Record<string, string>) {
+  return Object.entries(overrides)
+    .filter(([k, v]) => typeof k === 'string' && typeof v === 'string' && v.trim().length > 0)
+    .sort((a, b) => b[0].split('.').length - a[0].split('.').length)
+}
+
+function mapPathSegmentsByOverrides(
+  path: string,
+  overrides: Record<string, string>,
+  direction: 'toDisplay' | 'toReal',
+): string {
+  if (!path || !path.includes('.')) return path
+
+  const seg = path.split('.')
+  const rules = buildOverrideRules(overrides)
+
+  for (const [groupId, newLabel] of rules) {
+    const gidSeg = groupId.split('.')
+    const parentSeg = gidSeg.slice(0, -1)
+    const oldKey = gidSeg[gidSeg.length - 1]
+    const idx = parentSeg.length
+
+    // parent must match
+    let parentMatches = true
+    for (let i = 0; i < parentSeg.length; i++) {
+      if (seg[i] !== parentSeg[i]) {
+        parentMatches = false
+        break
+      }
+    }
+    if (!parentMatches) continue
+    if (idx >= seg.length) continue
+
+    if (direction === 'toDisplay') {
+      if (seg[idx] === oldKey) seg[idx] = newLabel
+    } else {
+      if (seg[idx] === newLabel) seg[idx] = oldKey
+    }
+  }
+
+  return seg.join('.')
+}
 
 function isFigmaSyncedToken(node: unknown): boolean {
   if (!isJsonRecord(node)) return false
@@ -282,6 +325,94 @@ function isModeAddedRow(v: unknown): v is ModeAddedRow {
   const r = v as Record<string, unknown>
   return typeof r.path === 'string' && typeof r.type === 'string' && 'value' in r
 }
+function replacePathInString(s: string, from: string, to: string): string {
+  // replace "{from}" exactly
+  if (s === `{${from}}`) return `{${to}}`
+  // replace raw path exactly (some places store raw path without braces)
+  if (s === from) return to
+  return s
+}
+
+function replacePathInJsonValue(v: JsonValue, from: string, to: string): JsonValue {
+  if (typeof v === 'string') return replacePathInString(v, from, to)
+
+  if (Array.isArray(v)) {
+    return v.map((x) => replacePathInJsonValue(x as JsonValue, from, to)) as JsonValue
+  }
+
+  if (v && typeof v === 'object') {
+    const obj = v as Record<string, JsonValue>
+    const out: Record<string, JsonValue> = {}
+    for (const [k, val] of Object.entries(obj)) {
+      out[k] = replacePathInJsonValue(val, from, to)
+    }
+    return out as JsonValue
+  }
+
+  return v
+}
+
+function renameRefsInWorkspaceStore(store: WorkspaceStore, from: string, to: string): void {
+  // --- overrides: keys and values (values may include "{from}") ---
+  {
+    const current = store.overrides ?? {}
+    const next: Record<string, JsonValue> = {}
+
+    for (const [k, v] of Object.entries(current)) {
+      const newKey =
+        k === from ? to : k.includes(`::${from}`) ? k.replace(`::${from}`, `::${to}`) : k
+
+      next[newKey] = replacePathInJsonValue(v as JsonValue, from, to)
+    }
+
+    store.overrides = next
+  }
+
+  // --- modeAddedRows: value/raw can include "{from}" ---
+  {
+    const current = store.modeAddedRows ?? {}
+    const next: typeof current = { ...current }
+
+    for (const [k, arr] of Object.entries(current)) {
+      if (!Array.isArray(arr)) continue
+
+      const updated: ModeAddedRow[] = []
+      for (const item of arr) {
+        if (!isModeAddedRow(item)) continue
+
+        const value = replacePathInJsonValue(item.value as JsonValue, from, to)
+        const raw = item.raw ? replacePathInJsonValue(item.raw as JsonValue, from, to) : item.raw
+
+        updated.push({ ...item, value, raw })
+      }
+
+      next[k] = updated as (typeof current)[string]
+    }
+
+    store.modeAddedRows = next
+  }
+
+  // --- modeDeletedPaths: paths may be stored per mode ---
+  {
+    const current = store.modeDeletedPaths ?? {}
+    const next: typeof current = { ...current }
+
+    for (const [mode, arr] of Object.entries(current)) {
+      if (!Array.isArray(arr)) continue
+      next[mode] = arr.map((p) => (p === from ? to : p)) as (typeof current)[string]
+    }
+
+    store.modeDeletedPaths = next
+  }
+
+  // --- rowOrder: keep ordering consistent ---
+  {
+    const order = Array.isArray(store.rowOrder) ? [...store.rowOrder] : []
+    const idx = order.indexOf(from)
+    if (idx >= 0) order[idx] = to
+    store.rowOrder = order
+  }
+}
 
 function getGroupKeyFromPath(tokenPath: string): string {
   return tokenPath.split('.')[0] ?? ''
@@ -489,6 +620,12 @@ export function useTokenCrud({
   }
 
   async function updateTokenName(row: TableRow, newName: string): Promise<void> {
+    console.warn('[RENAME DEBUG] updateTokenName CALLED', {
+      oldPath: row.path,
+      oldName: row.name,
+      newName,
+    })
+
     const trimmed = newName.trim()
     if (!trimmed || trimmed === row.name) return
 
@@ -517,7 +654,49 @@ export function useTokenCrud({
       workspaceStore.nameOverrides[newPath] = workspaceStore.nameOverrides[row.path]
       delete workspaceStore.nameOverrides[row.path]
     }
+
     updateAliasReferencesInDocs(uploadedDocs.value, row.path, newPath)
+    // also rewrite DISPLAY refs that may have been stored previously
+    const nameOvFixed = expandNameOverrides(
+      workspaceStore.nameOverrides ?? {},
+      workspaceStore.groupNameOverrides ?? {},
+    )
+
+    const displayOld = nameOvFixed[row.path] ?? row.path
+    const displayNew = nameOvFixed[newPath] ?? newPath
+
+    updateAliasReferencesInDocs(uploadedDocs.value, displayOld, displayNew)
+
+    renameRefsInWorkspaceStore(workspaceStore, row.path, newPath)
+    console.group('[RENAME DEBUG]')
+    console.log('renamed:', row.path, '→', newPath)
+
+    const before = `{${row.path}}`
+    const after = `{${newPath}}`
+
+    let beforeCount = 0
+    let afterCount = 0
+
+    function scan(v: unknown): void {
+      if (typeof v === 'string') {
+        if (v === before) beforeCount++
+        if (v === after) afterCount++
+        return
+      }
+      if (Array.isArray(v)) {
+        v.forEach(scan)
+        return
+      }
+      if (v && typeof v === 'object') {
+        Object.values(v).forEach(scan)
+      }
+    }
+
+    Object.values(uploadedDocs.value).forEach(scan)
+
+    console.log('old alias refs remaining:', beforeCount)
+    console.log('new alias refs present:', afterCount)
+    console.groupEnd()
 
     const order = ensureRowOrder(workspaceStore)
     const idx = order.indexOf(row.path)
@@ -1068,26 +1247,61 @@ export function useTokenCrud({
 
   async function setTokenAlias(row: TableRow, aliasPath: string): Promise<void> {
     const trimmedInput = aliasPath.trim()
-    if (!trimmedInput) {
-      throw new Error('Alias path cannot be empty.')
+    if (!trimmedInput) throw new Error('Alias path cannot be empty.')
+
+    const groupOv = workspaceStore.groupNameOverrides ?? {}
+    const targetDisplay = normalizeAliasTarget(trimmedInput)
+
+    // REAL -> DISPLAY
+    const nameOvFixed = expandNameOverrides(
+      workspaceStore.nameOverrides ?? {},
+      workspaceStore.groupNameOverrides ?? {},
+    )
+
+    // DISPLAY -> REAL
+    const reverseName: Record<string, string> = {}
+    for (const [real, display] of Object.entries(nameOvFixed)) {
+      reverseName[display] = real
     }
 
-    const targetNormalized = normalizeAliasTarget(trimmedInput)
+    // undo token display rename first
+    const afterName = reverseName[targetDisplay] ?? targetDisplay
+    // then undo group display rename
+    const targetReal = mapPathSegmentsByOverrides(afterName, groupOv, 'toReal')
 
-    if (targetNormalized === row.path) {
+    if (targetReal === row.path) {
       throw new Error('A token cannot alias itself.')
     }
 
     const docs = uploadedDocs.value
     const fileNames = Object.keys(docs)
-    if (!fileNames.length) {
-      throw new Error('No token files are loaded.')
-    }
+    if (!fileNames.length) throw new Error('No token files are loaded.')
 
-    const targetSegments = targetNormalized.split('.')
+    const targetSegments = targetReal.split('.')
     let targetExists = false
     let targetType: TokenType | null = null
-    // ✅ MODE-ADDED: store alias directly in modeAddedRows (no uploadedDocs mutation)
+
+    // const trimmedInput = aliasPath.trim()
+    // if (!trimmedInput) {
+    //   throw new Error('Alias path cannot be empty.')
+    // }
+
+    // const targetNormalized = normalizeAliasTarget(trimmedInput)
+
+    // if (targetNormalized === row.path) {
+    //   throw new Error('A token cannot alias itself.')
+    // }
+
+    // const docs = uploadedDocs.value
+    // const fileNames = Object.keys(docs)
+    // if (!fileNames.length) {
+    //   throw new Error('No token files are loaded.')
+    // }
+
+    // const targetSegments = targetNormalized.split('.')
+    // let targetExists = false
+    // let targetType: TokenType | null = null
+
     {
       const mode = getEffectiveModeForPath(row.path)
       const hit = findModeAddedRow(workspaceStore, mode, row.path)
@@ -1095,8 +1309,8 @@ export function useTokenCrud({
       if (hit) {
         const aliasValue =
           trimmedInput.startsWith('{') && trimmedInput.endsWith('}')
-            ? trimmedInput
-            : `{${targetNormalized}}`
+            ? `{${targetReal}}`
+            : `{${targetReal}}`
 
         const nextRows = [...hit.rows]
         const existing = nextRows[hit.index]
@@ -1130,12 +1344,12 @@ export function useTokenCrud({
     }
 
     if (!targetExists) {
-      throw new Error(`Alias target "${targetNormalized}" does not exist.`)
+      throw new Error(`Alias target "${targetDisplay}" does not exist.`)
     }
 
     if (targetType && targetType !== row.type) {
       throw new Error(
-        `Alias target type mismatch: "${row.path}" is "${row.type}" but "${targetNormalized}" is "${targetType}".`,
+        `Alias target type mismatch: "${row.path}" is "${row.type}" but "${targetReal}" is "${targetType}".`,
       )
     }
     {
@@ -1145,8 +1359,8 @@ export function useTokenCrud({
       if (found && isFigmaSyncedToken(found.token)) {
         const aliasValue =
           trimmedInput.startsWith('{') && trimmedInput.endsWith('}')
-            ? trimmedInput
-            : `{${targetNormalized}}`
+            ? `{${targetReal}}`
+            : `{${targetReal}}`
 
         const mode = getEffectiveModeForPath(row.path)
         const k = `${mode}::${row.path}`
@@ -1172,9 +1386,7 @@ export function useTokenCrud({
     const fromSegments = row.path.split('.')
 
     if (wouldCreateAliasCycle(doc, fromSegments, targetSegments)) {
-      throw new Error(
-        `Alias "${row.path}" → "${targetNormalized}" would create a circular reference.`,
-      )
+      throw new Error(`Alias "${row.path}" → "${targetDisplay}" would create a circular reference.`)
     }
 
     const pathSegments = row.path.split('.')
@@ -1185,8 +1397,8 @@ export function useTokenCrud({
 
     const aliasValue =
       trimmedInput.startsWith('{') && trimmedInput.endsWith('}')
-        ? trimmedInput
-        : `{${targetNormalized}}`
+        ? `{${targetReal}}`
+        : `{${targetReal}}`
 
     const existing = parent[key]
 
