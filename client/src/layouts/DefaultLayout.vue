@@ -1,7 +1,7 @@
 <template>
   <v-layout>
     <NavbarComponent />
-    <NavdrawerComponent />
+    <!-- <NavdrawerComponent /> -->
     <v-main>
       <router-view />
     </v-main>
@@ -10,5 +10,5 @@
 
 <script setup lang="ts">
 import NavbarComponent from '@/components/NavbarComponent.vue'
-import NavdrawerComponent from '@/components/NavdrawerComponent.vue'
+//import NavdrawerComponent from '@/components/NavdrawerComponent.vue'
 </script>

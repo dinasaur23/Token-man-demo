@@ -1,0 +1,5 @@
+{
+  "devDependencies": {
+    "@terrazzo/cli": "^0.10.5"
+  }
+}

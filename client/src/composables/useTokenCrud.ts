@@ -32,6 +32,45 @@ interface ResolverModifierLike {
 
 type Json = unknown
 type TokenType = 'color' | 'number' | 'string' | 'boolean'
+type DtcgColorValue = {
+  colorSpace: 'srgb'
+  components: [number, number, number]
+  alpha?: number
+  hex?: string
+}
+
+function hexToRgb01(hex: string): [number, number, number] {
+  const h = hex.replace('#', '').trim()
+  const full =
+    h.length === 3
+      ? h
+          .split('')
+          .map((c) => c + c)
+          .join('')
+      : h
+  const n = parseInt(full, 16)
+  const r = (n >> 16) & 255
+  const g = (n >> 8) & 255
+  const b = n & 255
+  return [r / 255, g / 255, b / 255]
+}
+function round(n: number, p = 6) {
+  const m = 10 ** p
+  return Math.round(n * m) / m
+}
+function makeDtcgColorValue(hex = '#000000', alpha = 1): DtcgColorValue {
+  const [r, g, b] = hexToRgb01(hex)
+
+  const out: DtcgColorValue = {
+    colorSpace: 'srgb',
+    components: [round(r), round(g), round(b)],
+    hex,
+  }
+
+  if (alpha !== 1) out.alpha = alpha
+  return out
+}
+
 function buildOverrideRules(overrides: Record<string, string>) {
   return Object.entries(overrides)
     .filter(([k, v]) => typeof k === 'string' && typeof v === 'string' && v.trim().length > 0)
@@ -100,7 +139,7 @@ function isTokenType(t: unknown): t is TokenType {
 }
 function parseRowValueForDtcg(row: TableRow): JsonValue {
   if (row.type === 'color') {
-    return row.hex || '#000000'
+    return makeDtcgColorValue(row.hex || '#000000')
   }
 
   if (row.type === 'number') {
@@ -121,7 +160,8 @@ function parseRowValueForDtcg(row: TableRow): JsonValue {
 
 function parseRowLiteralValue(row: TableRow): JsonValue {
   // used when we need a literal (non-alias) value for $value
-  if (row.type === 'color') return row.hex || '#000000'
+  if (row.type === 'color') return makeDtcgColorValue(row.hex || '#000000')
+
   if (row.type === 'number') {
     const n = Number(row.value)
     return Number.isFinite(n) ? n : 0
@@ -511,10 +551,15 @@ export function useTokenCrud({
       if (hit) {
         const nextRows = [...hit.rows]
         const existing = nextRows[hit.index]
+        const coerced =
+          row.type === 'color' && typeof newValue === 'string'
+            ? makeDtcgColorValue(newValue)
+            : newValue
+
         nextRows[hit.index] = {
           ...existing,
-          value: newValue,
-          raw: newValue,
+          value: coerced,
+          raw: row.type === 'color' && typeof newValue === 'string' ? newValue : coerced,
           type: row.type,
         }
 
@@ -544,19 +589,28 @@ export function useTokenCrud({
       await persistUploadedDocsAndReload()
       return
     }
+    const beforeToken = JSON.stringify(token)
+    const beforeDoc = JSON.stringify(doc)
 
     // normal tokens: mutate original JSON
     const type = row.type
+    const coerced =
+      type === 'color' && typeof newValue === 'string' ? makeDtcgColorValue(newValue) : newValue
     if (isJsonRecord(token)) {
       const tokenRecord: JsonRecord = token
       tokenRecord['$type'] = type
-      tokenRecord['$value'] = newValue
+      tokenRecord['$value'] = coerced
     } else {
       parent[key] = {
         $type: type,
-        $value: newValue,
+        $value: coerced,
       }
     }
+    const afterToken = JSON.stringify(token)
+    const afterDoc = JSON.stringify(doc)
+
+    console.log('token changed?', beforeToken !== afterToken)
+    console.log('doc changed?', beforeDoc !== afterDoc)
 
     // if we wrote to source, remove any override for this path
     if (workspaceStore.overrides[row.path] !== undefined) {
@@ -581,7 +635,7 @@ export function useTokenCrud({
         const existing = nextRows[hit.index]
         nextRows[hit.index] = {
           ...existing,
-          value: newHex,
+          value: makeDtcgColorValue(newHex),
           raw: newHex,
           type: 'color',
         }
@@ -605,11 +659,11 @@ export function useTokenCrud({
 
     if (isJsonRecord(token)) {
       const tokenRecord: JsonRecord = token
-      tokenRecord['$value'] = newHex
+      tokenRecord['$value'] = makeDtcgColorValue(newHex)
     } else {
       parent[key] = {
         $type: 'color',
-        $value: newHex,
+        $value: makeDtcgColorValue(newHex),
       }
     }
 
@@ -893,7 +947,7 @@ export function useTokenCrud({
         path: newPath,
         type: row.type,
         value,
-        raw: value,
+        raw: row.type === 'color' ? row.hex || '#000000' : value,
       }
 
       // insert after the clicked token (approx): append is fine, table ordering uses rowOrder anyway
@@ -965,7 +1019,7 @@ export function useTokenCrud({
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
-
+  const defaultHex = '#000000'
   async function addRowBelowToken(row: TableRow): Promise<void> {
     const mode = getEffectiveModeForPath(row.path)
 
@@ -981,7 +1035,7 @@ export function useTokenCrud({
 
         const newValue: JsonValue =
           row.type === 'color'
-            ? '#000000'
+            ? makeDtcgColorValue(defaultHex)
             : row.type === 'number'
               ? 0
               : row.type === 'boolean'
@@ -992,7 +1046,7 @@ export function useTokenCrud({
           path: newPath,
           type: row.type,
           value: newValue,
-          raw: newValue,
+          raw: row.type === 'color' ? defaultHex : newValue,
         }
 
         const nextRows = [...hit.rows]
@@ -1036,7 +1090,7 @@ export function useTokenCrud({
 
       const newValue: JsonValue =
         row.type === 'color'
-          ? '#000000'
+          ? makeDtcgColorValue(defaultHex)
           : row.type === 'number'
             ? 0
             : row.type === 'boolean'
@@ -1047,7 +1101,7 @@ export function useTokenCrud({
         path: newPath,
         type: row.type,
         value: newValue,
-        raw: newValue,
+        raw: row.type === 'color' ? defaultHex : newValue,
       }
 
       // insert roughly after clicked token: just append; rowOrder controls visible placement
@@ -1073,7 +1127,7 @@ export function useTokenCrud({
       $type: row.type,
       $value:
         row.type === 'color'
-          ? '#000000'
+          ? makeDtcgColorValue('#000000')
           : row.type === 'number'
             ? 0
             : row.type === 'boolean'
@@ -1127,7 +1181,7 @@ export function useTokenCrud({
 
     const newToken: JsonValue = {
       $type: 'color',
-      $value: initialHex,
+      $value: makeDtcgColorValue(initialHex),
     }
 
     container[key] = newToken
@@ -1178,7 +1232,7 @@ export function useTokenCrud({
 
     groupContainer[tokenKey] = {
       $type: 'color',
-      $value: initialHex,
+      $value: makeDtcgColorValue(initialHex),
     }
 
     const newPath = [...fullGroupPath, tokenKey].join('.')
@@ -1234,7 +1288,7 @@ export function useTokenCrud({
     const safeTokenName = createDuplicateKey(newGroup, initialTokenName)
     newGroup[safeTokenName] = {
       $type: 'color',
-      $value: initialHex,
+      $value: makeDtcgColorValue(initialHex),
     }
 
     const order = ensureRowOrder(workspaceStore)
@@ -1484,7 +1538,7 @@ export function useTokenCrud({
           ...existing,
           type: row.type,
           value: literal,
-          raw: literal,
+          raw: row.type === 'color' ? row.hex || '#000000' : literal,
         }
 
         writeModeAddedRows(workspaceStore, mode, hit.groupKey, nextRows)

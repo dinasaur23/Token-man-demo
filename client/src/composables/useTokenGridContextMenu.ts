@@ -62,6 +62,7 @@ export function useTokenGridContextMenu(rows: Ref<TableRow[]>, actions: ContextM
   }
   async function duplicateRow(): Promise<void> {
     const base = menu.row
+
     if (!base) {
       closeMenu()
       return

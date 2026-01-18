@@ -264,7 +264,7 @@ export function useTokenWorkspaceTable() {
     map: Record<string, TokenEntry>,
     watchPaths: string[],
   ): void {
-    console.group(`[ALIAS DEBUG] ${label}`)
+    //console.group(`[ALIAS DEBUG] ${label}`)
 
     for (const aliasPath of watchPaths) {
       const aliasEntry = tokens.find((t) => t.path === aliasPath)
@@ -293,9 +293,9 @@ export function useTokenWorkspaceTable() {
         console.log('resolved target:', targetEntry ? resolveAlias(targetPath, map) : undefined)
       }
 
-      console.log('resolved alias (resolveAlias):', resolveAlias(aliasPath, map))
+      //console.log('resolved alias (resolveAlias):', resolveAlias(aliasPath, map))
 
-      console.log('resolved alias (resolveValue):', resolveValue(rawValue, map))
+      //console.log('resolved alias (resolveValue):', resolveValue(rawValue, map))
     }
 
     console.groupEnd()
@@ -705,14 +705,59 @@ export function useTokenWorkspaceTable() {
 
   // ---- persist helper used by CRUD composable -------------------------
 
-  async function persistUploadedDocsAndReload(): Promise<void> {
-    workspaceStore.files = Object.entries(uploadedDocs.value).map(([name, content]) => ({
-      name,
-      content,
-    }))
+  // async function persistUploadedDocsAndReload(): Promise<void> {
+  //   workspaceStore.files = Object.entries(uploadedDocs.value).map(([name, content]) => ({
+  //     name,
+  //     content,
+  //   }))
 
-    await workspaceStore.saveToServer()
-    await resolveAndPopulateFromUploadedDocs()
+  //   await workspaceStore.saveToServer()
+  //   await resolveAndPopulateFromUploadedDocs()
+  // }
+  const isPersisting = ref(false)
+  async function persistUploadedDocsAndReload(): Promise<void> {
+    // keep results clean between runs
+    performance.clearMarks()
+    performance.clearMeasures()
+
+    performance.mark('crud-total-start')
+    isPersisting.value = true
+
+    try {
+      // (A) prepare DTO in memory
+      performance.mark('crud-buildfiles-start')
+      workspaceStore.files = Object.entries(uploadedDocs.value).map(([name, content]) => ({
+        name,
+        content,
+      }))
+      performance.mark('crud-buildfiles-end')
+      performance.measure('CRUD build files array', 'crud-buildfiles-start', 'crud-buildfiles-end')
+
+      // (B) server save
+      performance.mark('crud-save-start')
+      await workspaceStore.saveToServer()
+      performance.mark('crud-save-end')
+      performance.measure('CRUD saveToServer', 'crud-save-start', 'crud-save-end')
+
+      // (C) resolver + table rebuild
+      performance.mark('crud-resolve-start')
+      await resolveAndPopulateFromUploadedDocs()
+      performance.mark('crud-resolve-end')
+      performance.measure('CRUD resolve+populate', 'crud-resolve-start', 'crud-resolve-end')
+    } finally {
+      isPersisting.value = false
+
+      performance.mark('crud-total-end')
+      performance.measure('CRUD total', 'crud-total-start', 'crud-total-end')
+
+      // Optional: print the latest durations immediately (no DevTools Performance needed)
+      const getLast = (name: string) => performance.getEntriesByName(name).slice(-1)[0]?.duration
+
+      console.warn('⏱ CRUD build files array (ms):', getLast('CRUD build files array'))
+      console.warn('⏱ CRUD saveToServer (ms):', getLast('CRUD saveToServer'))
+      console.warn('⏱ CRUD resolve+populate (ms):', getLast('CRUD resolve+populate'))
+      console.warn('⏱ CRUD total (ms):', getLast('CRUD total'))
+    }
   }
 
   async function populateTableFromDocument(doc: unknown): Promise<void> {
@@ -739,7 +784,41 @@ export function useTokenWorkspaceTable() {
         ? (convertedDoc as Record<string, unknown>).tokens
         : convertedDoc
 
-    const tokens = collectTokensWithPath(root)
+    function isRecord(v: unknown): v is Record<string, JsonValue> {
+      return typeof v === 'object' && v !== null && !Array.isArray(v)
+    }
+
+    function normalizeRootLeafTokens(input: JsonValue): JsonValue {
+      if (!isRecord(input)) return input
+
+      const out: Record<string, JsonValue> = {}
+
+      for (const [key, value] of Object.entries(input)) {
+        if (isRecord(value)) {
+          const hasType = typeof value.$type === 'string'
+          const hasValue = '$value' in value
+          const hasNonDollarChildren = Object.keys(value).some((k) => !k.startsWith('$'))
+
+          // ✅ root-level leaf token → wrap into default child
+          if (hasType && hasValue && !hasNonDollarChildren) {
+            out[key] = {
+              $type: value.$type,
+              default: {
+                $value: value.$value as JsonValue,
+                ...(isRecord(value.$extensions) ? { $extensions: value.$extensions } : {}),
+              },
+            }
+            continue
+          }
+        }
+
+        out[key] = value
+      }
+
+      return out
+    }
+    const normalizedRoot = normalizeRootLeafTokens(root as JsonValue)
+    const tokens = collectTokensWithPath(normalizedRoot)
     const figmaOrderMap = collectFigmaOrderMap(convertedDoc) // this one unwraps internally
 
     if (figmaOrderMap.size > 0 && workspaceStore.rowOrder.length === 0) {
@@ -1275,7 +1354,8 @@ export function useTokenWorkspaceTable() {
       return getEffectiveModeForGroupKey(groupKey)
     },
   })
-  console.warn('[WIRE DEBUG] updateTokenName function =', updateTokenName)
+
+  //console.warn('[WIRE DEBUG] updateTokenName function =', updateTokenName)
 
   async function addSiblingGroupForActiveGroup(newGroupName: string): Promise<void> {
     const trimmed = newGroupName.trim()

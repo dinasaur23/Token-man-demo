@@ -1,21 +1,10 @@
 {
-  "colors": {
+  "Hot pink": {
     "$type": "color",
-    "font": {
-      "base": {
-        "$value": "#111111"
-      },
-      "secondary": {
-        "$value": "#333333"
-      },
-      "tertiary": {
-        "$value": "#666666"
-      },
-      "inverse": {
-        "base": {
-          "$value": "#ffffff"
-        }
-      }
+    "$value": {
+      "colorSpace": "srgb",
+      "components": [1, 0, 1],
+      "hex": "#ff00ff"
     }
   }
 }

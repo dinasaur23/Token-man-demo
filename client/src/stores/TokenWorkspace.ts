@@ -126,10 +126,10 @@ export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {
 
         const data = (await res.json()) as TokenWorkspaceDto
 
-        console.log(
-          '[WorkspaceStore] loadFromServer raw DTO:',
-          JSON.stringify(data, null, 2).slice(0, 800),
-        )
+        // console.log(
+        //   '[WorkspaceStore] loadFromServer raw DTO:',
+        //   JSON.stringify(data, null, 2).slice(0, 800),
+        // )
 
         this.files = Array.isArray(data.files) ? data.files : []
         this.modifiers = data.modifiers ?? {}

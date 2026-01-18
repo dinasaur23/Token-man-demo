@@ -43,7 +43,7 @@
       </v-alert>
     </v-col>
   </v-row>
-  <v-row v-if="rows.length" class="mt-4 ml-4">
+  <v-row v-show="rows.length" class="mt-4 ml-4">
     <v-col cols="12" md="3">
       <div style="overflow-y: auto">
         <div class="mb-2">
@@ -144,7 +144,14 @@
     @click:outside="closeMenu"
   >
     <v-list density="compact">
-      <v-list-item @click="duplicateRow">
+      <v-list-item
+        @click.stop="
+          () => {
+            console.warn('[TEMPLATE] Duplicate clicked ✅', menu.row?.path)
+            duplicateRow()
+          }
+        "
+      >
         <v-list-item-title>Duplicate row</v-list-item-title>
       </v-list-item>
       <v-list-item @click="addRowBelow">
@@ -354,8 +361,13 @@ function handleGridReady(e: GridReadyEvent) {
   onGridReady(e)
 }
 
+// watch(activeGroupId, () => {
+//   gridApi.value?.refreshCells({ columns: ['name'], force: true })
+// })
 watch(activeGroupId, () => {
-  gridApi.value?.refreshCells({ columns: ['name'], force: true })
+  const api = gridApi.value
+  if (!api || api.isDestroyed()) return
+  api.refreshCells({ columns: ['name'], force: true })
 })
 
 const { columnDefs, defaultColDef } = useTokenGridColumns(

@@ -57,6 +57,15 @@ async function getSettingsForCurrentFile() {
 function figmaVariablesToDtcg() {
   const collections = figma.variables.getLocalVariableCollections();
   const variables = figma.variables.getLocalVariables();
+  const rawVariables = figma.variables.getLocalVariables().map((v) => ({
+    id: v.id,
+    name: v.name,
+    resolvedType: v.resolvedType,
+    valuesByMode: v.valuesByMode,
+    variableCollectionId: v.variableCollectionId,
+  }));
+
+  console.log("RAW VARIABLES (PLAIN):", JSON.stringify(rawVariables, null, 2));
 
   const collectionsById = {};
   for (let i = 0; i < collections.length; i++) {
@@ -78,6 +87,25 @@ function figmaVariablesToDtcg() {
   //   c = clamp01(c);
   //   return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
   // }
+  function colorToDtcgColor(color) {
+    const r = clamp01(color.r);
+    const g = clamp01(color.g);
+    const b = clamp01(color.b);
+    const a = color.a != null ? clamp01(color.a) : 1;
+
+    // optional: keep numbers readable (3 decimals)
+    const round3 = (n) => Math.round(n * 1000) / 1000;
+
+    const out = {
+      colorSpace: "srgb",
+      components: [round3(r), round3(g), round3(b)],
+    };
+
+    // Only include alpha if it’s not 1
+    if (a < 0.999) out.alpha = round3(a);
+
+    return out;
+  }
 
   function colorToHex(color) {
     const r = clamp01(color.r);
@@ -101,6 +129,21 @@ function figmaVariablesToDtcg() {
   function toHexChannel(n) {
     const clamped = Math.max(0, Math.min(255, Math.round(n)));
     return clamped.toString(16).padStart(2, "0");
+  }
+  function colorToDtcgColorWithHex(color) {
+    const r = clamp01(color.r);
+    const g = clamp01(color.g);
+    const b = clamp01(color.b);
+    const a = color.a != null ? clamp01(color.a) : 1;
+
+    const round3 = (n) => Math.round(n * 1000) / 1000;
+
+    return {
+      colorSpace: "srgb",
+      components: [round3(r), round3(g), round3(b)],
+      alpha: round3(a), // always include alpha (even if 1)
+      hex: colorToHex({ r, g, b, a }), // include hex inside $value
+    };
   }
 
   function slugify(name) {
@@ -140,8 +183,11 @@ function figmaVariablesToDtcg() {
     return keys[0];
   }
 
+  // function isSupportedResolvedType(t) {
+  //   return t === "COLOR" || t === "FLOAT" || t === "STRING" || t === "BOOLEAN";
+  // }
   function isSupportedResolvedType(t) {
-    return t === "COLOR" || t === "FLOAT" || t === "STRING" || t === "BOOLEAN";
+    return t === "COLOR";
   }
 
   function resolvedTypeToDtcgType(t) {
@@ -157,7 +203,7 @@ function figmaVariablesToDtcg() {
 
     if (resolvedType === "COLOR") {
       console.log("[color-raw]", raw);
-      return colorToHex(raw);
+      return colorToDtcgColorWithHex(raw);
     }
 
     if (resolvedType === "FLOAT") return raw;
@@ -288,6 +334,7 @@ function figmaVariablesToDtcg() {
         let modeValue = null;
         if (raw.type === "VARIABLE_ALIAS") {
           const target = variablesById[raw.id];
+          if (target && target.resolvedType !== "COLOR") continue;
           const targetPath = target ? pathMap[target.id] : null;
           if (!targetPath) continue;
           modeValue = "{" + targetPath + "}";

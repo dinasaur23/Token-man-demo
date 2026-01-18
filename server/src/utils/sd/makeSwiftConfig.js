@@ -11,7 +11,9 @@ export function makeSwiftConfig(jsonFilePath, buildBase) {
           {
             destination: "Tokens.swift",
             format: "ios-swift/class.swift",
-            className: "Tokens",
+            options: {
+              className: "Tokens",
+            },
           },
         ],
       },

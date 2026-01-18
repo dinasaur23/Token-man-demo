@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<resources>
+  <color name="global_colors_white">#ffffffff</color>
+  <color name="global_colors_black">#ff000000</color>
+  <color name="global_colors_add_row">#ffd08a8a</color>
+  <color name="global_colors_duplicate">#ffffffff</color>
+</resources>

@@ -1,12 +1,12 @@
 import { createRouter, createWebHistory } from 'vue-router'
 import AuthenticationLayout from '@/layouts/AuthenticationLayout.vue'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
-import SignupPage from '../Pages/SignupPage.vue'
-import StartPage from '../Pages/StartPage.vue'
-import ColorContentPage from '@/Pages/ColorContentPage.vue'
-import EditTokenPage from '@/Pages/EditTokenPage.vue'
-import LoginPage from '@/Pages/LoginPage.vue'
-import HomePage from '@/Pages/HomePage.vue'
+import SignupPage from '../pages/SignupPage.vue'
+import StartPage from '../pages/StartPage.vue'
+import ColorContentPage from '@/pages/ColorContentPage.vue'
+import EditTokenPage from '@/pages/EditTokenPage.vue'
+import LoginPage from '@/pages/LoginPage.vue'
+import HomePage from '@/pages/HomePage.vue'
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
