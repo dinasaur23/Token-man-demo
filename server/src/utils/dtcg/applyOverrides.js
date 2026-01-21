@@ -4,7 +4,6 @@ export function applyOverridesToTokens(root, overrides = {}) {
   for (const [fullKey, newValue] of Object.entries(overrides)) {
     if (typeof fullKey !== "string" || !fullKey.trim()) continue;
 
-    // ✅ DO NOT apply mode-scoped overrides globally
     if (fullKey.includes("::")) continue;
 
     const fullPath = fullKey; // base-only

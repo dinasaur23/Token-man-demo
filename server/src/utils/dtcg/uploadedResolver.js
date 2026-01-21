@@ -60,7 +60,7 @@ function loadTokenSource(source, docs) {
 
   if (ref.startsWith("#/")) {
     throw new Error(
-      `Internal JSON Pointer "${ref}" is not allowed for token sources.`
+      `Internal JSON Pointer "${ref}" is not allowed for token sources.`,
     );
   }
 
@@ -68,7 +68,7 @@ function loadTokenSource(source, docs) {
 
   if (!doc) {
     throw new Error(
-      `No uploaded document found for $ref "${ref}". Expected key "${fileName}".`
+      `No uploaded document found for $ref "${ref}". Expected key "${fileName}".`,
     );
   }
   if (!isJsonObject(doc)) {
@@ -93,7 +93,7 @@ function resolveModifier(name, modifier, docs, input) {
   const value = input[name] ?? modifier.default;
   if (!value) {
     throw new Error(
-      `Missing value for modifier "${name}" and no default defined.`
+      `Missing value for modifier "${name}" and no default defined.`,
     );
   }
 
@@ -101,7 +101,7 @@ function resolveModifier(name, modifier, docs, input) {
   if (!contextSources) {
     const allowed = Object.keys(modifier.contexts).join(", ");
     throw new Error(
-      `Invalid value "${value}" for modifier "${name}". Allowed values: ${allowed}.`
+      `Invalid value "${value}" for modifier "${name}". Allowed values: ${allowed}.`,
     );
   }
 
@@ -204,7 +204,7 @@ function resolveWithResolverDocument(resolver, docs, input = {}) {
       const modifier = resolver.modifiers?.[modifierName];
       if (!modifier)
         throw new Error(
-          `Unknown modifier "${modifierName}" in resolutionOrder.`
+          `Unknown modifier "${modifierName}" in resolutionOrder.`,
         );
       const merged = resolveModifier(modifierName, modifier, docs, input);
       result = deepMergeDocs(result, merged);
@@ -220,7 +220,7 @@ function resolveWithResolverDocument(resolver, docs, input = {}) {
 
 export function resolveUploadedDocuments(docs, input = {}) {
   const resolverEntry = Object.entries(docs).find(([, value]) =>
-    isResolverDocument(value)
+    isResolverDocument(value),
   );
 
   if (!resolverEntry) {
@@ -231,6 +231,5 @@ export function resolveUploadedDocuments(docs, input = {}) {
   const resolverDoc = resolverEntry[1];
   const resolved = resolveWithResolverDocument(resolverDoc, docs, input);
 
-  // ✅ apply figma valuesByMode AFTER resolver merge
   return applySelectedContextsToDoc(resolved, input);
 }

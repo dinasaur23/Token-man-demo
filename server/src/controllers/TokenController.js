@@ -30,7 +30,7 @@ function buildOverrideRules(overrides) {
     Object.entries(overrides || {})
       .filter(
         ([k, v]) =>
-          typeof k === "string" && typeof v === "string" && v.trim().length > 0
+          typeof k === "string" && typeof v === "string" && v.trim().length > 0,
       )
       // deepest first
       .sort((a, b) => b[0].split(".").length - a[0].split(".").length)
@@ -40,7 +40,7 @@ function buildOverrideRules(overrides) {
 function mapPathSegmentsByOverrides(
   pathStr,
   overrides,
-  direction /* "toDisplay" | "toReal" */
+  direction /* "toDisplay" | "toReal" */,
 ) {
   if (!pathStr || typeof pathStr !== "string" || !pathStr.includes("."))
     return pathStr;
@@ -111,7 +111,7 @@ function rewriteRefsInTokenTreeInPlace(root, groupNameOverrides) {
     const mapped = mapPathSegmentsByOverrides(
       inner,
       groupNameOverrides,
-      "toDisplay"
+      "toDisplay",
     );
     return `{${mapped}}`;
   };
@@ -147,7 +147,7 @@ function rewriteRefsInTokenTreeInPlace(root, groupNameOverrides) {
 function rewriteRefsByTokenNameOverrides(
   root,
   nameOverrides,
-  groupNameOverrides
+  groupNameOverrides,
 ) {
   if (!nameOverrides || typeof nameOverrides !== "object") return;
 
@@ -155,7 +155,7 @@ function rewriteRefsByTokenNameOverrides(
     mapPathSegmentsByOverrides(p, groupNameOverrides, "toDisplay");
 
   const normalizedMap = Object.entries(nameOverrides).map(
-    ([oldPath, newPath]) => [normalize(oldPath), normalize(newPath)]
+    ([oldPath, newPath]) => [normalize(oldPath), normalize(newPath)],
   );
 
   const rewriteString = (s) => {
@@ -314,7 +314,7 @@ function applyWorkspaceEditsForCollectionMode(
   mergedTokens,
   workspace,
   collection,
-  modeName
+  modeName,
 ) {
   if (!mergedTokens || typeof mergedTokens !== "object") return;
 
@@ -472,7 +472,7 @@ function collectionHasModes(collectionName, allowedModesByCollection) {
 function makeVariantFolderForCollection(
   combo,
   collectionName,
-  allowedModesByCollection
+  allowedModesByCollection,
 ) {
   const allowed = allowedModesByCollection?.[collectionName] ?? [];
   const collectionHasModes = Array.isArray(allowed) && allowed.length > 0;
@@ -543,7 +543,7 @@ function deriveAllowedModesByCollection(rootTokens) {
 function isComboAllowedForCollection(
   combo,
   collectionName,
-  allowedModesByCollection
+  allowedModesByCollection,
 ) {
   const allowed = allowedModesByCollection?.[collectionName];
   const collectionHasModes = Array.isArray(allowed) && allowed.length > 0;
@@ -620,7 +620,7 @@ function cartesianProduct(modMap) {
 
 function makeVariantFolder(combo) {
   const entries = Object.entries(combo).filter(
-    ([, v]) => typeof v === "string" && v.length
+    ([, v]) => typeof v === "string" && v.length,
   );
   if (entries.length === 0) return "default";
   if (entries.length === 1) return entries[0][1]; // e.g. "mobile"
@@ -631,7 +631,7 @@ function makeVariantFolder(combo) {
 function listTopLevelCollections(tokenTree) {
   if (!tokenTree || typeof tokenTree !== "object") return [];
   return Object.keys(tokenTree).filter(
-    (k) => k !== "$metadata" && k !== "$extensions"
+    (k) => k !== "$metadata" && k !== "$extensions",
   );
 }
 
@@ -692,7 +692,7 @@ function applyGroupNameOverridesToTokens(rootMaybeWrapped, groupNameOverrides) {
         "[exportTokens] group rename skipped because key already exists:",
         groupId,
         "→",
-        trimmed
+        trimmed,
       );
       continue;
     }
@@ -835,8 +835,8 @@ export async function syncFigmaTokens(req, res, next) {
       JSON.stringify(
         files[idx === -1 ? files.length - 1 : idx].content,
         null,
-        2
-      )
+        2,
+      ),
     );
 
     await workspace.save();
@@ -896,7 +896,7 @@ export async function getWorkspace(req, res, next) {
       "user:",
       userId,
       "designSystem:",
-      designSystemId
+      designSystemId,
     );
 
     if (!workspace) {
@@ -973,7 +973,7 @@ export async function saveWorkspace(req, res, next) {
       "designSystem:",
       designSystemId,
       "files:",
-      Array.isArray(files) ? files.length : 0
+      Array.isArray(files) ? files.length : 0,
     );
 
     const workspaceData = {
@@ -997,14 +997,14 @@ export async function saveWorkspace(req, res, next) {
     const workspace = await TokenWorkspace.findOneAndUpdate(
       query,
       workspaceData,
-      { upsert: true, new: true, setDefaultsOnInsert: true }
+      { upsert: true, new: true, setDefaultsOnInsert: true },
     ).lean();
 
     console.log(
       "saveWorkspace saved workspaceId:",
       workspace?._id,
       "for designSystem:",
-      designSystemId
+      designSystemId,
     );
 
     res.json({
@@ -1052,13 +1052,13 @@ export async function exportTokens(req, res) {
 
     const nameOverridesFixed = expandNameOverrides(
       workspace.nameOverrides ?? {},
-      groupNameOverrides
+      groupNameOverrides,
     );
 
     console.log("groupNameOverrides:", groupNameOverrides);
     console.log("nameOverrides raw:", workspace.nameOverrides);
     console.log("nameOverrides fixed:", nameOverridesFixed);
-    // ===== remap workspace-stored paths to the renamed paths =====
+
     const mapPath = (p) =>
       typeof p === "string" && nameOverridesFixed[p]
         ? nameOverridesFixed[p]
@@ -1077,15 +1077,15 @@ export async function exportTokens(req, res) {
     }
     const overridesFixedBaseOnly = Object.fromEntries(
       Object.entries(overridesFixed).filter(
-        ([k]) => typeof k === "string" && !k.includes("::")
-      )
+        ([k]) => typeof k === "string" && !k.includes("::"),
+      ),
     );
 
     const deletedPathsFixed = (workspace.deletedPaths ?? []).map(mapPath);
 
     const modeDeletedPathsFixed = {};
     for (const [mode, arr] of Object.entries(
-      workspace.modeDeletedPaths ?? {}
+      workspace.modeDeletedPaths ?? {},
     )) {
       modeDeletedPathsFixed[mode] = Array.isArray(arr) ? arr.map(mapPath) : arr;
     }
@@ -1096,7 +1096,7 @@ export async function exportTokens(req, res) {
         ? rows.map((r) =>
             r && typeof r.path === "string"
               ? { ...r, path: mapPath(r.path) }
-              : r
+              : r,
           )
         : rows;
     }
@@ -1168,15 +1168,15 @@ export async function exportTokens(req, res) {
     pruneDeletedTokens(baseMerged, deletedPathsFixed);
     const cleanedOverridesBase = buildCleanOverrides(
       baseMerged,
-      overridesFixedBaseOnly
+      overridesFixedBaseOnly,
     );
     console.log(
       "groupNameOverrides keys:",
-      Object.keys(workspace.groupNameOverrides ?? {}).slice(0, 10)
+      Object.keys(workspace.groupNameOverrides ?? {}).slice(0, 10),
     );
     console.log(
       "nameOverrides keys:",
-      Object.keys(workspace.nameOverrides ?? {}).slice(0, 10)
+      Object.keys(workspace.nameOverrides ?? {}).slice(0, 10),
     );
     console.log("has root.tokens?", !!baseMerged.tokens);
 
@@ -1189,7 +1189,7 @@ export async function exportTokens(req, res) {
     rewriteRefsByTokenNameOverrides(
       baseMerged,
       nameOverridesFixed,
-      groupNameOverrides
+      groupNameOverrides,
     );
 
     const collections = listTopLevelCollections(baseMerged);
@@ -1202,11 +1202,11 @@ export async function exportTokens(req, res) {
     }
     const allowedModesByCollection = deriveAllowedModesByCollection(baseMerged);
     const collectionsWithModes = collections.filter((c) =>
-      collectionHasModes(c, allowedModesByCollection)
+      collectionHasModes(c, allowedModesByCollection),
     );
 
     const collectionsWithoutModes = collections.filter(
-      (c) => !collectionHasModes(c, allowedModesByCollection)
+      (c) => !collectionHasModes(c, allowedModesByCollection),
     );
     const exportedKeySet = new Set();
     // ---------- ZIP response ----------
@@ -1227,7 +1227,7 @@ export async function exportTokens(req, res) {
     const tmpDir = os.tmpdir();
     const buildBaseRoot = path.join(
       tmpDir,
-      `export-${userId}${dsSuffix}-${Date.now()}`
+      `export-${userId}${dsSuffix}-${Date.now()}`,
     );
 
     const exported = new Set();
@@ -1236,7 +1236,7 @@ export async function exportTokens(req, res) {
       pruneDeletedTokens(mergedTokens, deletedPathsFixed);
       const cleanedOverrides = buildCleanOverrides(
         mergedTokens,
-        overridesFixedBaseOnly
+        overridesFixedBaseOnly,
       );
       applyOverridesToTokens(mergedTokens, cleanedOverrides);
 
@@ -1248,21 +1248,21 @@ export async function exportTokens(req, res) {
           mergedTokens,
           workspaceExport,
           col,
-          "default"
+          "default",
         );
       }
       rewriteRefsInTokenTreeInPlace(mergedTokens, groupNameOverrides);
       rewriteRefsByTokenNameOverrides(
         mergedTokens,
         nameOverridesFixed,
-        groupNameOverrides
+        groupNameOverrides,
       );
       if (process.env.DEBUG_EXPORT === "1") {
         const dumpPath = path.join(buildBaseRoot, `debug-nomode-json.json`);
         fs.writeFileSync(
           dumpPath,
           JSON.stringify(mergedTokens, null, 2),
-          "utf8"
+          "utf8",
         );
         console.log("[exportTokens] wrote debug dump:", dumpPath);
       }
@@ -1281,7 +1281,7 @@ export async function exportTokens(req, res) {
       pruneDeletedTokens(mergedTokens, deletedPathsFixed);
       const cleanedOverrides = buildCleanOverrides(
         mergedTokens,
-        overridesFixedBaseOnly
+        overridesFixedBaseOnly,
       );
       applyOverridesToTokens(mergedTokens, cleanedOverrides);
 
@@ -1293,7 +1293,7 @@ export async function exportTokens(req, res) {
           mergedTokens,
           workspaceExport,
           col,
-          "default"
+          "default",
         );
       }
       rewriteRefsInTokenTreeInPlace(mergedTokens, groupNameOverrides);
@@ -1301,18 +1301,18 @@ export async function exportTokens(req, res) {
       rewriteRefsByTokenNameOverrides(
         mergedTokens,
         nameOverridesFixed,
-        groupNameOverrides
+        groupNameOverrides,
       );
 
       if (process.env.DEBUG_EXPORT === "1") {
         const dumpPath = path.join(
           buildBaseRoot,
-          `debug-nomode-before-normalize.json`
+          `debug-nomode-before-normalize.json`,
         );
         fs.writeFileSync(
           dumpPath,
           JSON.stringify(mergedTokens, null, 2),
-          "utf8"
+          "utf8",
         );
         console.log("[exportTokens] wrote debug dump:", dumpPath);
       }
@@ -1323,7 +1323,7 @@ export async function exportTokens(req, res) {
       fs.writeFileSync(
         jsonFilePath,
         JSON.stringify(mergedTokens, null, 2),
-        "utf8"
+        "utf8",
       );
 
       const buildBase = path.join(buildBaseRoot, `build-nomode`);
@@ -1353,18 +1353,18 @@ export async function exportTokens(req, res) {
         console.error("Missing token references (showing up to 30):");
         for (const m of missing.slice(0, 30)) {
           console.error(
-            `- token at "${m.at}" references "{${m.ref}}" (not found)`
+            `- token at "${m.at}" references "{${m.ref}}" (not found)`,
           );
         }
         throw new Error(
-          `Reference Error: ${missing.length} token references could not be found.`
+          `Reference Error: ${missing.length} token references could not be found.`,
         );
       }
       console.log(
         "[exportTokens] sample rewritten ref:",
         JSON.stringify(mergedTokens).includes("{brand.")
           ? "STILL HAS {brand.}"
-          : "OK"
+          : "OK",
       );
 
       await sd.buildAllPlatforms();
@@ -1374,7 +1374,7 @@ export async function exportTokens(req, res) {
           platformConfig.buildPath,
           col,
           "default",
-          originalDestination
+          originalDestination,
         );
         if (!fs.existsSync(builtPath)) continue;
 
@@ -1393,7 +1393,7 @@ export async function exportTokens(req, res) {
       pruneDeletedTokens(mergedTokens, deletedPathsFixed);
       const cleanedOverrides = buildCleanOverrides(
         mergedTokens,
-        overridesFixedBaseOnly
+        overridesFixedBaseOnly,
       );
       applyOverridesToTokens(mergedTokens, cleanedOverrides);
 
@@ -1414,7 +1414,7 @@ export async function exportTokens(req, res) {
           mergedTokens,
           workspaceExport,
           col,
-          modeName
+          modeName,
         );
       }
       rewriteRefsInTokenTreeInPlace(mergedTokens, groupNameOverrides);
@@ -1422,18 +1422,18 @@ export async function exportTokens(req, res) {
       rewriteRefsByTokenNameOverrides(
         mergedTokens,
         nameOverridesFixed,
-        groupNameOverrides
+        groupNameOverrides,
       );
       if (process.env.DEBUG_EXPORT === "1") {
         const dumpPath = path.join(
           buildBaseRoot,
-          `debug-${variantFolder}.json`
+          `debug-${variantFolder}.json`,
         );
         fs.mkdirSync(path.dirname(dumpPath), { recursive: true });
         fs.writeFileSync(
           dumpPath,
           JSON.stringify(mergedTokens, null, 2),
-          "utf8"
+          "utf8",
         );
         console.log("[exportTokens] wrote debug dump:", dumpPath);
       }
@@ -1451,7 +1451,7 @@ export async function exportTokens(req, res) {
           const vf = makeVariantFolderForCollection(
             combo,
             col,
-            allowedModesByCollection
+            allowedModesByCollection,
           );
           const exportKey = `${col}__${vf}__json`;
           if (exportedKeySet.has(exportKey)) continue;
@@ -1470,13 +1470,13 @@ export async function exportTokens(req, res) {
       const safeVariantKey = String(variantFolder).replace(/[\\/]/g, "__");
       const jsonFilePath = path.join(
         buildBaseRoot,
-        `tokens-${safeVariantKey}.json`
+        `tokens-${safeVariantKey}.json`,
       );
       fs.mkdirSync(path.dirname(jsonFilePath), { recursive: true });
       fs.writeFileSync(
         jsonFilePath,
         JSON.stringify(mergedTokens, null, 2),
-        "utf8"
+        "utf8",
       );
 
       const buildBase = path.join(buildBaseRoot, `build-${variantFolder}`);
@@ -1499,7 +1499,7 @@ export async function exportTokens(req, res) {
       }
 
       const allowedCollections = collectionsWithModes.filter((col) =>
-        isComboAllowedForCollection(combo, col, allowedModesByCollection)
+        isComboAllowedForCollection(combo, col, allowedModesByCollection),
       );
 
       platformConfig.files = [];
@@ -1508,7 +1508,7 @@ export async function exportTokens(req, res) {
         const colVariantFolder = makeVariantFolderForCollection(
           combo,
           col,
-          allowedModesByCollection
+          allowedModesByCollection,
         );
 
         const dedupeKey = `${format}::${col}::${colVariantFolder}`;
@@ -1518,7 +1518,7 @@ export async function exportTokens(req, res) {
         const dest = path.posix.join(
           col,
           colVariantFolder,
-          originalDestination
+          originalDestination,
         );
 
         platformConfig.files.push({
@@ -1535,7 +1535,7 @@ export async function exportTokens(req, res) {
       for (const f of platformConfig.files) {
         const destDir = path.join(
           platformConfig.buildPath,
-          ...String(f.destination).split("/")
+          ...String(f.destination).split("/"),
         );
         fs.mkdirSync(path.dirname(destDir), { recursive: true });
       }
@@ -1546,18 +1546,18 @@ export async function exportTokens(req, res) {
         console.error("Missing token references (showing up to 30):");
         for (const m of missing.slice(0, 30)) {
           console.error(
-            `- token at "${m.at}" references "{${m.ref}}" (not found)`
+            `- token at "${m.at}" references "{${m.ref}}" (not found)`,
           );
         }
         throw new Error(
-          `Reference Error: ${missing.length} token references could not be found.`
+          `Reference Error: ${missing.length} token references could not be found.`,
         );
       }
       console.log(
         "[exportTokens] sample rewritten ref:",
         JSON.stringify(mergedTokens).includes("{brand.")
           ? "STILL HAS {brand.}"
-          : "OK"
+          : "OK",
       );
 
       await sd.buildAllPlatforms();
@@ -1566,21 +1566,21 @@ export async function exportTokens(req, res) {
         const colVariantFolder = makeVariantFolderForCollection(
           combo,
           col,
-          allowedModesByCollection
+          allowedModesByCollection,
         );
 
         const builtPath = path.join(
           platformConfig.buildPath,
           col,
           colVariantFolder,
-          originalDestination
+          originalDestination,
         );
         if (!fs.existsSync(builtPath)) continue;
 
         const zipEntry = path.posix.join(
           col,
           colVariantFolder,
-          originalDestination
+          originalDestination,
         );
         archive.file(builtPath, { name: zipEntry });
       }
