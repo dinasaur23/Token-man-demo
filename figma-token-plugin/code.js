@@ -375,7 +375,7 @@ function figmaVariablesToDtcg() {
         dtcgPath: containerPath.concat(tokenKey).join("."),
         defaultModeKey,
         valuesByModeKeys: Object.keys(
-          token.$extensions.figma.valuesByMode || {}
+          token.$extensions.figma.valuesByMode || {},
         ),
         sampleChosenType: typeof (token.$extensions.figma.valuesByMode || {})[
           defaultModeKey
@@ -459,7 +459,7 @@ async function syncToTokenManager() {
 
     if (!apiUrl || !designSystemId || !jwt) {
       figma.notify(
-        "Token Manager settings missing for this Figma file. Please run Settings first."
+        "Token Manager settings missing for this Figma file. Please run Settings first.",
       );
       figma.closePlugin();
       return;
@@ -487,7 +487,7 @@ async function syncToTokenManager() {
 
     console.log(
       "[Plugin] Sync payload:",
-      JSON.stringify(payload, null, 2).slice(0, 500)
+      JSON.stringify(payload, null, 2).slice(0, 500),
     );
 
     const response = await fetch(url, {
@@ -546,8 +546,8 @@ async function openSettingsUI() {
           items: Array.isArray(data)
             ? data
             : data && data.items
-            ? data.items
-            : [],
+              ? data.items
+              : [],
         });
       } else {
         figma.ui.postMessage({

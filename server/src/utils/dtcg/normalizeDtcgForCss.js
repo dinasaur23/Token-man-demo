@@ -5,7 +5,7 @@ export function normalizeDtcgForCss(node, path = []) {
 
   if (Array.isArray(node)) {
     node.forEach((item, idx) =>
-      normalizeDtcgForCss(item, path.concat(String(idx)))
+      normalizeDtcgForCss(item, path.concat(String(idx))),
     );
     return;
   }
@@ -19,7 +19,7 @@ export function normalizeDtcgForCss(node, path = []) {
         "from",
         JSON.stringify(before),
         "to",
-        primitive
+        primitive,
       );
       node.$value = primitive;
     }
