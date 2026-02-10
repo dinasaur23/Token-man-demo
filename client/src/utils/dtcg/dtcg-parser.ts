@@ -80,12 +80,12 @@ export function collectColorTokensWithPath(root: Json): ColorTokenEntry[] {
       results.push({
         path: pathParts.join('.'),
         value: (node as JsonObject)['$value'],
-        type: 'color', // ✅ CHANGE 3: required by ColorTokenEntry
+        type: 'color',
       })
     }
 
     for (const [key, value] of Object.entries(node)) {
-      if (key.startsWith('$')) continue // skip $themes, $metadata, etc.
+      if (key.startsWith('$')) continue
       visit(value, [...pathParts, key], effectiveType)
     }
   }
@@ -117,7 +117,6 @@ export function findEntryForTarget(
 }
 
 export function resolveValue(value: Json, map: Record<string, TokenEntry>): Json | undefined {
-  // string alias
   if (typeof value === 'string') {
     const m = value.match(AliasPattern)
     if (!m) return undefined
@@ -125,7 +124,6 @@ export function resolveValue(value: Json, map: Record<string, TokenEntry>): Json
     return resolveAlias(targetPath, map)
   }
 
-  // object alias: { alias: "{...}" }
   if (isObject(value)) {
     const aliasValue = value['alias']
     if (typeof aliasValue === 'string') {
@@ -149,19 +147,17 @@ export function resolveAlias(
 
   const value = entry.value
 
-  // alias as string: "{path.to.token}"
   if (typeof value === 'string') {
     const m = value.match(AliasPattern)
-    if (!m) return value // not an alias string, treat as literal
+    if (!m) return value
 
     const targetPath = m[1]
-    if (seen.has(targetPath)) return undefined // avoid cycles
+    if (seen.has(targetPath)) return undefined
 
     seen.add(targetPath)
     return resolveAlias(targetPath, map, seen) ?? map[targetPath]?.value
   }
 
-  // alias as object: { alias: "{...}" }
   if (isObject(value)) {
     const aliasValue = value['alias']
     if (typeof aliasValue === 'string') {
@@ -176,6 +172,5 @@ export function resolveAlias(
     }
   }
 
-  // already a resolved value
   return value
 }

@@ -1,5 +1,3 @@
-//import type { ColorRow } from './dtcg-parser'
-
 export type GroupNode = {
   id: string
   title: string

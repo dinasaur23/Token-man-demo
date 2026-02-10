@@ -26,22 +26,15 @@ function getTokensRoot(root) {
 }
 
 function buildOverrideRules(overrides) {
-  return (
-    Object.entries(overrides || {})
-      .filter(
-        ([k, v]) =>
-          typeof k === "string" && typeof v === "string" && v.trim().length > 0,
-      )
-      // deepest first
-      .sort((a, b) => b[0].split(".").length - a[0].split(".").length)
-  );
+  return Object.entries(overrides || {})
+    .filter(
+      ([k, v]) =>
+        typeof k === "string" && typeof v === "string" && v.trim().length > 0,
+    )
+    .sort((a, b) => b[0].split(".").length - a[0].split(".").length);
 }
 
-function mapPathSegmentsByOverrides(
-  pathStr,
-  overrides,
-  direction /* "toDisplay" | "toReal" */,
-) {
+function mapPathSegmentsByOverrides(pathStr, overrides, direction) {
   if (!pathStr || typeof pathStr !== "string" || !pathStr.includes("."))
     return pathStr;
 
@@ -77,28 +70,6 @@ function mapPathSegmentsByOverrides(
 
   return seg.join(".");
 }
-// function normalizeNameOverrides(nameOverrides, groupNameOverrides) {
-//   const out = {};
-//   if (!nameOverrides || typeof nameOverrides !== "object") return out;
-
-//   for (const [oldPath, newPath] of Object.entries(nameOverrides)) {
-//     if (typeof oldPath !== "string" || typeof newPath !== "string") continue;
-
-//     const oldNorm = mapPathSegmentsByOverrides(
-//       oldPath,
-//       groupNameOverrides,
-//       "toDisplay"
-//     );
-//     const newNorm = mapPathSegmentsByOverrides(
-//       newPath,
-//       groupNameOverrides,
-//       "toDisplay"
-//     );
-
-//     out[oldNorm] = newNorm;
-//   }
-//   return out;
-// }
 
 function rewriteRefsInTokenTreeInPlace(root, groupNameOverrides) {
   if (!root || typeof root !== "object") return;
@@ -198,8 +169,6 @@ function expandNameOverrides(nameOverrides, groupNameOverrides) {
     const newPath = newPathRaw.trim();
     if (!newPath) continue;
 
-    // If UI stored only the last segment (like "1000test"),
-    // rebuild full path using the same parent as oldPath.
     if (!newPath.includes(".")) {
       const parent = oldPath.split(".").slice(0, -1).join(".");
       out[oldPath] = parent ? `${parent}.${newPath}` : newPath;
@@ -208,7 +177,6 @@ function expandNameOverrides(nameOverrides, groupNameOverrides) {
     }
   }
 
-  // OPTIONAL: apply groupNameOverrides to both sides so they match your renamed tree
   if (groupNameOverrides && typeof groupNameOverrides === "object") {
     const normalized = {};
     for (const [a, b] of Object.entries(out)) {
@@ -226,13 +194,11 @@ function isRecord(v) {
   return typeof v === "object" && v !== null && !Array.isArray(v);
 }
 function findMissingReferences(tokenTree) {
-  // Build a set of all existing token paths like "brand1.color.blue.700"
   const existing = new Set();
 
   const collectPaths = (obj, path = []) => {
     if (!obj || typeof obj !== "object") return;
 
-    // treat any object that has a "value" as a token node
     if (Object.prototype.hasOwnProperty.call(obj, "$value")) {
       existing.add(path.join("."));
     }
@@ -250,7 +216,7 @@ function findMissingReferences(tokenTree) {
     for (const [k, v] of Object.entries(obj)) {
       const p = [...path, k];
       if (k === "$value" && typeof v === "string") {
-        const m = v.match(/^\{(.+)\}$/); // DTCG-style reference
+        const m = v.match(/^\{(.+)\}$/);
         if (m) refs.push({ at: path.join("."), ref: m[1] });
       } else {
         collectRefs(v, p);
@@ -325,7 +291,6 @@ function applyWorkspaceEditsForCollectionMode(
 
   if (!isRecord(tokensRoot)) return;
 
-  // ---- 1) mode deletions ----
   const del = workspace.modeDeletedPaths?.[modeName];
   if (Array.isArray(del)) {
     for (const p of del) {
@@ -357,7 +322,6 @@ function applyWorkspaceEditsForCollectionMode(
     if (k.startsWith(prefix)) {
       const tokenPath = k.slice(prefix.length);
       if (tokenPath === collection || tokenPath.startsWith(collection + ".")) {
-        // infer type if possible; otherwise keep "string"
         const t = "string";
         setTokenAtPath(tokensRoot, tokenPath, t, v);
       }
@@ -366,7 +330,7 @@ function applyWorkspaceEditsForCollectionMode(
 
   for (const [tokenPath, v] of Object.entries(overrides)) {
     if (typeof tokenPath !== "string") continue;
-    if (tokenPath.includes("::")) continue; // skip mode:: keys
+    if (tokenPath.includes("::")) continue;
     if (tokenPath !== collection && !tokenPath.startsWith(collection + "."))
       continue;
 
@@ -385,7 +349,6 @@ function isFigmaIdString(v) {
 function resolveFigmaIdValuesInPlace(rootTokens) {
   const idToPrimitive = new Map();
 
-  // collect id -> primitive
   (function collect(node) {
     if (!isJsonObject(node)) return;
 
@@ -414,7 +377,6 @@ function resolveFigmaIdValuesInPlace(rootTokens) {
 
   if (idToPrimitive.size === 0) return;
 
-  // replace id-values
   (function replace(node) {
     if (!isJsonObject(node)) return;
 
@@ -482,12 +444,11 @@ function makeVariantFolderForCollection(
     return makeVariantFolder(rest);
   }
 
-  // If collection has modes, keep full combo (includes mode)
   return makeVariantFolder(combo);
 }
 
 function deriveAllowedModesByCollection(rootTokens) {
-  const out = {}; // { [collectionName]: Set<string> }
+  const out = {};
 
   function ensure(col) {
     if (!out[col]) out[col] = new Set();
@@ -508,14 +469,12 @@ function deriveAllowedModesByCollection(rootTokens) {
       const ext = node.$extensions;
       const fig = isJsonObject(ext) ? ext.figma : null;
 
-      // 1) valuesByMode keys (common in your data)
       if (isJsonObject(fig) && isJsonObject(fig.valuesByMode)) {
         for (const k of Object.keys(fig.valuesByMode)) {
           ensure(collection).add(k);
         }
       }
 
-      // 2) figma.modes object keys (also in your example)
       if (isJsonObject(fig) && isJsonObject(fig.modes)) {
         for (const k of Object.keys(fig.modes)) {
           ensure(collection).add(k);
@@ -533,12 +492,11 @@ function deriveAllowedModesByCollection(rootTokens) {
 
   visit(rootTokens, []);
 
-  // Convert Set -> Array
   const asObj = {};
   for (const [col, set] of Object.entries(out)) {
     asObj[col] = Array.from(set);
   }
-  return asObj; // { device: ["mobile","tablet"], brand:["neo",...], ... }
+  return asObj;
 }
 function isComboAllowedForCollection(
   combo,
@@ -548,15 +506,12 @@ function isComboAllowedForCollection(
   const allowed = allowedModesByCollection?.[collectionName];
   const collectionHasModes = Array.isArray(allowed) && allowed.length > 0;
 
-  // Collection has no modes -> never block (we will dedupe + ignore mode in folder)
   if (!collectionHasModes) return true;
 
-  // Collection has modes -> require combo.mode to be valid (if mode exists)
   if (combo && typeof combo === "object" && typeof combo.mode === "string") {
     return allowed.includes(combo.mode);
   }
 
-  // If collection has modes but combo has no mode, skip (otherwise you'd get "default" export)
   return false;
 }
 
@@ -574,7 +529,6 @@ function findResolverDocInDocs(docs) {
 function extractAllModifierValues(docs, workspace) {
   const out = {};
 
-  // 1) from resolver document: modifiers[name].contexts keys
   const resolver = findResolverDocInDocs(docs);
   if (resolver?.modifiers && isPlainObject(resolver.modifiers)) {
     for (const [name, mod] of Object.entries(resolver.modifiers)) {
@@ -586,7 +540,6 @@ function extractAllModifierValues(docs, workspace) {
     }
   }
 
-  // 2) from Figma: workspace.figmaModifierOptions[name].values
   const fig = workspace?.figmaModifierOptions;
   if (fig && isPlainObject(fig)) {
     for (const [name, opt] of Object.entries(fig)) {
@@ -597,7 +550,7 @@ function extractAllModifierValues(docs, workspace) {
     }
   }
 
-  return out; // { mode: ["mobile","saas"], theme: ["light","dark"], ... }
+  return out;
 }
 
 function cartesianProduct(modMap) {
@@ -623,8 +576,8 @@ function makeVariantFolder(combo) {
     ([, v]) => typeof v === "string" && v.length,
   );
   if (entries.length === 0) return "default";
-  if (entries.length === 1) return entries[0][1]; // e.g. "mobile"
-  // e.g. "mode-mobile__theme-dark"
+  if (entries.length === 1) return entries[0][1];
+
   return entries.map(([k, v]) => `${k}-${v}`).join("__");
 }
 
@@ -639,7 +592,7 @@ function pickCollectionTree(tokenTree, collectionKey) {
   if (!tokenTree || typeof tokenTree !== "object") return {};
   const sub = tokenTree[collectionKey];
   if (!sub || typeof sub !== "object") return {};
-  // exported file should still be a DTCG tree, so wrap:
+
   return { [collectionKey]: sub };
 }
 
@@ -686,7 +639,6 @@ function applyGroupNameOverridesToTokens(rootMaybeWrapped, groupNameOverrides) {
     if (!ok || !parent || typeof parent !== "object") continue;
     if (!(oldKey in parent)) continue;
 
-    // avoid overwriting an existing key with the new name
     if (Object.prototype.hasOwnProperty.call(parent, trimmed)) {
       console.warn(
         "[exportTokens] group rename skipped because key already exists:",
@@ -716,7 +668,6 @@ function applyTokenNameOverridesToTokens(rootMaybeWrapped, nameOverrides) {
     const oldKey = oldSeg.pop();
     const newKey = newSeg.pop();
 
-    // parent paths MUST be identical for token rename
     if (oldSeg.join(".") !== newSeg.join(".")) continue;
 
     let parent = rootTokens;
@@ -730,7 +681,6 @@ function applyTokenNameOverridesToTokens(rootMaybeWrapped, nameOverrides) {
     if (!parent || typeof parent !== "object") continue;
     if (!(oldKey in parent)) continue;
 
-    // overwrite-safe move
     parent[newKey] = parent[oldKey];
     delete parent[oldKey];
   }
@@ -751,13 +701,11 @@ function validateToken(token) {
 function validateTokenTree(node) {
   if (!node || typeof node !== "object") return;
 
-  // Token leaf (DTCG)
   if (node.$type && node.$value !== undefined) {
     validateToken(node);
     return;
   }
 
-  // Recurse into groups
   for (const key of Object.keys(node)) {
     validateTokenTree(node[key]);
   }
@@ -1162,7 +1110,7 @@ export async function exportTokens(req, res) {
       };
       scan(doc);
     }
-    const baseResolved = resolveUploadedDocuments(docs, {}); // empty input
+    const baseResolved = resolveUploadedDocuments(docs, {});
     const baseMerged = baseResolved;
 
     pruneDeletedTokens(baseMerged, deletedPathsFixed);
@@ -1209,7 +1157,7 @@ export async function exportTokens(req, res) {
       (c) => !collectionHasModes(c, allowedModesByCollection),
     );
     const exportedKeySet = new Set();
-    // ---------- ZIP response ----------
+
     const dsSuffix = designSystemId ? `-${designSystemId}` : "";
     const zipName = `tokens${dsSuffix}.${format}.zip`;
 
@@ -1223,7 +1171,6 @@ export async function exportTokens(req, res) {
     });
     archive.pipe(res);
 
-    // temp build base
     const tmpDir = os.tmpdir();
     const buildBaseRoot = path.join(
       tmpDir,
@@ -1232,7 +1179,7 @@ export async function exportTokens(req, res) {
 
     const exported = new Set();
     if (format === "json" && collectionsWithoutModes.length > 0) {
-      const mergedTokens = resolveUploadedDocuments(docs, {}); // NO MODE
+      const mergedTokens = resolveUploadedDocuments(docs, {});
       pruneDeletedTokens(mergedTokens, deletedPathsFixed);
       const cleanedOverrides = buildCleanOverrides(
         mergedTokens,
@@ -1274,9 +1221,8 @@ export async function exportTokens(req, res) {
       }
     }
 
-    // ---- EXPORT COLLECTIONS WITHOUT MODES (ONCE) ----
     if (format !== "json" && collectionsWithoutModes.length > 0) {
-      const mergedTokens = resolveUploadedDocuments(docs, {}); // NO MODE
+      const mergedTokens = resolveUploadedDocuments(docs, {});
 
       pruneDeletedTokens(mergedTokens, deletedPathsFixed);
       const cleanedOverrides = buildCleanOverrides(
@@ -1440,7 +1386,6 @@ export async function exportTokens(req, res) {
 
       if (!mergedTokens || Object.keys(mergedTokens).length === 0) continue;
 
-      // ---- JSON: directly add per collection ----
       if (format === "json") {
         for (const col of collections) {
           if (
@@ -1465,7 +1410,6 @@ export async function exportTokens(req, res) {
         continue;
       }
 
-      // ---- SD formats: build files per collection using SD filters ----
       normalizeDtcgForCss(mergedTokens);
       const safeVariantKey = String(variantFolder).replace(/[\\/]/g, "__");
       const jsonFilePath = path.join(
@@ -1528,7 +1472,7 @@ export async function exportTokens(req, res) {
         });
       }
       if (platformConfig.files.length === 0) {
-        continue; // nothing to build for this combo (all would have been duplicates)
+        continue;
       }
 
       fs.mkdirSync(platformConfig.buildPath, { recursive: true });

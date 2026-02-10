@@ -56,19 +56,18 @@ function unwrapTokensRoot(obj: JsonObject): JsonObject {
   const maybe = (obj as Record<string, unknown>).tokens
   return isJsonObject(maybe) ? (maybe as JsonObject) : obj
 }
-// ---------- small helpers ----------------------------------------------------
+
 export function applySelectedContextsToDoc(doc: JsonObject, input: ResolverInput): JsonObject {
   type FigmaExtension = {
     valuesByMode?: Record<string, JsonValue>
     defaultMode?: string
   }
 
-  // global fallback (still useful)
   const globalMode = input.mode || null
 
   function pickModeForGroup(groupKey: string | null): string | null {
     if (!groupKey) return globalMode
-    const scopedName = 'mode' // keep as 'mode' unless you pass the actual scoped modifier name in input
+    const scopedName = 'mode'
     const scoped = input.scopedModifiers?.[scopedName]?.[groupKey]
 
     return scoped ?? globalMode
@@ -84,17 +83,11 @@ export function applySelectedContextsToDoc(doc: JsonObject, input: ResolverInput
       const out: JsonObject = {}
 
       for (const [key, v] of Object.entries(obj)) {
-        // top-level group is the first key under the root doc
         const nextTopGroupKey = topGroupKey ?? key
         out[key] = visit(v as JsonValue, nextTopGroupKey)
       }
 
-      // ---------- Figma-mode handling (GROUP AWARE) ----------
-
       const selectedMode = pickModeForGroup(topGroupKey)
-      // if (topGroupKey && selectedMode) {
-      //   console.log('[Resolver] mode for group', topGroupKey, '=', selectedMode)
-      // }
 
       if (selectedMode && obj.$extensions && isJsonObject(obj.$extensions)) {
         const ext = obj.$extensions as { figma?: FigmaExtension }
@@ -188,7 +181,6 @@ function isSourceRef(source: ResolverSource): source is ResolverSourceRef {
 
 function loadTokenSource(source: ResolverSource, docs: Record<string, JsonValue>): JsonObject {
   if (!isSourceRef(source)) {
-    // inline object
     return source
   }
 
@@ -210,8 +202,6 @@ function loadTokenSource(source: ResolverSource, docs: Record<string, JsonValue>
 
   return doc
 }
-
-// ---------- resolving sets & modifiers ---------------------------------------
 
 function resolveSet(set: ResolverSet, docs: Record<string, JsonValue>): JsonObject {
   let result: JsonValue = {}
@@ -251,8 +241,6 @@ function resolveModifier(
   return isJsonObject(result) ? result : {}
 }
 
-// ---------- main resolver for a ResolverDocument -----------------------------
-
 export function resolveWithResolverDocument(
   resolver: ResolverDocument,
   docs: Record<string, JsonValue>,
@@ -280,7 +268,6 @@ export function resolveWithResolverDocument(
       const merged = resolveModifier(modifierName, modifier, docs, input)
       result = deepMergeDocs(result, merged)
     } else {
-      // direct reference to a token document
       const pseudoSet: ResolverSet = { sources: [{ $ref: ref }] }
       const merged = resolveSet(pseudoSet, docs)
       result = deepMergeDocs(result, merged)
@@ -290,27 +277,6 @@ export function resolveWithResolverDocument(
   return isJsonObject(result) ? result : {}
 }
 
-// export function resolveUploadedDocuments(
-//   docs: Record<string, JsonValue>,
-//   input: ResolverInput = {},
-// ): JsonObject {
-//   const resolverEntry = Object.entries(docs).find(([, value]) => isResolverDocument(value))
-
-//   if (!resolverEntry) {
-//     // no resolver found -> simple merge (old behaviour) ...
-//     const merged = mergeAllDocs(docs)
-//     // ... plus: apply selected modifier values to $value objects
-//     return applySelectedContextsToDoc(merged, input)
-//   }
-
-//   const resolverValue = resolverEntry[1]
-//   if (!isResolverDocument(resolverValue)) {
-//     throw new Error('Resolver document has wrong shape.')
-//   }
-
-//   const resolverDoc = resolverValue
-//   return resolveWithResolverDocument(resolverDoc, docs, input)
-// }
 export function resolveUploadedDocuments(
   docs: Record<string, JsonValue>,
   input: ResolverInput = {},
@@ -361,7 +327,6 @@ export function extractModifiersFromDocs(docs: Record<string, JsonValue>): Detec
 
   const resolverValue = resolverEntry[1]
   if (!isResolverDocument(resolverValue)) {
-    // should never happen at runtime, but keeps TS happy
     return []
   }
 
@@ -404,14 +369,12 @@ export function extractGroupModesFromResolverDocs(
   }
 
   if (!modifierName) {
-    // IMPORTANT: don't guess "density" here — pick the first modifier defined in the resolver
     modifierName = modifierNames[0] ?? null
   }
 
   const modifier = modifiers[modifierName]
   if (!modifier) return null
 
-  // groupKey -> contextValue -> serialized subtree snapshot
   const snapshots = new Map<string, Map<string, string>>()
 
   for (const [contextValue, sources] of Object.entries(modifier.contexts ?? {})) {
@@ -444,12 +407,11 @@ export function extractGroupModesFromResolverDocs(
     }
   }
 
-  // Only keep groups where at least 2 contexts produce different content
   const groupModes: Record<string, string[]> = {}
 
   for (const [groupKey, byContext] of snapshots.entries()) {
     const unique = new Set(byContext.values())
-    if (unique.size <= 1) continue // identical across contexts => NOT scoped => no dropdown
+    if (unique.size <= 1) continue
 
     groupModes[groupKey] = Array.from(byContext.keys())
   }

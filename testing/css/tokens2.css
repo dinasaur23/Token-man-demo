@@ -1,4 +1,4 @@
-/* :root {
+:root {
   --collection-1-color-blue-100: #3423f0;
   --collection-1-color-blue-200: #4463e2;
   --collection-1-color-blue-300: #5d85ff;
@@ -24,17 +24,4 @@
   --collection-1-color-pink-300: #760039;
   --collection-1-color-pink-400: #8e0246;
   --collection-1-color-pink-500: #ab0153;
-} */
-
-:root {
-  --collection-1-color-blue-100: #3423f0;
-  --collection-1-color-blue-200: #4463e2;
-  --collection-1-color-blue-300: #5d85ff;
-  --collection-1-color-blue-400: #699dff;
-  --collection-1-color-blue-500: #74b0ff;
-  --collection-1-color-blue-600: #82b8ff;
-  --collection-1-color-blue-700: #92c1ff;
-  --collection-1-color-blue-800: #a0c9ff;
-  --collection-1-color-blue-900: #b0d2ff;
-  --collection-1-color-blue-1000: #bedaff;
 }

@@ -33,7 +33,6 @@ watch(
 
     wsStore.resetForDesignSystem(newId)
     await wsStore.loadFromServer()
-    // the table will now resync because workspaceStore.files changed
   },
 )
 </script>

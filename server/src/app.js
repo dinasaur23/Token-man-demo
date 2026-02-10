@@ -42,7 +42,7 @@ app.get("/api/tokens", async (req, res, next) => {
       process.cwd(),
       "src",
       "tokens",
-      "tokens.resolver.json"
+      "tokens.resolver.json",
     );
 
     const tokens = await resolveTokensFromResolverFile(resolverPath, { theme });

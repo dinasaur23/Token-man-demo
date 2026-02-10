@@ -361,9 +361,6 @@ function handleGridReady(e: GridReadyEvent) {
   onGridReady(e)
 }
 
-// watch(activeGroupId, () => {
-//   gridApi.value?.refreshCells({ columns: ['name'], force: true })
-// })
 watch(activeGroupId, () => {
   const api = gridApi.value
   if (!api || api.isDestroyed()) return

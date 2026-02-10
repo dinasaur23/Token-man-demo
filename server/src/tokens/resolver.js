@@ -1,9 +1,5 @@
-//
-// server/src/dtcg/resolver.js
 import fs from "fs/promises";
 import path from "path";
-
-// ---------- small helpers ----------------------------------------------------
 
 function isObject(value) {
   return typeof value === "object" && value !== null && !Array.isArray(value);
@@ -29,8 +25,6 @@ function deepMergeDocs(target, source) {
   return out;
 }
 
-// ---------- load JSON files with caching ------------------------------------
-
 async function loadJsonFile(filePath, cache) {
   if (cache[filePath]) return cache[filePath];
 
@@ -50,7 +44,7 @@ async function loadTokenSource(source, resolverDir, cache) {
 
   if (ref.startsWith("#/")) {
     throw new Error(
-      `Internal JSON Pointer "${ref}" is not allowed for token sources.`
+      `Internal JSON Pointer "${ref}" is not allowed for token sources.`,
     );
   }
 
@@ -63,8 +57,6 @@ async function loadTokenSource(source, resolverDir, cache) {
 
   return doc;
 }
-
-// ---------- resolve sets & modifiers ----------------------------------------
 
 async function resolveSet(set, resolverDir, cache) {
   let result = {};
@@ -81,7 +73,7 @@ async function resolveModifier(name, modifier, resolverDir, cache, input) {
   const value = input[name] ?? modifier.default;
   if (!value) {
     throw new Error(
-      `Missing value for modifier "${name}" and no default defined.`
+      `Missing value for modifier "${name}" and no default defined.`,
     );
   }
 
@@ -89,7 +81,7 @@ async function resolveModifier(name, modifier, resolverDir, cache, input) {
   if (!contextSources) {
     const allowed = Object.keys(modifier.contexts).join(", ");
     throw new Error(
-      `Invalid value "${value}" for modifier "${name}". Allowed values: ${allowed}.`
+      `Invalid value "${value}" for modifier "${name}". Allowed values: ${allowed}.`,
     );
   }
 
@@ -103,11 +95,9 @@ async function resolveModifier(name, modifier, resolverDir, cache, input) {
   return result;
 }
 
-// ---------- main API: resolve from a resolver file --------------------------
-
 export async function resolveTokensFromResolverFile(
   resolverFilePath,
-  input = {}
+  input = {},
 ) {
   const resolverDir = path.dirname(resolverFilePath);
   const cache = {};
@@ -139,7 +129,7 @@ export async function resolveTokensFromResolverFile(
       const modifier = modifiers[modifierName];
       if (!modifier)
         throw new Error(
-          `Unknown modifier "${modifierName}" in resolutionOrder.`
+          `Unknown modifier "${modifierName}" in resolutionOrder.`,
         );
 
       const merged = await resolveModifier(
@@ -147,11 +137,10 @@ export async function resolveTokensFromResolverFile(
         modifier,
         resolverDir,
         cache,
-        input
+        input,
       );
       result = deepMergeDocs(result, merged);
     } else {
-      // direct token file
       const pseudoSet = { sources: [{ $ref: ref }] };
       const merged = await resolveSet(pseudoSet, resolverDir, cache);
       result = deepMergeDocs(result, merged);

@@ -8,7 +8,6 @@ import {
   type JsonValue,
 } from '@/utils/dtcg/resolver'
 import {
-  //collectColorTokensWithPath,
   collectTokensWithPath,
   resolveAlias,
   resolveValue,
@@ -35,7 +34,6 @@ interface ModeAddedRow {
 }
 
 function buildOverrideRules(overrides: Record<string, string>) {
-  // Sort longest path first so "a.b" applies before "a"
   return Object.entries(overrides)
     .filter(([k, v]) => typeof k === 'string' && typeof v === 'string' && v.trim().length > 0)
     .sort((a, b) => b[0].split('.').length - a[0].split('.').length)
@@ -57,7 +55,6 @@ function mapPathSegmentsByOverrides(
     const oldKey = gidSeg[gidSeg.length - 1]
     const idx = parentSeg.length
 
-    // must match parent path exactly
     let parentMatches = true
     for (let i = 0; i < parentSeg.length; i++) {
       if (seg[i] !== parentSeg[i]) {
@@ -71,7 +68,6 @@ function mapPathSegmentsByOverrides(
     if (direction === 'toDisplay') {
       if (seg[idx] === oldKey) seg[idx] = newLabel
     } else {
-      // toReal: reverse mapping
       if (seg[idx] === newLabel) seg[idx] = oldKey
     }
   }
@@ -85,7 +81,6 @@ function rewriteRefsInJsonValue(
   direction: 'toDisplay' | 'toReal',
 ): JsonValue {
   if (typeof v === 'string') {
-    // handle "{path}" references
     const m = v.match(/^\{(.+)\}$/)
     if (m) {
       const inner = m[1]
@@ -93,7 +88,6 @@ function rewriteRefsInJsonValue(
       return `{${mapped}}`
     }
 
-    // sometimes you store raw path strings too (your alias picker / overrides)
     if (v.includes('.')) {
       return mapPathSegmentsByOverrides(v, overrides, direction)
     }
@@ -195,7 +189,6 @@ function buildGroupOrderKey(groupPath: string[], tokenOrderByPath: Map<string, n
   for (let i = 0; i < groupPath.length; i++) {
     const prefix = groupPath.slice(0, i + 1).join('.')
 
-    // Find minimum order among tokens that start with this prefix + "."
     let min = Number.MAX_SAFE_INTEGER
     const prefixDot = prefix + '.'
 
@@ -247,7 +240,7 @@ export function useTokenWorkspaceTable() {
   const rows = ref<TableRow[]>([])
   const errorMessage = ref<string | null>(null)
   // watch(errorMessage, (val) => {
-  //   console.log('🔍 UI sees errorMessage =', val)
+  //   console.log('ui sees errorMessage =', val)
   // })
   const activeNodeIds = ref<string[]>([])
   const uploadedDocs = ref<Record<string, JsonValue>>({})
@@ -264,7 +257,7 @@ export function useTokenWorkspaceTable() {
     map: Record<string, TokenEntry>,
     watchPaths: string[],
   ): void {
-    //console.group(`[ALIAS DEBUG] ${label}`)
+    //console.group(`[alias debug] ${label}`)
 
     for (const aliasPath of watchPaths) {
       const aliasEntry = tokens.find((t) => t.path === aliasPath)
@@ -313,7 +306,6 @@ export function useTokenWorkspaceTable() {
   function toRealTokenPath(displayPath: string): string {
     const groupOv = workspaceStore.groupNameOverrides ?? {}
 
-    // Build "display -> real" map for renamed tokens
     const nameOvFixed = expandNameOverrides(
       workspaceStore.nameOverrides ?? {},
       workspaceStore.groupNameOverrides ?? {},
@@ -324,15 +316,12 @@ export function useTokenWorkspaceTable() {
       reverseName[display] = real
     }
 
-    // 1) reverse token rename (grey.1000test -> grey.1000)
     const afterName = reverseName[displayPath] ?? displayPath
 
-    // 2) reverse group rename (brand.colors -> brand.color) if you have that kind of rename
     return mapPathSegmentsByOverrides(afterName, groupOv, 'toReal')
   }
 
   function forceTableRefresh(): void {
-    // 1) force Vue watchers + ag-grid to see a new reference
     rows.value = [...rows.value]
   }
   function rewriteRefsByToRealTokenPath(v: JsonValue): JsonValue {
@@ -340,7 +329,6 @@ export function useTokenWorkspaceTable() {
       const m = v.match(/^\{(.+)\}$/)
       if (m) return `{${toRealTokenPath(m[1])}}`
 
-      // sometimes you store raw dot paths too
       if (v.includes('.')) return toRealTokenPath(v)
 
       return v
@@ -362,7 +350,6 @@ export function useTokenWorkspaceTable() {
     return v
   }
 
-  //const groupTreeItems = computed<GroupNode[]>(() => pruneEmptyChildren(buildGroupTree(rows.value)))
   const groupTreeItems = computed<GroupNode[]>(() => {
     const base = pruneEmptyChildren(buildGroupTree(rows.value))
     const overrides = workspaceStore.groupNameOverrides ?? {}
@@ -371,16 +358,14 @@ export function useTokenWorkspaceTable() {
       return nodes.map((node) => {
         const overriddenTitle = overrides[node.id] ?? node.title
 
-        // only keep children when there actually are children
         if (node.children && node.children.length > 0) {
           return {
             id: node.id,
             title: overriddenTitle,
-            children: applyOverrides(node.children), // node.children is GroupNode[] here
+            children: applyOverrides(node.children),
           }
         }
 
-        // leaf node: no children property at all → no arrow in v-treeview
         return {
           id: node.id,
           title: overriddenTitle,
@@ -427,7 +412,6 @@ export function useTokenWorkspaceTable() {
   }
 
   function getEffectiveModeForGroupKey(groupKey: string): string {
-    // ✅ No-mode collections must always use "default"
     if (!groupKeyHasModes(groupKey)) return 'default'
 
     const globalMode = uiSelectedModifiers.value.mode ?? null
@@ -437,7 +421,7 @@ export function useTokenWorkspaceTable() {
 
   const filteredRows = computed<TableRow[]>(() => {
     const g = activeNodeIds.value[0]
-    // ⬇️ when no active group → show nothing
+
     if (!g) return []
 
     return rows.value.filter((r) => {
@@ -447,7 +431,6 @@ export function useTokenWorkspaceTable() {
   })
 
   const modeOptionsForActiveGroup = computed<string[]>(() => {
-    // No group-scoped modifier → nothing to show
     if (!groupScopedModifierName.value) return []
 
     const activeId = activeGroupId.value
@@ -455,7 +438,6 @@ export function useTokenWorkspaceTable() {
 
     const map = groupScopedModeOptions.value
 
-    // Try full id first (e.g. "components.button"), then first segment ("components")
     const candidates: string[] = [activeId]
     const firstSeg = activeId.split('.')[0]
     if (firstSeg && firstSeg !== activeId) {
@@ -465,16 +447,12 @@ export function useTokenWorkspaceTable() {
     for (const cand of candidates) {
       const scoped = map[cand]
       if (Array.isArray(scoped) && scoped.length > 0) {
-        // groupModes already contains only the allowed values
         return scoped
       }
     }
-
-    // This group has no mapped modes
     return []
   })
 
-  // Does the *current* group have any modes mapped in the resolver?
   const groupHasModes = computed<boolean>(() => {
     const activeId = activeGroupId.value
     if (!activeId) return false
@@ -570,20 +548,15 @@ export function useTokenWorkspaceTable() {
       const gk = getScopedGroupKey()
       if (!gk) return
 
-      // ✅ IMPORTANT: read persisted scoped selection too
       const stored =
         selectedScopedModifiersByGroup.value[gk] ??
         workspaceStore.scopedModifiers?.[scopedName]?.[gk]
 
-      // if valid, keep local memory in sync and sync current global selection
       if (stored && options.includes(stored)) {
         selectedScopedModifiersByGroup.value[gk] = stored
-        // selectedModifiers.value[scopedName] = stored
-        // workspaceStore.modifiers[scopedName] = stored
         return
       }
 
-      // otherwise initialize to first option
       const first = options[0]
       if (!first) return
 
@@ -592,9 +565,6 @@ export function useTokenWorkspaceTable() {
       const nextScoped = { ...(workspaceStore.scopedModifiers ?? {}) }
       nextScoped[scopedName] = { ...(nextScoped[scopedName] ?? {}), [gk]: first }
       workspaceStore.scopedModifiers = nextScoped
-
-      // selectedModifiers.value[scopedName] = first
-      // workspaceStore.modifiers[scopedName] = first
     },
     { immediate: true },
   )
@@ -606,7 +576,6 @@ export function useTokenWorkspaceTable() {
       () => workspaceStore.modeDeletedPaths,
       () => workspaceStore.modeAddedRows,
 
-      // 🔑 ADD THESE TWO
       () => workspaceStore.nameOverrides,
       () => workspaceStore.groupNameOverrides,
     ],
@@ -630,14 +599,12 @@ export function useTokenWorkspaceTable() {
       console.log('files:', ws.files)
       console.log('figmaModifierOptions from store:', ws.figmaModifiers)
 
-      // only react when files / figma options actually change
       if (prevWs && ws.files === prevWs.files && ws.figmaModifiers === prevWs.figmaModifiers) {
         return
       }
 
       rows.value = []
       errorMessage.value = null
-      // IMPORTANT: do NOT touch activeNodeIds here – keeps current group
 
       if (ws.files.length === 0) {
         uploadedDocs.value = {}
@@ -703,20 +670,8 @@ export function useTokenWorkspaceTable() {
     return nameOvFixed[p] ?? afterGroup
   }
 
-  // ---- persist helper used by CRUD composable -------------------------
-
-  // async function persistUploadedDocsAndReload(): Promise<void> {
-  //   workspaceStore.files = Object.entries(uploadedDocs.value).map(([name, content]) => ({
-  //     name,
-  //     content,
-  //   }))
-
-  //   await workspaceStore.saveToServer()
-  //   await resolveAndPopulateFromUploadedDocs()
-  // }
   const isPersisting = ref(false)
   async function persistUploadedDocsAndReload(): Promise<void> {
-    // keep results clean between runs
     performance.clearMarks()
     performance.clearMeasures()
 
@@ -724,7 +679,6 @@ export function useTokenWorkspaceTable() {
     isPersisting.value = true
 
     try {
-      // (A) prepare DTO in memory
       performance.mark('crud-buildfiles-start')
       workspaceStore.files = Object.entries(uploadedDocs.value).map(([name, content]) => ({
         name,
@@ -733,13 +687,11 @@ export function useTokenWorkspaceTable() {
       performance.mark('crud-buildfiles-end')
       performance.measure('CRUD build files array', 'crud-buildfiles-start', 'crud-buildfiles-end')
 
-      // (B) server save
       performance.mark('crud-save-start')
       await workspaceStore.saveToServer()
       performance.mark('crud-save-end')
       performance.measure('CRUD saveToServer', 'crud-save-start', 'crud-save-end')
 
-      // (C) resolver + table rebuild
       performance.mark('crud-resolve-start')
       await resolveAndPopulateFromUploadedDocs()
       performance.mark('crud-resolve-end')
@@ -750,7 +702,6 @@ export function useTokenWorkspaceTable() {
       performance.mark('crud-total-end')
       performance.measure('CRUD total', 'crud-total-start', 'crud-total-end')
 
-      // Optional: print the latest durations immediately (no DevTools Performance needed)
       const getLast = (name: string) => performance.getEntriesByName(name).slice(-1)[0]?.duration
 
       console.warn('⏱ CRUD build files array (ms):', getLast('CRUD build files array'))
@@ -763,13 +714,13 @@ export function useTokenWorkspaceTable() {
   async function populateTableFromDocument(doc: unknown): Promise<void> {
     const convertedDoc = convertHexColorsInDocument(doc)
     const validation = await validateTokensStrict(convertedDoc)
-    //console.log('DTCG validation result:', validation)
+    //console.log('dtcg validation result:', validation)
 
     if (!validation.ok) {
-      //console.error('DTCG validation errors:', validation.errors)
+      //console.error('dtcg validation errors:', validation.errors)
       const count = validation.errors.length
       errorMessage.value =
-        `The uploaded JSON is not valid DTCG (${validation.kind} errors: ${count}). ` +
+        `The uploaded JSON is not valid dtcg (${validation.kind} errors: ${count}). ` +
         `Open the browser console for details.`
       rows.value = []
       return
@@ -799,7 +750,6 @@ export function useTokenWorkspaceTable() {
           const hasValue = '$value' in value
           const hasNonDollarChildren = Object.keys(value).some((k) => !k.startsWith('$'))
 
-          // ✅ root-level leaf token → wrap into default child
           if (hasType && hasValue && !hasNonDollarChildren) {
             out[key] = {
               $type: value.$type,
@@ -819,7 +769,7 @@ export function useTokenWorkspaceTable() {
     }
     const normalizedRoot = normalizeRootLeafTokens(root as JsonValue)
     const tokens = collectTokensWithPath(normalizedRoot)
-    const figmaOrderMap = collectFigmaOrderMap(convertedDoc) // this one unwraps internally
+    const figmaOrderMap = collectFigmaOrderMap(convertedDoc)
 
     if (figmaOrderMap.size > 0 && workspaceStore.rowOrder.length === 0) {
       workspaceStore.rowOrder = Array.from(figmaOrderMap.entries())
@@ -861,13 +811,11 @@ export function useTokenWorkspaceTable() {
         const aliasPathReal = aliasRaw ? toRealTokenPath(aliasRaw) : null
         const aliasPathDisplay = aliasPathReal ? rewriteAliasPathForUi(aliasPathReal) : null
 
-        // These are the ones we will actually use after overrides are applied
         let aliasPathRealFinal: string | null = aliasPathReal
         let aliasPathDisplayFinal: string | null = aliasPathDisplay
 
         let resolved: unknown
         if (aliasPathReal) {
-          // force resolve using REAL alias target
           resolved = resolveValue(`{${aliasPathReal}}`, map) ?? t.value
         } else {
           resolved = resolveAlias(t.path, map) ?? resolveValue(t.value, map) ?? t.value
@@ -892,7 +840,6 @@ export function useTokenWorkspaceTable() {
           return null
         }
 
-        // mode-scoped override key + legacy fallback
         const directKey = `${effectiveMode}::${t.path}`
         const hasDirectOv =
           Object.prototype.hasOwnProperty.call(workspaceStore.overrides, directKey) ||
@@ -906,18 +853,15 @@ export function useTokenWorkspaceTable() {
           const ovAliasDisplay = ovAliasReal ? rewriteAliasPathForUi(ovAliasReal) : null
 
           if (ovAliasReal) {
-            // override becomes an alias -> keep alias info + resolve via REAL target
             aliasPathRealFinal = ovAliasReal
             aliasPathDisplayFinal = ovAliasDisplay
             resolved = resolveValue(`{${ovAliasReal}}`, map) ?? directOv
           } else {
-            // override is a literal -> clear alias
             aliasPathRealFinal = null
             aliasPathDisplayFinal = null
             resolved = directOv
           }
         } else if (hasDirectOv) {
-          // non-string override -> literal value
           aliasPathRealFinal = null
           aliasPathDisplayFinal = null
           resolved = directOv
@@ -936,7 +880,7 @@ export function useTokenWorkspaceTable() {
           }
         }
 
-        //console.log('TOKEN PATH:', t.path)
+        //console.log('token path:', t.path)
 
         const groupLabel = groupPath.length ? groupPath[groupPath.length - 1] : ''
         const nameOverride = workspaceStore.nameOverrides[t.path]
@@ -981,8 +925,6 @@ export function useTokenWorkspaceTable() {
       })
       .filter((r): r is TableRow => r !== null)
 
-    //const globalMode = uiSelectedModifiers.value.mode ?? 'default'
-
     const existingPaths = new Set(newRows.map((r) => r.path))
 
     const topGroups = new Set<string>()
@@ -1005,12 +947,10 @@ export function useTokenWorkspaceTable() {
         const groupLabel = groupPath.length ? groupPath[groupPath.length - 1] : ''
         const name = a.name && a.name.trim().length > 0 ? a.name : (path.split('.').pop() ?? path)
 
-        // ✅ alias detection for added/duplicated rows
         const rawValue: JsonValue = a.raw ?? a.value
         let aliasPath = extractAliasPath(rawValue)
         if (aliasPath) aliasPath = rewriteAliasPathForUi(aliasPath)
 
-        // resolve value like normal rows do
         let resolved: unknown = rawValue
         if (typeof rawValue === 'string') {
           resolved = resolveValue(rawValue, map) ?? rawValue
@@ -1065,16 +1005,13 @@ export function useTokenWorkspaceTable() {
       const aGroupKey = buildGroupOrderKey(a.groupPath, tokenOrderByPath)
       const bGroupKey = buildGroupOrderKey(b.groupPath, tokenOrderByPath)
 
-      // 1) keep your existing group hierarchy ordering
       const g = compareNumberArrays(aGroupKey, bGroupKey)
       if (g !== 0) return g
 
-      // 2) within same group: use rowOrder if present (this fixes "add/duplicate below")
       const ai = rowOrderIndex.get(a.path) ?? Number.MAX_SAFE_INTEGER
       const bi = rowOrderIndex.get(b.path) ?? Number.MAX_SAFE_INTEGER
       if (ai !== bi) return ai - bi
 
-      // 3) fallback to figma order
       const ao = tokenOrderByPath.get(a.path) ?? Number.MAX_SAFE_INTEGER
       const bo = tokenOrderByPath.get(b.path) ?? Number.MAX_SAFE_INTEGER
       if (ao !== bo) return ao - bo
@@ -1085,38 +1022,6 @@ export function useTokenWorkspaceTable() {
     rows.value.splice(0, rows.value.length, ...newRows)
   }
 
-  // async function resolveAndPopulateFromUploadedDocs(): Promise<void> {
-  //   const docs = uploadedDocs.value
-  //   if (Object.keys(docs).length === 0) return
-  //   const overrides = workspaceStore.groupNameOverrides ?? {}
-  //   const normalizedDocs: Record<string, JsonValue> = {}
-  //   for (const [name, content] of Object.entries(docs)) {
-  //     normalizedDocs[name] = rewriteRefsInJsonValue(content, overrides, 'toReal')
-  //   }
-
-  //   try {
-  //     type ResolverInput = Record<string, string> & {
-  //       scopedModifiers?: Record<string, Record<string, string>>
-  //     }
-
-  //     const input: ResolverInput = { ...uiSelectedModifiers.value }
-  //     input.scopedModifiers = workspaceStore.scopedModifiers ?? {}
-
-  //     const resolvedDoc = resolveUploadedDocuments(docs, input)
-
-  //     console.log('[Table] resolvedDoc sample:', JSON.stringify(resolvedDoc, null, 2).slice(0, 500))
-
-  //     await populateTableFromDocument(resolvedDoc)
-  //     if (rows.value.length > 0) {
-  //       errorMessage.value = null
-  //     }
-  //   } catch (err) {
-  //     console.error('Error resolving tokens:', err)
-  //     errorMessage.value =
-  //       err instanceof Error ? err.message : 'Error resolving tokens with current modifier values.'
-  //     rows.value = []
-  //   }
-  // }
   async function resolveAndPopulateFromUploadedDocs(): Promise<void> {
     const docs = uploadedDocs.value
     if (Object.keys(docs).length === 0) return
@@ -1124,9 +1029,8 @@ export function useTokenWorkspaceTable() {
     const overrides = workspaceStore.groupNameOverrides ?? {}
     const normalizedDocs: Record<string, JsonValue> = {}
     for (const [name, content] of Object.entries(docs)) {
-      // 1) group override mapping
       const step1 = rewriteRefsInJsonValue(content, overrides, 'toReal')
-      // 2) token rename mapping (nameOverrides + groupNameOverrides via toRealTokenPath)
+
       normalizedDocs[name] = rewriteRefsByToRealTokenPath(step1)
     }
 
@@ -1138,7 +1042,6 @@ export function useTokenWorkspaceTable() {
       const input: ResolverInput = { ...uiSelectedModifiers.value }
       input.scopedModifiers = workspaceStore.scopedModifiers ?? {}
 
-      // ✅ IMPORTANT: resolve using normalized docs (real paths)
       const resolvedDoc = resolveUploadedDocuments(normalizedDocs, input)
 
       console.log('[Table] resolvedDoc sample:', JSON.stringify(resolvedDoc, null, 2).slice(0, 500))
@@ -1162,14 +1065,12 @@ export function useTokenWorkspaceTable() {
       const gk = getScopedGroupKey()
       if (!gk) return
 
-      // update UI memory
       if (!value) {
         delete selectedScopedModifiersByGroup.value[gk]
       } else {
         selectedScopedModifiersByGroup.value[gk] = value
       }
 
-      // ✅ update store.scopedModifiers without writing ""
       const nextScoped = { ...(workspaceStore.scopedModifiers ?? {}) }
       const byName = { ...(nextScoped[name] ?? {}) }
 
@@ -1188,7 +1089,6 @@ export function useTokenWorkspaceTable() {
       return
     }
 
-    // normal (global) modifier
     if (!value) {
       delete selectedModifiers.value[name]
       delete workspaceStore.modifiers[name]
@@ -1257,18 +1157,15 @@ export function useTokenWorkspaceTable() {
   }
 
   async function syncFromWorkspaceStoreFiles(): Promise<void> {
-    // 1) rebuild docs from workspace files
     const docs: Record<string, JsonValue> = {}
     for (const file of workspaceStore.files) {
       docs[file.name] = file.content as JsonValue
     }
     uploadedDocs.value = docs
 
-    // 2) modifiers + group modes from resolver docs (if there is a resolver)
     const resolverMods = extractModifiersFromDocs(docs)
     let groupModesInfo = extractGroupModesFromResolverDocs(docs)
 
-    // 3) merge in Figma modifiers / group modes
     const figmaOpts = workspaceStore.figmaModifierOptions as FigmaModifierOptions
     console.log('[syncFromWorkspaceStoreFiles] figmaModifierOptions =', figmaOpts)
 
@@ -1282,13 +1179,10 @@ export function useTokenWorkspaceTable() {
         defaultValue: modeOpt.default ?? modeOpt.values[0],
       }
 
-      // avoid duplicate "mode" if resolver already defined one
       const hasModeAlready = combined.some((m) => m.name === 'mode')
       if (!hasModeAlready) {
         combined.push(modeMod)
       }
-
-      // only take Figma's groupModes when resolver didn't already define some
       if (!groupModesInfo && modeOpt.groupModes) {
         groupModesInfo = {
           modifierName: 'mode',
@@ -1300,7 +1194,6 @@ export function useTokenWorkspaceTable() {
     detectedModifiers.value = combined
     console.log('[syncFromWorkspaceStoreFiles] detectedModifiers =', combined)
 
-    // 4) write group scoped info for the UI
     if (groupModesInfo) {
       groupScopedModifierName.value = groupModesInfo.modifierName
       groupScopedModeOptions.value = groupModesInfo.groupModes
@@ -1310,7 +1203,6 @@ export function useTokenWorkspaceTable() {
       groupScopedModeOptions.value = {}
     }
 
-    // 5) restore / initialize selected modifiers
     selectedModifiers.value = { ...workspaceStore.modifiers }
 
     if (Object.keys(selectedModifiers.value).length === 0) {
@@ -1322,7 +1214,6 @@ export function useTokenWorkspaceTable() {
       }
     }
 
-    // 6) re-resolve tokens with current modifier selection
     await resolveAndPopulateFromUploadedDocs()
   }
 
@@ -1355,8 +1246,6 @@ export function useTokenWorkspaceTable() {
     },
   })
 
-  //console.warn('[WIRE DEBUG] updateTokenName function =', updateTokenName)
-
   async function addSiblingGroupForActiveGroup(newGroupName: string): Promise<void> {
     const trimmed = newGroupName.trim()
     if (!trimmed) return
@@ -1373,7 +1262,6 @@ export function useTokenWorkspaceTable() {
   })
 
   return {
-    // state for the component
     rows,
     errorMessage,
     activeNodeIds,
@@ -1388,11 +1276,9 @@ export function useTokenWorkspaceTable() {
     groupHasModes,
     uiSelectedModifiers,
 
-    // handlers for the component
     onFileChange,
     onModifierChange,
 
-    // CRUD handlers (use these in ag-grid)
     updateTokenValue,
     updateTokenValueAny,
     updateTokenName,

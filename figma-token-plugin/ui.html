@@ -1,10 +1,14 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
   <head>
     <meta charset="utf-8" />
     <style>
       body {
-        font-family: system-ui, -apple-system, BlinkMacSystemFont, sans-serif;
+        font-family:
+          system-ui,
+          -apple-system,
+          BlinkMacSystemFont,
+          sans-serif;
         margin: 12px;
         font-size: 12px;
       }
@@ -55,8 +59,6 @@
         API URL
         <input id="apiUrl" placeholder="http://localhost:8081" />
       </label>
-
-      <!-- ✅ NEW: login section -->
       <div id="loginSection">
         <div class="row">
           <label>
@@ -77,7 +79,6 @@
         <div id="loginError" class="error hidden"></div>
       </div>
 
-      <!-- ✅ CHANGED: DS id input -> DS dropdown (still stores designSystemId) -->
       <div id="dsSection" class="hidden">
         <label>
           Design System
@@ -149,7 +150,6 @@
         return res;
       }
 
-      // ✅ NEW: login -> sends jwt back to plugin (code.js stores it globally)
       async function doLogin() {
         setHidden(loginError, true);
         setText(loginError, "");
@@ -180,13 +180,12 @@
             setHidden(loginError, false);
             setText(
               loginError,
-              (data && (data.message || data.error)) || text || "Login failed."
+              (data && (data.message || data.error)) || text || "Login failed.",
             );
             setText(loginStatus, "Login failed.");
             return;
           }
 
-          // adjust token field names depending on your backend response
           const jwt =
             (data && (data.token || data.jwt || data.accessToken)) || null;
 
@@ -194,7 +193,7 @@
             setHidden(loginError, false);
             setText(
               loginError,
-              "Login response did not include a token (expected token/jwt/accessToken)."
+              "Login response did not include a token (expected token/jwt/accessToken).",
             );
             setText(loginStatus, "Login failed.");
             return;
@@ -202,7 +201,7 @@
 
           parent.postMessage(
             { pluginMessage: { type: "login-success", jwt } },
-            "*"
+            "*",
           );
 
           hasJwt = true;
@@ -245,17 +244,16 @@
               dsError,
               (data && (data.message || data.error)) ||
                 text ||
-                "Failed to load design systems."
+                "Failed to load design systems.",
             );
             return;
           }
 
-          // Accept either { items: [...] } or [...] formats
           const items = Array.isArray(data)
             ? data
             : data && data.items
-            ? data.items
-            : [];
+              ? data.items
+              : [];
 
           for (const ds of items) {
             const id = ds && (ds._id || ds.id);
@@ -270,7 +268,6 @@
 
           dsSelect.disabled = false;
 
-          // restore DS if saved for this file
           setSelectValue(dsSelect, initialDesignSystemId);
         } catch (err) {
           setHidden(dsError, false);
@@ -294,7 +291,7 @@
             loginStatus,
             hasJwt
               ? "Logged in ✓ Loading Design Systems…"
-              : "Login to load your Design Systems."
+              : "Login to load your Design Systems.",
           );
           return;
         }
@@ -318,7 +315,7 @@
           setSelectValue(dsSelect, initialDesignSystemId);
           setText(
             loginStatus,
-            hasJwt ? "Logged in ✓" : "Login to load your Design Systems."
+            hasJwt ? "Logged in ✓" : "Login to load your Design Systems.",
           );
           return;
         }
@@ -353,7 +350,7 @@
               designSystemId,
             },
           },
-          "*"
+          "*",
         );
 
         setHidden(saveStatus, false);

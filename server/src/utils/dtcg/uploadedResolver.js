@@ -185,8 +185,6 @@ function applySelectedContextsToDoc(doc, input) {
   return visit(doc);
 }
 
-// --- main resolver -----------------------------------------------------------
-
 function resolveWithResolverDocument(resolver, docs, input = {}) {
   let result = {};
 

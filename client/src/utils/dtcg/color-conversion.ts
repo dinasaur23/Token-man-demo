@@ -4,7 +4,6 @@ type JsonObject = Record<string, Json>
 const isObject = (value: Json): value is JsonObject =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-// "#RGB", "#RGBA", "#RRGGBB", "#RRGGBBAA"
 export const HEX_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
 
 export interface DtcgSrgbValue {
@@ -38,7 +37,6 @@ const hexToChannels = (hex: string): { r: number; g: number; b: number; alpha: n
   return { r, g, b, alpha: a / 255 }
 }
 
-/** Convert a hex string to a W3C DTCG srgb color object */
 export const hexToDtcgColorValue = (hex: string): DtcgSrgbValue => {
   if (!HEX_PATTERN.test(hex)) {
     throw new Error(`Invalid hex color: ${hex}`)

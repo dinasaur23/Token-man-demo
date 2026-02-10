@@ -1,5 +1,3 @@
-// ---------------- shared helpers ----------------
-
 const STORAGE_KEYS = {
   apiUrl: "tm_apiUrl",
   fileConfig: "tm_fileConfig",
@@ -83,17 +81,12 @@ function figmaVariablesToDtcg() {
     return Math.max(0, Math.min(1, x));
   }
 
-  // function linearToSrgb(c) {
-  //   c = clamp01(c);
-  //   return c <= 0.0031308 ? 12.92 * c : 1.055 * Math.pow(c, 1 / 2.4) - 0.055;
-  // }
   function colorToDtcgColor(color) {
     const r = clamp01(color.r);
     const g = clamp01(color.g);
     const b = clamp01(color.b);
     const a = color.a != null ? clamp01(color.a) : 1;
 
-    // optional: keep numbers readable (3 decimals)
     const round3 = (n) => Math.round(n * 1000) / 1000;
 
     const out = {
@@ -101,7 +94,6 @@ function figmaVariablesToDtcg() {
       components: [round3(r), round3(g), round3(b)],
     };
 
-    // Only include alpha if it’s not 1
     if (a < 0.999) out.alpha = round3(a);
 
     return out;
@@ -141,8 +133,8 @@ function figmaVariablesToDtcg() {
     return {
       colorSpace: "srgb",
       components: [round3(r), round3(g), round3(b)],
-      alpha: round3(a), // always include alpha (even if 1)
-      hex: colorToHex({ r, g, b, a }), // include hex inside $value
+      alpha: round3(a),
+      hex: colorToHex({ r, g, b, a }),
     };
   }
 
@@ -183,9 +175,6 @@ function figmaVariablesToDtcg() {
     return keys[0];
   }
 
-  // function isSupportedResolvedType(t) {
-  //   return t === "COLOR" || t === "FLOAT" || t === "STRING" || t === "BOOLEAN";
-  // }
   function isSupportedResolvedType(t) {
     return t === "COLOR";
   }
@@ -221,7 +210,6 @@ function figmaVariablesToDtcg() {
     const seen = {};
     const ordered = [];
 
-    // go collection-by-collection in the order Figma gives collections
     for (let c = 0; c < collections.length; c++) {
       const col = collections[c];
       const ids = Array.isArray(col.variableIds) ? col.variableIds : [];
@@ -235,7 +223,6 @@ function figmaVariablesToDtcg() {
       }
     }
 
-    // fallback: append any variables not listed in variableIds
     for (let i = 0; i < variables.length; i++) {
       const v = variables[i];
       if (!seen[v.id]) ordered.push(v);
@@ -244,7 +231,6 @@ function figmaVariablesToDtcg() {
     return ordered;
   }
   const orderedVariables = buildOrderedVariables(collections, variables);
-  // -------- build pathMap --------
 
   for (let i = 0; i < orderedVariables.length; i++) {
     const variable = orderedVariables[i];
@@ -272,7 +258,6 @@ function figmaVariablesToDtcg() {
     pathMap[variable.id] = fullPath;
   }
 
-  // -------- build tokens --------
   for (let i = 0; i < orderedVariables.length; i++) {
     const variable = orderedVariables[i];
 
@@ -420,7 +405,6 @@ function figmaVariablesToDtcg() {
     container[tokenKey] = token;
   }
 
-  // -------- modifiers --------
   const modeKeys = Object.keys(globalModeKeySet);
   let modifiers = {};
 
@@ -517,8 +501,6 @@ async function syncToTokenManager() {
   }
 }
 
-// --------------- SETTINGS UI -----------------
-
 async function openSettingsUI() {
   const { apiUrl, designSystemId, jwt } = await getSettingsForCurrentFile();
 
@@ -530,7 +512,7 @@ async function openSettingsUI() {
     designSystemId: designSystemId || "",
     hasJwt: !!jwt,
   });
-  // if we already have a stored jwt, fetch DS list and send to UI
+
   const settings = await getSettingsForCurrentFile();
   if (settings.jwt) {
     try {
@@ -631,13 +613,10 @@ figma.ui.onmessage = async (msg) => {
   }
 };
 
-// --------------- entry point -----------------
-
 if (figma.command === "sync") {
   syncToTokenManager();
 } else if (figma.command === "settings") {
   openSettingsUI();
 } else {
-  // default: sync
   syncToTokenManager();
 }

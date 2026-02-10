@@ -17,7 +17,7 @@ const DesignSystemSchema = new Schema(
   },
   {
     timestamps: true,
-  }
+  },
 );
 
 DesignSystemSchema.index({ user: 1, name: 1 }, { unique: true });

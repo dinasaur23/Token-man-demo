@@ -26,7 +26,7 @@ const handleErrors = (err) => {
     console.log(
       Object.values(err.errors).forEach(({ properties }) => {
         errors[properties.path] = properties.message;
-      })
+      }),
     );
   }
   return errors;

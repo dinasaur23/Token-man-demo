@@ -24,10 +24,8 @@ function formatNameWithRelativeGroup(row: TableRow, activeGroupId: string | null
   const activeSegs = activeGroupId.split('.').filter(Boolean)
   const rowSegs = row.groupPath ?? []
 
-  // same group (or higher) → normal name
   if (rowSegs.length <= activeSegs.length) return row.name
 
-  // token is in a child group of the active group → prefix like "font/lineheight"
   const rel = rowSegs.slice(activeSegs.length).join('/')
   return rel ? `${rel}/${row.name}` : row.name
 }
@@ -40,7 +38,6 @@ export function useTokenGridColumns(
   const workspaceStore = useTokenWorkspaceStore()
 
   const columnDefs = ref<ColDef<TableRow>[]>([
-    // --- Name ---
     {
       headerName: 'Name',
       field: 'name',
@@ -75,54 +72,6 @@ export function useTokenGridColumns(
       },
     },
 
-    // --- sRGB column ---
-    // {
-    //   headerName: 'sRGB',
-    //   field: 'value',
-    //   flex: 1.4,
-    //   editable: (params) => params.data?.type === 'color' && !params.data?.isAlias,
-    //   onCellValueChanged: (params: NewValueParams<TableRow, string>) => {
-    //     const row = params.data
-    //     if (!row || row.type !== 'color') return
-    //     const newVal = String(params.newValue ?? '').trim()
-    //     const node = params.node
-    //     if (!node || !row.path) return
-
-    //     if (HEX_PATTERN.test(newVal)) {
-    //       const srgb = srgbFromHex(newVal)
-    //       node.setDataValue('hex', newVal)
-    //       node.setDataValue('value', srgb)
-
-    //       workspaceStore.overrides = {
-    //         ...workspaceStore.overrides,
-    //         [row.path]: newVal,
-    //       }
-    //       void workspaceStore.saveToServer()
-
-    //       params.api.refreshCells({ rowNodes: [node], columns: ['hex'] })
-    //       return
-    //     }
-
-    //     const match = newVal.match(SRGB_PATTERN)
-    //     if (match) {
-    //       const [, rStr, gStr, bStr] = match
-    //       const hex = srgbComponentsToHex(rStr, gStr, bStr)
-
-    //       node.setDataValue('value', newVal)
-    //       node.setDataValue('hex', hex)
-
-    //       workspaceStore.overrides = {
-    //         ...workspaceStore.overrides,
-    //         [row.path]: hex,
-    //       }
-    //       void workspaceStore.saveToServer()
-    //       params.api.refreshCells({ rowNodes: [node], columns: ['hex'] })
-    //       return
-    //     }
-
-    //     node.setDataValue('value', params.oldValue ?? row.value)
-    //   },
-    // },
     {
       headerName: 'Value',
       field: 'value',
@@ -141,7 +90,6 @@ export function useTokenGridColumns(
           params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
         }
 
-        // --- COLOR tokens: allow BOTH srgb(...) and #hex ---
         if (row.type === 'color') {
           if (HEX_PATTERN.test(newVal)) {
             const srgb = srgbFromHex(newVal)
@@ -155,7 +103,6 @@ export function useTokenGridColumns(
             return
           }
 
-          // srgb(...) input
           const match = newVal.match(SRGB_PATTERN)
           if (match) {
             const [, rStr, gStr, bStr] = match
@@ -173,8 +120,6 @@ export function useTokenGridColumns(
           revert()
           return
         }
-
-        // --- NON-COLOR tokens ---
 
         let parsed: JsonValue
 
@@ -235,7 +180,6 @@ export function useTokenGridColumns(
 
         await updateTokenValueAny(row, newVal)
 
-        // refresh both visible columns
         params.api.refreshCells({ rowNodes: [node], columns: ['hex', 'value'] })
       },
     },
@@ -247,7 +191,6 @@ export function useTokenGridColumns(
       valueFormatter: (p) => p.value ?? '',
     },
 
-    // --- Color picker column ---
     {
       headerName: 'Color',
       field: 'hex',
@@ -292,8 +235,6 @@ export function useTokenGridColumns(
         return eInput
       },
     },
-
-    // --- Actions column with three-dots button ---
     {
       headerName: '',
       colId: 'actions',
@@ -318,7 +259,7 @@ export function useTokenGridColumns(
 
         btn.addEventListener('click', (ev: MouseEvent) => {
           ev.stopPropagation()
-          onActionButtonClick(row, ev) // ✅ row is definitely TableRow here
+          onActionButtonClick(row, ev)
         })
 
         return btn

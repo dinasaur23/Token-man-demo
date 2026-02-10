@@ -1,10 +1,8 @@
-// dtcg-color-schema.ts
 export const DTCG_COLOR_SCHEMA = {
   $schema: 'https://json-schema.org/draft/2020-12/schema',
   $id: 'dtcg-color.schema.json',
 
   $defs: {
-    // A single color token (leaf)
     ColorToken: {
       type: 'object',
       required: ['$value'],
@@ -35,7 +33,7 @@ export const DTCG_COLOR_SCHEMA = {
     ColorInheritingGroup: {
       type: 'object',
       patternProperties: {
-        '^\\$': {}, // allow meta keys
+        '^\\$': {},
         '^(?!\\$).*$': {
           anyOf: [
             { $ref: '#/$defs/ColorToken' },

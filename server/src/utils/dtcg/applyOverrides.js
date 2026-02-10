@@ -6,7 +6,7 @@ export function applyOverridesToTokens(root, overrides = {}) {
 
     if (fullKey.includes("::")) continue;
 
-    const fullPath = fullKey; // base-only
+    const fullPath = fullKey;
     if (!fullPath.includes(".")) continue;
 
     const segments = fullPath.split(".");

@@ -161,7 +161,6 @@ async function onDelete(ds: DesignSystem) {
   try {
     await dsStore.remove(ds.id)
 
-    // keep selectedId in sync with store after deletion
     if (selectedId.value === ds.id) {
       selectedId.value = dsStore.currentId
     }

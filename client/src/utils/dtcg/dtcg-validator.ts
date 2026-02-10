@@ -1,22 +1,10 @@
-//import { createSchema } from 'w3c-design-tokens-standard-schema/zod'
 import { z } from 'zod'
 import type { Json } from './color-conversion'
-
-// ---------- shared helpers -----------------------------------------
 
 type JsonObject = Record<string, Json>
 
 const isObject = (value: Json): value is JsonObject =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
-
-// ---------- 1) Structural DTCG validation (W3C schema) --------------
-
-// const schema = createSchema()
-
-// type RawValidateResult = {
-//   issues?: readonly unknown[]
-//   value?: unknown
-// }
 
 export type DtcgStructuralResult = { ok: true } | { ok: false; errors: readonly unknown[] }
 
@@ -37,7 +25,6 @@ export async function validateDtcgDocument(doc: Json): Promise<DtcgStructuralRes
     if (effectiveType && hasValue) {
       tokenCount += 1
 
-      // ---- local structural checks for supported token types ----
       if (!SIMPLE_TYPES.has(effectiveType)) {
         errors.push(`Unsupported $type "${effectiveType}"`)
       } else if (effectiveType === 'number') {
@@ -47,7 +34,7 @@ export async function validateDtcgDocument(doc: Json): Promise<DtcgStructuralRes
           errors.push(`$value for type "number" must be a number or alias like {path.to.token}`)
       } else if (effectiveType === 'string') {
         const v = node['$value']
-        const ok = typeof v === 'string' // allow plain strings + alias strings
+        const ok = typeof v === 'string'
         if (!ok) errors.push(`$value for type "string" must be a string`)
       } else if (effectiveType === 'boolean') {
         const v = node['$value']
@@ -74,12 +61,8 @@ export async function validateDtcgDocument(doc: Json): Promise<DtcgStructuralRes
   return errors.length > 0 ? { ok: false, errors } : { ok: true }
 }
 
-// ---------- 2) Color subtree validation (all color tokens) ----------
-
-// Alias like "{path.to.token}"
 const AliasPattern = /^\{[^}]+\}$/
 
-// Strict W3C color object
 const StrictColorObject = z
   .object({
     colorSpace: z.string(),
@@ -131,7 +114,7 @@ export function validateColorSubtree(doc: Json): ColorValidationResult {
     }
 
     for (const [key, value] of Object.entries(node)) {
-      if (key.startsWith('$')) continue // skip $themes, $metadata, $description etc.
+      if (key.startsWith('$')) continue
       visit(value, effectiveType, [...path, key])
     }
   }
@@ -140,8 +123,6 @@ export function validateColorSubtree(doc: Json): ColorValidationResult {
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true }
 }
-
-// ---------- 3) Combined helper -------------------------------------
 
 export type CombinedValidationResult =
   | { ok: true }

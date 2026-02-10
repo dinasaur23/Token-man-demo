@@ -1,5 +1,3 @@
-// client/src/utils/dtcg/expandNameOverrides.ts
-
 function buildOverrideRules(overrides: Record<string, string>) {
   return Object.entries(overrides ?? {})
     .filter(([k, v]) => typeof k === 'string' && typeof v === 'string' && v.trim().length > 0)
@@ -57,7 +55,6 @@ export function expandNameOverrides(
     const newPath = newPathRaw.trim()
     if (!newPath) continue
 
-    // if UI stored only "1000test", expand to full path using same parent
     if (!newPath.includes('.')) {
       const parent = oldPath.split('.').slice(0, -1).join('.')
       out[oldPath] = parent ? `${parent}.${newPath}` : newPath
@@ -66,7 +63,6 @@ export function expandNameOverrides(
     }
   }
 
-  // apply groupNameOverrides to both sides so mapping matches the display tree
   if (groupNameOverrides && typeof groupNameOverrides === 'object') {
     const normalized: Record<string, string> = {}
     for (const [a, b] of Object.entries(out)) {

@@ -7,7 +7,6 @@ function getUserIdFromReq(req) {
   return null;
 }
 
-// GET /api/design-systems
 export async function listDesignSystems(req, res, next) {
   let stage = "start";
   try {
@@ -73,7 +72,6 @@ export async function createDesignSystem(req, res, next) {
     console.error("createDesignSystem error", stage, err);
 
     if (err.code === 11000) {
-      // unique index violation
       return res.status(409).json({
         ok: false,
         stage,
@@ -85,8 +83,6 @@ export async function createDesignSystem(req, res, next) {
   }
 }
 
-// PATCH /api/design-systems/:id
-// body: { name: string }
 export async function renameDesignSystem(req, res, next) {
   let stage = "start";
   try {
@@ -109,7 +105,7 @@ export async function renameDesignSystem(req, res, next) {
     const ds = await DesignSystem.findOneAndUpdate(
       { _id: id, user: userId },
       { name },
-      { new: true }
+      { new: true },
     ).lean();
 
     if (!ds) {
@@ -143,7 +139,6 @@ export async function renameDesignSystem(req, res, next) {
   }
 }
 
-// DELETE /api/design-systems/:id
 export async function deleteDesignSystem(req, res, next) {
   let stage = "start";
   try {

@@ -1,11 +1,9 @@
-#!/usr/bin/env bash
+
 set -euo pipefail
 
-# run from anywhere; it resolves relative to this script location
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 SRC="${1:-$ROOT/tokens.xml}"
 
-# Android expects res/values/*.xml style paths
 WORK="$ROOT/.aapt2tmp"
 OUT="/tmp/aapt2-validate.zip"
 
@@ -23,4 +21,4 @@ fi
 "$AAPT2" compile --legacy -o "$OUT" --dir "$WORK/res" >/dev/null
 
 
-echo "✅ Android resources compile OK: $SRC"
+echo "Android code compile OK: $SRC"

@@ -93,7 +93,6 @@ function mapPathSegmentsByOverrides(
     const oldKey = gidSeg[gidSeg.length - 1]
     const idx = parentSeg.length
 
-    // parent must match
     let parentMatches = true
     for (let i = 0; i < parentSeg.length; i++) {
       if (seg[i] !== parentSeg[i]) {
@@ -154,12 +153,10 @@ function parseRowValueForDtcg(row: TableRow): JsonValue {
     return s === 'true'
   }
 
-  // string
   return String(row.value ?? '')
 }
 
 function parseRowLiteralValue(row: TableRow): JsonValue {
-  // used when we need a literal (non-alias) value for $value
   if (row.type === 'color') return makeDtcgColorValue(row.hex || '#000000')
 
   if (row.type === 'number') {
@@ -172,7 +169,6 @@ function parseRowLiteralValue(row: TableRow): JsonValue {
       .toLowerCase()
     return s === 'true'
   }
-  // string (and anything else) -> string
   return String(row.value ?? '')
 }
 
@@ -269,10 +265,8 @@ function seedRowOrderForGroupIfMissing(
   const order = ensureRowOrder(store)
   const prefix = groupPath.length ? groupPath.join('.') + '.' : ''
 
-  // build current sibling paths based on parent key order
   const siblingPaths = Object.keys(parent).map((k) => prefix + k)
 
-  // only seed if NONE of the siblings are tracked yet
   const hasAny = siblingPaths.some((p) => order.includes(p))
   if (hasAny) return
 
@@ -283,7 +277,6 @@ function isResolverDocument(value: JsonValue): value is JsonRecord {
   return isJsonRecord(value) && Array.isArray((value as JsonRecord).resolutionOrder)
 }
 
-// Find the resolver document, if any, among uploaded docs
 function findResolverDoc(
   docs: Record<string, JsonValue>,
 ): { fileName: string; doc: JsonRecord } | null {
@@ -312,7 +305,6 @@ function pickDocForRowPath(
     const mods = (resolver.modifiers ?? {}) as Record<string, ResolverModifierLike>
     const wsMods = (workspaceStore.modifiers ?? {}) as Record<string, string>
 
-    // Pick the first modifier that has a selected value in the workspace
     const activeModName = Object.keys(mods).find((name) => wsMods[name])
     if (activeModName) {
       const mod = mods[activeModName]
@@ -324,7 +316,6 @@ function pickDocForRowPath(
           .map((s) => (typeof s.$ref === 'string' ? s.$ref.split('#')[0] : ''))
           .filter(Boolean)
 
-        // Among candidate files, pick the one that actually contains the path
         for (const fileName of candidateFiles) {
           const raw = docs[fileName]
           if (!isJsonRecord(raw)) continue
@@ -366,9 +357,7 @@ function isModeAddedRow(v: unknown): v is ModeAddedRow {
   return typeof r.path === 'string' && typeof r.type === 'string' && 'value' in r
 }
 function replacePathInString(s: string, from: string, to: string): string {
-  // replace "{from}" exactly
   if (s === `{${from}}`) return `{${to}}`
-  // replace raw path exactly (some places store raw path without braces)
   if (s === from) return to
   return s
 }
@@ -393,7 +382,6 @@ function replacePathInJsonValue(v: JsonValue, from: string, to: string): JsonVal
 }
 
 function renameRefsInWorkspaceStore(store: WorkspaceStore, from: string, to: string): void {
-  // --- overrides: keys and values (values may include "{from}") ---
   {
     const current = store.overrides ?? {}
     const next: Record<string, JsonValue> = {}
@@ -407,8 +395,6 @@ function renameRefsInWorkspaceStore(store: WorkspaceStore, from: string, to: str
 
     store.overrides = next
   }
-
-  // --- modeAddedRows: value/raw can include "{from}" ---
   {
     const current = store.modeAddedRows ?? {}
     const next: typeof current = { ...current }
@@ -432,7 +418,6 @@ function renameRefsInWorkspaceStore(store: WorkspaceStore, from: string, to: str
     store.modeAddedRows = next
   }
 
-  // --- modeDeletedPaths: paths may be stored per mode ---
   {
     const current = store.modeDeletedPaths ?? {}
     const next: typeof current = { ...current }
@@ -445,7 +430,6 @@ function renameRefsInWorkspaceStore(store: WorkspaceStore, from: string, to: str
     store.modeDeletedPaths = next
   }
 
-  // --- rowOrder: keep ordering consistent ---
   {
     const order = Array.isArray(store.rowOrder) ? [...store.rowOrder] : []
     const idx = order.indexOf(from)
@@ -544,8 +528,6 @@ export function useTokenCrud({
 }: CrudDeps) {
   async function updateTokenValueAny(row: TableRow, newValue: JsonValue): Promise<void> {
     const mode = getEffectiveModeForPath(row.path)
-
-    // ✅ mode-added row: update in modeAddedRows (do NOT touch uploadedDocs)
     {
       const hit = findModeAddedRow(workspaceStore, mode, row.path)
       if (hit) {
@@ -580,7 +562,6 @@ export function useTokenCrud({
 
     const { fileName, doc, token, parent, key } = found
 
-    // ✅ Figma variables: store override only (do NOT mutate figma-sync.json)
     if (isFigmaSyncedToken(token)) {
       const k = `${mode}::${row.path}`
       workspaceStore.overrides = { ...workspaceStore.overrides, [k]: newValue }
@@ -592,7 +573,6 @@ export function useTokenCrud({
     const beforeToken = JSON.stringify(token)
     const beforeDoc = JSON.stringify(doc)
 
-    // normal tokens: mutate original JSON
     const type = row.type
     const coerced =
       type === 'color' && typeof newValue === 'string' ? makeDtcgColorValue(newValue) : newValue
@@ -612,7 +592,6 @@ export function useTokenCrud({
     console.log('token changed?', beforeToken !== afterToken)
     console.log('doc changed?', beforeDoc !== afterDoc)
 
-    // if we wrote to source, remove any override for this path
     if (workspaceStore.overrides[row.path] !== undefined) {
       const copy = { ...workspaceStore.overrides }
       delete copy[row.path]
@@ -627,7 +606,6 @@ export function useTokenCrud({
   async function updateTokenValue(row: TableRow, newHex: string): Promise<void> {
     const mode = getEffectiveModeForPath(row.path)
 
-    // ✅ mode-added row: update in modeAddedRows
     {
       const hit = findModeAddedRow(workspaceStore, mode, row.path)
       if (hit) {
@@ -710,7 +688,6 @@ export function useTokenCrud({
     }
 
     updateAliasReferencesInDocs(uploadedDocs.value, row.path, newPath)
-    // also rewrite DISPLAY refs that may have been stored previously
     const nameOvFixed = expandNameOverrides(
       workspaceStore.nameOverrides ?? {},
       workspaceStore.groupNameOverrides ?? {},
@@ -846,14 +823,12 @@ export function useTokenCrud({
     const mode = getEffectiveModeForPath(row.path)
     const k = `${mode}::${row.path}`
 
-    // remove mode-scoped override (new format)
     if (workspaceStore.overrides[k] !== undefined) {
       const copy = { ...workspaceStore.overrides }
       delete copy[k]
       workspaceStore.overrides = copy
     }
 
-    // optional: remove legacy override (old format) so old data doesn't leak
     if (workspaceStore.overrides[row.path] !== undefined) {
       const copy = { ...workspaceStore.overrides }
       delete copy[row.path]
@@ -870,7 +845,6 @@ export function useTokenCrud({
   async function duplicateToken(row: TableRow): Promise<void> {
     const mode = getEffectiveModeForPath(row.path)
 
-    // ✅ MODE-ADDED: duplicate inside modeAddedRows (no uploadedDocs mutation)
     {
       const hit = findModeAddedRow(workspaceStore, mode, row.path)
       if (hit) {
@@ -892,7 +866,6 @@ export function useTokenCrud({
         nextRows.splice(hit.index + 1, 0, newRow)
         writeModeAddedRows(workspaceStore, mode, hit.groupKey, nextRows)
 
-        // copy mode-scoped override (if any)
         const fromKey = `${mode}::${row.path}`
         const toKey = `${mode}::${newPath}`
         if (Object.prototype.hasOwnProperty.call(workspaceStore.overrides, fromKey)) {
@@ -923,15 +896,13 @@ export function useTokenCrud({
     const { fileName, doc, token, parent, key: oldKey } = found
     const original: JsonValue = parent[oldKey]
 
-    // ✅ FIGMA SYNCED: duplicate into modeAddedRows (do NOT mutate figma-sync.json)
     if (isFigmaSyncedToken(token)) {
       const parentPath = segments.slice(0, -1).join('.')
       const groupKey = getGroupKeyFromPath(row.path)
       const existingAdded = readModeAddedRows(workspaceStore, mode, groupKey)
 
-      // build sibling name set within the same parent path (includes existing mode-added)
       const siblingsRec = buildSiblingKeyRecord(existingAdded, parentPath)
-      // also include current base sibling keys from JSON (so we don’t collide)
+
       for (const k of Object.keys(parent)) siblingsRec[k] = true
 
       const newLeaf = createDuplicateKey(siblingsRec, row.name || oldKey)
@@ -950,11 +921,9 @@ export function useTokenCrud({
         raw: row.type === 'color' ? row.hex || '#000000' : value,
       }
 
-      // insert after the clicked token (approx): append is fine, table ordering uses rowOrder anyway
       const nextRows = [...existingAdded, newRow]
       writeModeAddedRows(workspaceStore, mode, groupKey, nextRows)
 
-      // copy override from original (mode-scoped)
       const fromKey = `${mode}::${row.path}`
       const toKey = `${mode}::${newPath}`
       if (Object.prototype.hasOwnProperty.call(workspaceStore.overrides, fromKey)) {
@@ -974,7 +943,6 @@ export function useTokenCrud({
       return
     }
 
-    // ✅ NORMAL TOKENS: keep your current behavior (mutate JSON)
     const newKey = createDuplicateKey(parent, row.name || oldKey)
 
     let newToken: JsonValue
@@ -1023,7 +991,6 @@ export function useTokenCrud({
   async function addRowBelowToken(row: TableRow): Promise<void> {
     const mode = getEffectiveModeForPath(row.path)
 
-    // ✅ MODE-ADDED: add row below inside modeAddedRows
     {
       const hit = findModeAddedRow(workspaceStore, mode, row.path)
       if (hit) {
@@ -1074,13 +1041,11 @@ export function useTokenCrud({
     const { fileName, doc, token, parent, key: clickedKey } = found
     const groupPath = segments.slice(0, -1)
 
-    // ✅ FIGMA SYNCED: create modeAddedRow (do NOT mutate figma-sync.json)
     if (isFigmaSyncedToken(token)) {
       const parentPath = groupPath.join('.')
       const groupKey = getGroupKeyFromPath(row.path)
       const existingAdded = readModeAddedRows(workspaceStore, mode, groupKey)
 
-      // sibling names include JSON siblings + existing mode-added siblings (same parent path)
       const siblingsRec = buildSiblingKeyRecord(existingAdded, parentPath)
       for (const k of Object.keys(parent)) siblingsRec[k] = true
 
@@ -1104,7 +1069,6 @@ export function useTokenCrud({
         raw: row.type === 'color' ? defaultHex : newValue,
       }
 
-      // insert roughly after clicked token: just append; rowOrder controls visible placement
       writeModeAddedRows(workspaceStore, mode, groupKey, [...existingAdded, newRow])
 
       const order = ensureRowOrder(workspaceStore)
@@ -1117,7 +1081,6 @@ export function useTokenCrud({
       return
     }
 
-    // ✅ NORMAL TOKENS: keep your existing behavior
     seedRowOrderForGroupIfMissing(workspaceStore, groupPath, parent)
 
     const baseName = row.name || 'new-token'
@@ -1135,7 +1098,6 @@ export function useTokenCrud({
               : '',
     }
 
-    // ---- Figma order handling (keep your existing logic) ----
     const clickedNode = parent[clickedKey]
     const clickedOrder = getFigmaOrder(clickedNode)
 
@@ -1262,7 +1224,6 @@ export function useTokenCrud({
       parentPath.length > 0
         ? findGroupContainer(uploadedDocs.value, parentPath)
         : (() => {
-            // root-level sibling: use the first document as container
             const [fileName, maybeDoc] = Object.entries(uploadedDocs.value)[0] ?? []
             if (!fileName || !isJsonRecord(maybeDoc)) return null
             const doc = maybeDoc as JsonRecord
@@ -1306,21 +1267,17 @@ export function useTokenCrud({
     const groupOv = workspaceStore.groupNameOverrides ?? {}
     const targetDisplay = normalizeAliasTarget(trimmedInput)
 
-    // REAL -> DISPLAY
     const nameOvFixed = expandNameOverrides(
       workspaceStore.nameOverrides ?? {},
       workspaceStore.groupNameOverrides ?? {},
     )
 
-    // DISPLAY -> REAL
     const reverseName: Record<string, string> = {}
     for (const [real, display] of Object.entries(nameOvFixed)) {
       reverseName[display] = real
     }
 
-    // undo token display rename first
     const afterName = reverseName[targetDisplay] ?? targetDisplay
-    // then undo group display rename
     const targetReal = mapPathSegmentsByOverrides(afterName, groupOv, 'toReal')
 
     if (targetReal === row.path) {
@@ -1334,27 +1291,6 @@ export function useTokenCrud({
     const targetSegments = targetReal.split('.')
     let targetExists = false
     let targetType: TokenType | null = null
-
-    // const trimmedInput = aliasPath.trim()
-    // if (!trimmedInput) {
-    //   throw new Error('Alias path cannot be empty.')
-    // }
-
-    // const targetNormalized = normalizeAliasTarget(trimmedInput)
-
-    // if (targetNormalized === row.path) {
-    //   throw new Error('A token cannot alias itself.')
-    // }
-
-    // const docs = uploadedDocs.value
-    // const fileNames = Object.keys(docs)
-    // if (!fileNames.length) {
-    //   throw new Error('No token files are loaded.')
-    // }
-
-    // const targetSegments = targetNormalized.split('.')
-    // let targetExists = false
-    // let targetType: TokenType | null = null
 
     {
       const mode = getEffectiveModeForPath(row.path)
@@ -1378,7 +1314,6 @@ export function useTokenCrud({
 
         writeModeAddedRows(workspaceStore, mode, hit.groupKey, nextRows)
 
-        // remove any override for this path in this mode (avoid double sources)
         removeOverridesForPath(workspaceStore, mode, row.path)
 
         await workspaceStore.saveToServer()
@@ -1456,17 +1391,6 @@ export function useTokenCrud({
 
     const existing = parent[key]
 
-    // if (isFigmaSyncedToken(existing)) {
-    //   workspaceStore.overrides = {
-    //     ...workspaceStore.overrides,
-    //     [row.path]: aliasValue,
-    //   }
-
-    //   await workspaceStore.saveToServer()
-    //   await persistUploadedDocsAndReload()
-    //   return
-    // }
-
     if (isJsonRecord(existing)) {
       ;(existing as JsonRecord).$value = aliasValue
       if (!(existing as JsonRecord).$type) (existing as JsonRecord).$type = row.type
@@ -1478,54 +1402,8 @@ export function useTokenCrud({
     await persistUploadedDocsAndReload()
   }
 
-  // async function clearTokenAlias(row: TableRow): Promise<void> {
-  //   const docs = uploadedDocs.value
-  //   const fileNames = Object.keys(docs)
-  //   if (!fileNames.length) {
-  //     console.warn('clearTokenAlias: no uploaded docs')
-  //     return
-  //   }
-
-  //   const picked = pickDocForRowPath(docs, row.path, workspaceStore)
-  //   if (!picked) {
-  //     console.warn('clearTokenAlias: token not found in any uploaded doc', row.path)
-  //     return
-  //   }
-
-  //   const { fileName, doc } = picked
-
-  //   const pathSegments = row.path.split('.')
-  //   const key = pathSegments.pop()!
-  //   const parentPath = pathSegments
-
-  //   const parent = ensurePath(doc, parentPath)
-  //   const literal = parseRowLiteralValue(row)
-  //   const existing = parent[key]
-
-  //   if (isFigmaSyncedToken(existing)) {
-  //     const copy = { ...workspaceStore.overrides }
-  //     delete copy[row.path]
-  //     workspaceStore.overrides = copy
-
-  //     await workspaceStore.saveToServer()
-  //     await persistUploadedDocsAndReload()
-  //     return
-  //   }
-
-  //   if (isJsonRecord(existing)) {
-  //     ;(existing as JsonRecord).$value = literal
-  //     if (!(existing as JsonRecord).$type) (existing as JsonRecord).$type = row.type
-  //   } else {
-  //     parent[key] = { $type: row.type, $value: literal }
-  //   }
-
-  //   uploadedDocs.value[fileName] = doc
-  //   await persistUploadedDocsAndReload()
-  // }
   async function clearTokenAlias(row: TableRow): Promise<void> {
     const mode = getEffectiveModeForPath(row.path)
-
-    // ✅ MODE-ADDED: clear alias by writing a literal back into modeAddedRows
     {
       const hit = findModeAddedRow(workspaceStore, mode, row.path)
       if (hit) {
@@ -1543,7 +1421,6 @@ export function useTokenCrud({
 
         writeModeAddedRows(workspaceStore, mode, hit.groupKey, nextRows)
 
-        // avoid double sources (override + modeAddedRows)
         removeOverridesForPath(workspaceStore, mode, row.path)
 
         await workspaceStore.saveToServer()
@@ -1552,7 +1429,6 @@ export function useTokenCrud({
       }
     }
 
-    // ---- existing logic (unchanged) ----
     const docs = uploadedDocs.value
     const fileNames = Object.keys(docs)
     if (!fileNames.length) {
