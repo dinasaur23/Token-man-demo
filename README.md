@@ -52,6 +52,9 @@ npm start
 
 After running both client and server, open the localhost on the client side.
 
+> [!NOTE]
+> Example JSON files for testing the upload feature are located in `/client/src/tokens`.
+
 ## 6. Using the Figma plugin
 
 1. Open the Figma desktop application.
@@ -69,3 +72,7 @@ After running both client and server, open the localhost on the client side.
 7. After login, choose the workspace you want to synchronise the tokens to (you should have already created the workspace in the web app).
 
 8. Then save the setting, and you can now sync the tokens (syncing and setting are separated).
+
+---
+
+**P.S.** The server must be running befor importing the plugin.
