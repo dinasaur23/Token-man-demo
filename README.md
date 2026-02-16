@@ -6,7 +6,7 @@ This web application is developed for a bachelor thesis. It is used to evaluate 
 
 ## 2. Prerequisites
 
-VS code and Node.js are already installed
+VS code, Figma desktop, and Node.js are already installed
 
 ## 3. Enter the directory
 
@@ -51,3 +51,21 @@ npm start
 ```
 
 After running both client and server, open the localhost on the client side.
+
+## 6. Using the Figma plugin
+
+1. Open the Figma desktop application.
+
+2. Go to the main menu.
+
+3. Go to "Plugin" and click "Development."
+
+4. Choose the "Import plugin from manifest."
+
+5. Then choose the manifest.json file from the figma-token-plugin folder.
+
+6. You need to configure the plugin setting first before using it by logging into the plugin using the same email and password as the web app.
+
+7. After login, choose the workspace you want to synchronise the tokens to (you should have already created the workspace in the web app).
+
+8. Then save the setting, and you can now sync the tokens (syncing and setting are separated).
