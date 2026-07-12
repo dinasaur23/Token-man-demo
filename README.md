@@ -75,4 +75,4 @@ After running both client and server, open the localhost on the client side.
 
 ---
 
-**P.S.** The server must be running befor importing the plugin.
+**P.S.** The server must be running before importing the plugin.
