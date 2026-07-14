@@ -8,7 +8,7 @@ import path from "path";
 import { connectDB } from "../config/db.js";
 import TokenRoutes from "../src/routes/TokenRoutes.js";
 import AuthRoutes from "../src/routes/AuthRoutes.js";
-import DesignSystemRoutes from "../src/routes/designSystemRoutes.js";
+import designSystemRoutes from "../src/routes/designSystemRoutes.js";
 import { requireAuth } from "../src/middleware/authMiddleware.js";
 import { resolveTokensFromResolverFile } from "../src/tokens/resolver.js";
 dotenv.config();
@@ -29,7 +29,7 @@ app.use((req, res, next) => {
 //routes
 app.use("/api/auth", AuthRoutes);
 app.use("/api/tokens", TokenRoutes);
-app.use("/api/design-systems", DesignSystemRoutes);
+app.use("/api/design-systems", designSystemRoutes);
 
 app.get("/api/auth/check", requireAuth, (req, res) => {
   res.json({ ok: true, user: req.user });
