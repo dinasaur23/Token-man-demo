@@ -34,7 +34,7 @@
 import { ref } from 'vue'
 import HeaderComponent from '../components/HeaderComponent.vue'
 import NavbarComponent1 from '@/components/NavbarComponent1.vue'
-
+const API_URL = import.meta.env.VITE_API_URL
 const email = ref('')
 const password = ref('')
 
@@ -45,7 +45,7 @@ const handleSubmit = async () => {
   emailError.value = ''
   passwordError.value = ''
   try {
-    const res = await fetch('/api/auth/signup', {
+    const res = await fetch(`${API_URL}/api/auth/signup`, {
       method: 'POST',
       body: JSON.stringify({ email: email.value, password: password.value }),
       headers: { 'Content-Type': 'application/json' },
