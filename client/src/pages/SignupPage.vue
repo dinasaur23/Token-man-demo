@@ -34,6 +34,9 @@
 import { ref } from 'vue'
 import HeaderComponent from '../components/HeaderComponent.vue'
 import NavbarComponent1 from '@/components/NavbarComponent1.vue'
+import { useRouter } from 'vue-router'
+
+const router = useRouter()
 const API_URL = import.meta.env.VITE_API_URL
 const email = ref('')
 const password = ref('')
@@ -57,7 +60,7 @@ const handleSubmit = async () => {
       passwordError.value = data.errors.password
     }
     if (data.user) {
-      location.assign('/LoginPage')
+      router.push('/LoginPage')
     }
   } catch (err) {
     console.log(err)
