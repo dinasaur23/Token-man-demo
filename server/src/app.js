@@ -17,7 +17,13 @@ const app = express();
 connectDB();
 app.use(morgan("combined"));
 app.use(bodyParser.json());
-app.use(cors());
+// app.use(cors());
+app.use(
+  cors({
+    origin: process.env.CLIENT_URL,
+    credentials: true,
+  }),
+);
 app.use(express.json());
 app.use(cookieParser());
 
