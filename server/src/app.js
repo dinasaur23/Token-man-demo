@@ -54,8 +54,17 @@ app.get("/api/tokens", async (req, res, next) => {
 });
 
 //cookies
-const PORT = process.env.PORT || 8081;
+//const PORT = process.env.PORT || 8081;
+// app.listen(PORT, () => {
+//   console.log("server started on PORT:", PORT);
+// });
 
-app.listen(PORT, () => {
-  console.log("server started on PORT:", PORT);
-});
+if (!process.env.VERCEL) {
+  const PORT = process.env.PORT || 8081;
+
+  app.listen(PORT, () => {
+    console.log("server started on PORT:", PORT);
+  });
+}
+
+export default app;
