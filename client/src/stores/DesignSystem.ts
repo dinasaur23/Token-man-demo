@@ -3,7 +3,12 @@ import axios from 'axios'
 const STORAGE_KEY = 'tm-current-design-system'
 
 const API_URL = import.meta.env.VITE_API_URL
-console.log('VITE_API_URL:', API_URL)
+
+if (!API_URL) {
+  throw new Error('VITE_API_URL is missing')
+}
+
+console.error('DesignSystem API URL:', API_URL)
 
 interface DesignSystemDto {
   id?: string
