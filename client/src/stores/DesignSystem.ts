@@ -3,6 +3,7 @@ import axios from 'axios'
 const STORAGE_KEY = 'tm-current-design-system'
 
 const API_URL = import.meta.env.VITE_API_URL
+console.log('VITE_API_URL:', API_URL)
 
 interface DesignSystemDto {
   id?: string
