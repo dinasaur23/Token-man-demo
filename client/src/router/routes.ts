@@ -41,7 +41,9 @@ const router = createRouter({
 
 async function isAuthed(): Promise<boolean> {
   try {
-    const res = await fetch(`${API_URL}/api/auth/check`, {})
+    const res = await fetch(`${API_URL}/api/auth/check`, {
+      credentials: 'include',
+    })
     return res.ok
   } catch {
     return false

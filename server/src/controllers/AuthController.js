@@ -46,8 +46,20 @@ export const postSignup = async (req, res) => {
   try {
     const user = await User.create({ email, password });
     const token = createToken(user._id);
-    res.cookie("jwt", token, { httpOnly: true, maxAge: maxAge * 1000 });
-    res.status(201).json({ ok: true, user: user._id, token });
+
+    res.cookie("jwt", token, {
+      httpOnly: true,
+      maxAge: maxAge * 1000,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      path: "/",
+    });
+
+    res.status(201).json({
+      ok: true,
+      user: user._id,
+      token,
+    });
   } catch (err) {
     const errors = handleErrors(err);
     res.status(400).json({ errors });
@@ -60,8 +72,20 @@ export const postLogin = async (req, res) => {
   try {
     const user = await User.login(email, password);
     const token = createToken(user._id);
-    res.cookie("jwt", token, { httpOnly: true, maxAge: maxAge * 1000 });
-    res.status(200).json({ ok: true, user: user._id, token });
+
+    res.cookie("jwt", token, {
+      httpOnly: true,
+      maxAge: maxAge * 1000,
+      secure: process.env.NODE_ENV === "production",
+      sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+      path: "/",
+    });
+
+    res.status(201).json({
+      ok: true,
+      user: user._id,
+      token,
+    });
   } catch (err) {
     const errors = handleErrors(err);
     res.status(400).json({ errors });
@@ -71,8 +95,9 @@ export const postLogin = async (req, res) => {
 export const getLogout = (req, res) => {
   res.cookie("jwt", "", {
     httpOnly: true,
-    sameSite: "lax",
-    expires: new Date(0), // past date
+    secure: process.env.NODE_ENV === "production",
+    sameSite: process.env.NODE_ENV === "production" ? "none" : "lax",
+    expires: new Date(0),
     path: "/",
   });
 
