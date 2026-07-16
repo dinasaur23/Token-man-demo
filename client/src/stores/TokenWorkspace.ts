@@ -51,12 +51,14 @@ interface TokenWorkspaceState {
   modeAddedRows: Record<string, unknown[]>
   modeDeletedPaths: Record<string, string[]>
 }
+
+const API_URL = import.meta.env.VITE_API_URL
 function buildWorkspaceUrl(designSystemId: string | null): string {
   if (!designSystemId) {
-    return '/api/tokens/workspace'
+    return `${API_URL}/api/tokens/workspace`
   }
   const encoded = encodeURIComponent(designSystemId)
-  return `/api/tokens/workspace?designSystemId=${encoded}`
+  return `${API_URL}/api/tokens/workspace?designSystemId=${encoded}`
 }
 
 export const useTokenWorkspaceStore = defineStore('tokenWorkspace', {

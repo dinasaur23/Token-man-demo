@@ -57,7 +57,10 @@
     <div>
       <label>
         API URL
-        <input id="apiUrl" placeholder="http://localhost:8081" />
+        <input
+          id="apiUrl"
+          placeholder="https://token-manager-ecru.vercel.app"
+        />
       </label>
       <div id="loginSection">
         <div class="row">
@@ -154,7 +157,7 @@
         setHidden(loginError, true);
         setText(loginError, "");
         setText(loginStatus, "Logging in…");
-
+        currentApiUrl = normalizeApiUrl(apiInput.value);
         const email = String(emailInput.value || "").trim();
         const password = String(passwordInput.value || "");
 
@@ -326,7 +329,9 @@
           return;
         }
       };
-
+      apiInput.addEventListener("input", () => {
+        currentApiUrl = normalizeApiUrl(apiInput.value);
+      });
       loginBtn.onclick = () => doLogin();
 
       saveBtn.onclick = () => {

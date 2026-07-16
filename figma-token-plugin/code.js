@@ -4,7 +4,9 @@ const STORAGE_KEYS = {
   jwt: "tm_jwt",
 };
 
-const DEFAULT_API_URL = "http://localhost:8081";
+const LOCAL_API_URL = "http://localhost:8081";
+const PRODUCTION_API_URL = "https://token-manager-ecru.vercel.app";
+const DEFAULT_API_URL = PRODUCTION_API_URL;
 
 function getCurrentFileKey() {
   let key = figma.root.getPluginData("tm_fileKey");

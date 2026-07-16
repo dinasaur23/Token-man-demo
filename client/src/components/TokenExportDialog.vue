@@ -49,6 +49,7 @@ import axios from 'axios'
 import { useDesignSystemStore } from '@/stores/DesignSystem'
 //import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 
+const API_URL = import.meta.env.VITE_API_URL
 type ExportFormat = 'css' | 'tailwind' | 'swift' | 'android' | 'json'
 
 const dsStore = useDesignSystemStore()
@@ -80,7 +81,7 @@ async function downloadOne(format: ExportFormat) {
 
   console.log('[Export] downloading', format, 'for DS', designSystemId)
 
-  const url = `/api/tokens/export/${encodeURIComponent(designSystemId)}`
+  const url = `${API_URL}/api/tokens/export/${encodeURIComponent(designSystemId)}`
 
   const res = await axios.get(url, {
     params: { format, bundle: 1 },

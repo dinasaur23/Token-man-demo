@@ -2,6 +2,8 @@ import { defineStore } from 'pinia'
 import axios from 'axios'
 const STORAGE_KEY = 'tm-current-design-system'
 
+const API_URL = import.meta.env.VITE_API_URL
+
 interface DesignSystemDto {
   id?: string
   _id?: string
@@ -86,7 +88,7 @@ export const useDesignSystemStore = defineStore('designSystem', {
       this.loading = true
       this.error = null
       try {
-        const { data } = await axios.get<ListResponse>('/api/design-systems', {
+        const { data } = await axios.get<ListResponse>(`${API_URL}/api/design-systems`, {
           withCredentials: true,
         })
 
@@ -115,7 +117,7 @@ export const useDesignSystemStore = defineStore('designSystem', {
       }
 
       const { data } = await axios.post<CreateResponse>(
-        '/api/design-systems',
+        `${API_URL}/api/design-systems`,
         { name: trimmed },
         { withCredentials: true },
       )
@@ -132,7 +134,7 @@ export const useDesignSystemStore = defineStore('designSystem', {
       }
 
       const { data } = await axios.patch<UpdateResponse>(
-        `/api/design-systems/${id}`,
+        `${API_URL}/api/design-systems/${id}`,
         { name: trimmed },
         { withCredentials: true },
       )
@@ -144,7 +146,7 @@ export const useDesignSystemStore = defineStore('designSystem', {
       }
     },
     async remove(id: string): Promise<void> {
-      await axios.delete<DeleteResponse>(`/api/design-systems/${id}`, {
+      await axios.delete<DeleteResponse>(`${API_URL}/api/design-systems/${id}`, {
         withCredentials: true,
       })
 

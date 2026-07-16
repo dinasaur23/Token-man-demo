@@ -32,7 +32,7 @@
 import { ref, computed, onMounted } from 'vue'
 import { useRouter, useRoute } from 'vue-router'
 import { useDesignSystemStore } from '@/stores/DesignSystem'
-
+const API_URL = import.meta.env.VITE_API_URL
 const router = useRouter()
 const route = useRoute()
 const dsStore = useDesignSystemStore()
@@ -63,7 +63,7 @@ onMounted(async () => {
 
 const handleLogout = async () => {
   try {
-    await fetch('/api/auth/logout', {
+    await fetch(`${API_URL}/api/auth/logout`, {
       method: 'GET',
       credentials: 'include',
     })

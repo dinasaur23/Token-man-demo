@@ -7,6 +7,7 @@ import ColorContentPage from '@/pages/ColorContentPage.vue'
 import EditTokenPage from '@/pages/EditTokenPage.vue'
 import LoginPage from '@/pages/LoginPage.vue'
 import HomePage from '@/pages/HomePage.vue'
+const API_URL = import.meta.env.VITE_API_URL
 
 const router = createRouter({
   history: createWebHistory(import.meta.env.BASE_URL),
@@ -40,7 +41,7 @@ const router = createRouter({
 
 async function isAuthed(): Promise<boolean> {
   try {
-    const res = await fetch('/api/auth/check', {})
+    const res = await fetch(`${API_URL}/api/auth/check`, {})
     return res.ok
   } catch {
     return false

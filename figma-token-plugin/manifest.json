@@ -7,9 +7,9 @@
   "editorType": ["figma"],
 
   "networkAccess": {
-    "allowedDomains": ["http://localhost:8081"],
-    "reasoning": "Allow plugin to sync design tokens with local backend during development.",
-    "devAllowedDomains": ["http://localhost:8081"]
+    "allowedDomains": ["https://token-manager-ecru.vercel.app"],
+    "devAllowedDomains": ["http://localhost:8081"],
+    "reasoning": "Allow the plugin to communicate with the deployed Token Manager backend and the local backend during development."
   },
 
   "menu": [
