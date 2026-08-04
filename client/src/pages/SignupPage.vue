@@ -48,10 +48,21 @@ const handleSubmit = async () => {
   emailError.value = ''
   passwordError.value = ''
   try {
+    console.log('Submitting:', {
+      email: email.value,
+      password: password.value,
+      API_URL,
+    })
     const res = await fetch(`${API_URL}/api/auth/signup`, {
       method: 'POST',
-      body: JSON.stringify({ email: email.value, password: password.value }),
-      headers: { 'Content-Type': 'application/json' },
+      credentials: 'include',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        email: email.value,
+        password: password.value,
+      }),
     })
     const data = await res.json()
     console.log(data)
