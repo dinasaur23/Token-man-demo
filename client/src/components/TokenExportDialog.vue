@@ -93,8 +93,8 @@ async function downloadOne(format: ExportFormat) {
     type: res.headers['content-type'] || 'application/octet-stream',
   })
 
-  // default filename
-  let filename = `tokens.${format}.txt`
+  let filename = `tokens-${format}.zip`
+
   const disposition = res.headers['content-disposition']
   if (disposition && typeof disposition === 'string') {
     const m = disposition.match(/filename="([^"]+)"/)
