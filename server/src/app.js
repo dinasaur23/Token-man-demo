@@ -14,7 +14,7 @@ import { resolveTokensFromResolverFile } from "../src/tokens/resolver.js";
 dotenv.config();
 
 const app = express();
-connectDB();
+await connectDB();
 app.use(morgan("combined"));
 app.use(bodyParser.json());
 // app.use(cors());
