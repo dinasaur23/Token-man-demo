@@ -128,16 +128,6 @@ export function useTokenGridColumns(
           if (!Number.isFinite(n)) return revert()
           parsed = n
           row.value = String(n)
-        } else if (row.type === 'boolean') {
-          if (newVal === 'true' || newVal === '1') {
-            parsed = true
-            row.value = 'true'
-          } else if (newVal === 'false' || newVal === '0') {
-            parsed = false
-            row.value = 'false'
-          } else {
-            return revert()
-          }
         } else {
           parsed = newVal
           row.value = newVal

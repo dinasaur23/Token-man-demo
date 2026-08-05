@@ -11,6 +11,10 @@ import {
   buildCleanOverrides,
 } from "../utils/dtcg/cleanupWorkspaceTokens.js";
 import { resolveUploadedDocuments } from "../utils/dtcg/uploadedResolver.js";
+import {
+  APPLICATION_SUPPORTED_TYPES,
+  isApplicationSupportedTokenType,
+} from "../utils/dtcg/allowedTokenTypes.js";
 import archiver from "archiver";
 
 function getTokensRoot(root) {
@@ -241,6 +245,19 @@ function ensureContainer(root, pathSegments) {
   return cur;
 }
 
+function getTokenTypeAtPath(tokensRoot, tokenPath) {
+  const seg = String(tokenPath).split(".").filter(Boolean);
+  if (!seg.length) return undefined;
+
+  let node = tokensRoot;
+  for (const s of seg) {
+    if (!isRecord(node)) return undefined;
+    node = node[s];
+  }
+  if (!isRecord(node)) return undefined;
+  return typeof node.$type === "string" ? node.$type : undefined;
+}
+
 function setTokenAtPath(tokensRoot, tokenPath, type, value) {
   const seg = String(tokenPath).split(".").filter(Boolean);
   if (!seg.length) return;
@@ -250,10 +267,12 @@ function setTokenAtPath(tokensRoot, tokenPath, type, value) {
 
   const existing = parent[key];
   if (isRecord(existing)) {
-    existing.$type = type;
+    // Preserve an existing $type when the caller does not supply one
+    // (override paths must not hardcode "string").
+    if (type) existing.$type = type;
     existing.$value = value;
   } else {
-    parent[key] = { $type: type, $value: value };
+    parent[key] = type ? { $type: type, $value: value } : { $value: value };
   }
 }
 
@@ -322,8 +341,8 @@ function applyWorkspaceEditsForCollectionMode(
     if (k.startsWith(prefix)) {
       const tokenPath = k.slice(prefix.length);
       if (tokenPath === collection || tokenPath.startsWith(collection + ".")) {
-        const t = "string";
-        setTokenAtPath(tokensRoot, tokenPath, t, v);
+        const existingType = getTokenTypeAtPath(tokensRoot, tokenPath);
+        setTokenAtPath(tokensRoot, tokenPath, existingType, v);
       }
     }
   }
@@ -337,8 +356,8 @@ function applyWorkspaceEditsForCollectionMode(
     const modeKey = `${modeName}::${tokenPath}`;
     if (Object.prototype.hasOwnProperty.call(overrides, modeKey)) continue;
 
-    const t = "string";
-    setTokenAtPath(tokensRoot, tokenPath, t, v);
+    const existingType = getTokenTypeAtPath(tokensRoot, tokenPath);
+    setTokenAtPath(tokensRoot, tokenPath, existingType, v);
   }
 }
 
@@ -686,15 +705,17 @@ function applyTokenNameOverridesToTokens(rootMaybeWrapped, nameOverrides) {
   }
 }
 
-const ALLOWED_TOKEN_TYPES = ["color", "number", "string", "boolean"];
+const ALLOWED_TOKEN_TYPES = APPLICATION_SUPPORTED_TYPES;
 
 function validateToken(token) {
   if (!token || typeof token !== "object") {
     throw new Error("Invalid token object");
   }
 
-  if (!ALLOWED_TOKEN_TYPES.includes(token.$type)) {
-    throw new Error(`Unsupported token type: ${token.$type}`);
+  if (!isApplicationSupportedTokenType(token.$type)) {
+    throw new Error(
+      `Unsupported token type: ${token.$type}. Allowed: ${ALLOWED_TOKEN_TYPES.join(", ")}`,
+    );
   }
 }
 

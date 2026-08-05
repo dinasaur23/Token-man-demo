@@ -2,8 +2,9 @@
  * Structural DTCG document validation (Stage 7).
  *
  * Collects all structural issues; does not mutate the document.
- * Does not remove string/boolean from live import allowlists — that is a
- * later error-taxonomy stage. Reference target checks reuse Stage 5 resolver.
+ * Type taxonomy (string/boolean removal) is applied by the Stage 8
+ * import validator (`validateDtcgDocument` / `validateTokensStrict`).
+ * Reference target checks reuse Stage 5 resolver.
  */
 
 import {
@@ -87,9 +88,8 @@ export function validateDocumentStructure(doc: Json): StructuralValidationResult
 
     if (isTokenLeaf(node)) {
       tokenCount += 1
-      // Declared `$type` taxonomy (INVALID_DTCG_TYPE / UNSUPPORTED_BY_APPLICATION)
-      // is available via collectDeclaredTypeTaxonomyErrors — not applied here so
-      // transitional string|boolean allowlists stay green until the removal stage.
+      // Declared `$type` taxonomy is applied by validateDtcgDocument /
+      // collectDeclaredTypeTaxonomyErrors (Stage 8 import gate).
       validateReferenceValue(doc, node.$value, displayPath, errors)
     }
 
@@ -162,9 +162,8 @@ function validateReferenceValue(
 }
 
 /**
- * Optional strict type-taxonomy pass over declared `$type` values.
- * Not applied by {@link validateDocumentStructure} so characterization /
- * transitional string|boolean allowlists remain green until the removal stage.
+ * Optional type-taxonomy pass over declared `$type` values.
+ * Used by Stage 8 `validateDtcgDocument` / import validation.
  */
 export function collectDeclaredTypeTaxonomyErrors(doc: Json): TokenValidationError[] {
   const errors: TokenValidationError[] = []

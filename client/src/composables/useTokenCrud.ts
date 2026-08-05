@@ -32,7 +32,7 @@ interface ResolverModifierLike {
 }
 
 type Json = unknown
-type TokenType = 'color' | 'number' | 'string' | 'boolean'
+type TokenType = import('@/utils/dtcg/token-type-manifest').ApplicationSupportedTokenType
 type DtcgColorValue = {
   colorSpace: 'srgb'
   components: [number, number, number]
@@ -141,7 +141,15 @@ function getFigmaOrder(node: JsonValue): number | undefined {
 }
 
 function isTokenType(t: unknown): t is TokenType {
-  return t === 'color' || t === 'number' || t === 'string' || t === 'boolean'
+  return (
+    t === 'color' ||
+    t === 'number' ||
+    t === 'dimension' ||
+    t === 'fontFamily' ||
+    t === 'fontWeight' ||
+    t === 'duration' ||
+    t === 'cubicBezier'
+  )
 }
 function parseRowValueForDtcg(row: TableRow): JsonValue {
   if (row.type === 'color') {
@@ -153,13 +161,6 @@ function parseRowValueForDtcg(row: TableRow): JsonValue {
     return Number.isFinite(n) ? n : 0
   }
 
-  if (row.type === 'boolean') {
-    const s = String(row.value ?? '')
-      .trim()
-      .toLowerCase()
-    return s === 'true'
-  }
-
   return String(row.value ?? '')
 }
 
@@ -169,12 +170,6 @@ function parseRowLiteralValue(row: TableRow): JsonValue {
   if (row.type === 'number') {
     const n = Number(row.value)
     return Number.isFinite(n) ? n : 0
-  }
-  if (row.type === 'boolean') {
-    const s = String(row.value ?? '')
-      .trim()
-      .toLowerCase()
-    return s === 'true'
   }
   return String(row.value ?? '')
 }
@@ -1012,9 +1007,7 @@ export function useTokenCrud({
             ? makeDtcgColorValue(defaultHex)
             : row.type === 'number'
               ? 0
-              : row.type === 'boolean'
-                ? false
-                : ''
+              : ''
 
         const newRow: ModeAddedRow = {
           path: newPath,
@@ -1065,9 +1058,7 @@ export function useTokenCrud({
           ? makeDtcgColorValue(defaultHex)
           : row.type === 'number'
             ? 0
-            : row.type === 'boolean'
-              ? false
-              : ''
+            : ''
 
       const newRow: ModeAddedRow = {
         path: newPath,
@@ -1100,9 +1091,7 @@ export function useTokenCrud({
           ? makeDtcgColorValue('#000000')
           : row.type === 'number'
             ? 0
-            : row.type === 'boolean'
-              ? false
-              : '',
+            : '',
     }
 
     const clickedNode = parent[clickedKey]

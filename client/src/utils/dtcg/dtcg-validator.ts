@@ -1,68 +1,119 @@
+/**
+ * DTCG document validation for import/load (Stage 8).
+ *
+ * Combines Stage 7 structural checks, type taxonomy (rejects string/boolean
+ * and out-of-scope composites), number shape checks, and color value checks.
+ */
+
 import type { Json } from './color-conversion'
+import {
+  validateDocumentStructure,
+  collectDeclaredTypeTaxonomyErrors,
+} from './structural-validation'
+import {
+  classifyDeclaredTokenType,
+  formatTokenValidationError,
+  type TokenValidationError,
+} from './token-validation-error'
+import { isApplicationSupportedTokenType } from './token-type-manifest'
+import { isCurlyBraceAlias, isJsonObject, isJsonPointerRef, type JsonObject } from './reference-resolver'
 import { validateColorValue } from './token-types'
 
-type JsonObject = Record<string, Json>
+export type DtcgStructuralResult =
+  | { ok: true }
+  | { ok: false; errors: readonly TokenValidationError[] }
 
-const isObject = (value: Json): value is JsonObject =>
-  typeof value === 'object' && value !== null && !Array.isArray(value)
+export type ColorValidationResult = { ok: true } | { ok: false; errors: string[] }
 
-export type DtcgStructuralResult = { ok: true } | { ok: false; errors: readonly unknown[] }
+export type CombinedValidationResult =
+  | { ok: true }
+  | { ok: false; kind: 'structural' | 'color'; errors: string[] }
 
-export async function validateDtcgDocument(doc: Json): Promise<DtcgStructuralResult> {
-  const errors: unknown[] = []
-  let tokenCount = 0
-  const AliasPattern = /^\{[^}]+\}$/
-  // Transitional allowlist until the error-taxonomy stage removes string/boolean.
-  const SIMPLE_TYPES = new Set(['number', 'string', 'boolean', 'color'])
+function pathString(segments: string[]): string {
+  return segments.join('.')
+}
 
-  async function visit(node: Json, inheritedType?: string): Promise<void> {
-    if (!isObject(node)) return
+function childKeys(node: JsonObject): string[] {
+  return Object.keys(node).filter((key) => !key.startsWith('$'))
+}
 
-    const localType = typeof node['$type'] === 'string' ? String(node['$type']) : undefined
+/**
+ * Validate token leaves for application-supported type membership and basic
+ * number value shape. Color values are checked separately via
+ * {@link validateColorSubtree}.
+ */
+export function validateDtcgDocument(doc: Json): DtcgStructuralResult {
+  const errors: TokenValidationError[] = []
+
+  const structural = validateDocumentStructure(doc)
+  if (!structural.ok) {
+    errors.push(...structural.errors)
+  }
+
+  // Declared $type taxonomy (groups + leaves): string/boolean → INVALID_DTCG_TYPE,
+  // typography/… → UNSUPPORTED_BY_APPLICATION.
+  errors.push(...collectDeclaredTypeTaxonomyErrors(doc))
+
+  function visit(node: Json, segments: string[], inheritedType: string | undefined): void {
+    if (!isJsonObject(node)) return
+
+    const localType = typeof node.$type === 'string' ? node.$type : undefined
     const effectiveType = localType ?? inheritedType
-
     const hasValue = Object.prototype.hasOwnProperty.call(node, '$value')
+    const path = pathString(segments) || '(root)'
 
-    if (effectiveType && hasValue) {
-      tokenCount += 1
+    if (hasValue && effectiveType) {
+      // Leaf may inherit a bad group type that was already reported on the group;
+      // still report on the leaf when the leaf itself has no local $type so paths
+      // are actionable. Skip duplicate when localType was already classified above.
+      if (!localType) {
+        const classified = classifyDeclaredTokenType(effectiveType)
+        if (classified) {
+          errors.push({
+            path,
+            code: classified.code,
+            message: classified.message,
+            $type: classified.$type,
+          })
+        }
+      }
 
-      if (!SIMPLE_TYPES.has(effectiveType)) {
-        errors.push(`Unsupported $type "${effectiveType}"`)
-      } else if (effectiveType === 'number') {
-        const v = node['$value']
-        const ok = typeof v === 'number' || (typeof v === 'string' && AliasPattern.test(v))
-        if (!ok)
-          errors.push(`$value for type "number" must be a number or alias like {path.to.token}`)
-      } else if (effectiveType === 'string') {
-        const v = node['$value']
-        const ok = typeof v === 'string'
-        if (!ok) errors.push(`$value for type "string" must be a string`)
-      } else if (effectiveType === 'boolean') {
-        const v = node['$value']
-        const ok = typeof v === 'boolean' || (typeof v === 'string' && AliasPattern.test(v))
-        if (!ok)
-          errors.push(`$value for type "boolean" must be a boolean or alias like {path.to.token}`)
-      } else {
-        // color value rules are applied in validateColorSubtree via the registry
+      if (isApplicationSupportedTokenType(effectiveType) && effectiveType === 'number') {
+        const v = node.$value
+        const ok =
+          typeof v === 'number' || isCurlyBraceAlias(v) || isJsonPointerRef(v)
+        if (!ok) {
+          errors.push({
+            path,
+            code: 'INVALID_VALUE',
+            message:
+              '$value for type "number" must be a number, curly-brace alias, or JSON Pointer $ref',
+            $type: 'number',
+          })
+        }
       }
     }
 
-    for (const child of Object.values(node)) {
-      await visit(child, effectiveType)
+    for (const key of childKeys(node)) {
+      visit(node[key], [...segments, key], effectiveType)
     }
   }
 
-  await visit(doc, undefined)
-
-  if (tokenCount === 0) {
-    errors.push(
-      'Document contains no DTCG tokens (no nodes with an effective "$type" and "$value"). It is not a valid DTCG token file.',
-    )
+  if (isJsonObject(doc)) {
+    visit(doc, [], undefined)
   }
 
-  return errors.length > 0 ? { ok: false, errors } : { ok: true }
+  // Deduplicate identical path+code+message entries (group + leaf inherited).
+  const seen = new Set<string>()
+  const unique = errors.filter((e) => {
+    const key = `${e.path}|${e.code}|${e.message}`
+    if (seen.has(key)) return false
+    seen.add(key)
+    return true
+  })
+
+  return unique.length > 0 ? { ok: false, errors: unique } : { ok: true }
 }
-export type ColorValidationResult = { ok: true } | { ok: false; errors: string[] }
 
 export function validateColorSubtree(doc: Json): ColorValidationResult {
   const errors: string[] = []
@@ -72,16 +123,15 @@ export function validateColorSubtree(doc: Json): ColorValidationResult {
     inheritedType: string | undefined,
     path: (string | number)[],
   ): void => {
-    if (!isObject(node)) return
+    if (!isJsonObject(node)) return
 
-    const localType = typeof node['$type'] === 'string' ? String(node['$type']) : undefined
+    const localType = typeof node.$type === 'string' ? node.$type : undefined
     const effectiveType = localType ?? inheritedType
-
     const hasValue = Object.prototype.hasOwnProperty.call(node, '$value')
 
     if (effectiveType === 'color' && hasValue) {
       const tokenPath = path.length > 0 ? path.join('.') : '(root)'
-      const parseResult = validateColorValue(node['$value'], `${tokenPath}.$value`)
+      const parseResult = validateColorValue(node.$value, `${tokenPath}.$value`)
 
       if (!parseResult.ok) {
         for (const issue of parseResult.errors) {
@@ -101,19 +151,22 @@ export function validateColorSubtree(doc: Json): ColorValidationResult {
   return errors.length > 0 ? { ok: false, errors } : { ok: true }
 }
 
-export type CombinedValidationResult =
-  | { ok: true }
-  | { ok: false; kind: 'structural' | 'color'; errors: string[] }
-
 function formatStructuralIssue(issue: unknown): string {
   if (typeof issue === 'string') return issue
 
   if (typeof issue === 'object' && issue !== null) {
-    const maybe = issue as { path?: unknown; message?: unknown }
+    const maybe = issue as TokenValidationError & { path?: unknown; message?: unknown }
+    if (typeof maybe.code === 'string' && typeof maybe.message === 'string') {
+      return formatTokenValidationError({
+        path: typeof maybe.path === 'string' ? maybe.path : '',
+        code: maybe.code,
+        message: maybe.message,
+        $type: maybe.$type,
+      })
+    }
 
     const pathArray = Array.isArray(maybe.path) ? maybe.path : undefined
     const msg = typeof maybe.message === 'string' ? maybe.message : JSON.stringify(issue)
-
     const path = pathArray && pathArray.length > 0 ? pathArray.join('.') : ''
     return path ? `${path}: ${msg}` : msg
   }
@@ -122,7 +175,7 @@ function formatStructuralIssue(issue: unknown): string {
 }
 
 export async function validateTokensStrict(doc: Json): Promise<CombinedValidationResult> {
-  const structural = await validateDtcgDocument(doc)
+  const structural = validateDtcgDocument(doc)
   if (!structural.ok) {
     return {
       ok: false,
@@ -142,3 +195,5 @@ export async function validateTokensStrict(doc: Json): Promise<CombinedValidatio
 
   return { ok: true }
 }
+
+export { formatStructuralErrors } from './structural-validation'

@@ -249,8 +249,8 @@ describe('structural validation', () => {
   })
 })
 
-describe('declared type taxonomy collector (opt-in)', () => {
-  it('reports string/boolean and composites without being invoked by structural validation', () => {
+describe('declared type taxonomy collector', () => {
+  it('reports string/boolean and composites; structural validation stays taxonomy-free', () => {
     const doc = {
       flags: {
         on: { $type: 'boolean', $value: true },
@@ -270,7 +270,7 @@ describe('declared type taxonomy collector (opt-in)', () => {
       },
     }
 
-    // Structural pass must not reject string/boolean yet.
+    // Structural pass does not apply type taxonomy by itself.
     const structural = validateDocumentStructure(doc)
     expect(structural.ok).toBe(true)
 

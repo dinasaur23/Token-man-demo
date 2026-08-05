@@ -1,3 +1,5 @@
+import type { ApplicationSupportedTokenType } from './token-type-manifest'
+
 export type GroupNode = {
   id: string
   title: string
@@ -13,7 +15,7 @@ export type TableRow = {
   name: string
   value: string
   raw: unknown
-  type: 'color' | 'number' | 'string' | 'boolean'
+  type: ApplicationSupportedTokenType
   hex?: string
   group: string
   groupPath: string[]

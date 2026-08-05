@@ -1,10 +1,11 @@
 # DTCG Multi-Type Migration Handoff
 
-Branch: `cursor/dtcg-structural-validation-e607` (continues Stage 6 from `cursor/dtcg-effective-type-e607`)  
+Branch: `cursor/dtcg-error-taxonomy-e607` (continues Stage 7 from `cursor/dtcg-structural-validation-e607`)  
+Stage 8 PR: _(pending)_  
 Stage 7 PR: https://github.com/dinasaur23/Token-man-demo/pull/4  
 Stage 6 PR: https://github.com/dinasaur23/Token-man-demo/pull/3  
 Prior PR (Stages 1–5): https://github.com/dinasaur23/Token-man-demo/pull/2  
-Last completed stage: **Stage 7 — Structural validation (+ taxonomy helpers)**  
+Last completed stage: **Stage 8 — Error-taxonomy removal + report script**  
 Date: 2026-08-05
 
 ---
@@ -13,53 +14,43 @@ Date: 2026-08-05
 
 | Stage | Status | Summary |
 | --- | --- | --- |
-| 1. Characterization tests | Done | Lock current color convert/validate/parse/alias/display + server CSS flatten |
-| 2. Shared type manifest | Done | `shared/dtcg-basic-token-types.json` + client/server loaders + contract tests |
-| 3. Source vs resolved model | Done | `source-document.ts` / `resolved-view.ts`; persist source only |
-| 4. Color-only registry | Done | `token-types/` with Color registered; validator/CRUD wired; characterization green |
-| 5. Reference resolver | Done | Curly-brace + JSON Pointer; reject legacy `{alias}`; `$root`; cycles |
-| 6. Effective-type resolution | Done | Explicit / alias / inherited origins; `MISSING_TYPE`; `ALIAS_TYPE_MISMATCH`; chains |
-| 7. Structural validation | **Done** | `TOKEN_AND_GROUP_CONFLICT`; `$extends`/`$ref` group reject; taxonomy helpers; ref structural codes |
-| 8. Error-taxonomy removal | **Not started** | Next: apply `INVALID_DTCG_TYPE` / remove `string`/`boolean` from live allowlists; report script |
+| 1–5 | Done | Characterization, manifest, source/resolved, color registry, reference resolver |
+| 6. Effective-type | Done | Explicit / alias / inherited; `MISSING_TYPE`; `ALIAS_TYPE_MISMATCH` |
+| 7. Structural validation | Done | `TOKEN_AND_GROUP_CONFLICT`; `$extends` reject; taxonomy helpers |
+| 8. Error-taxonomy removal | **Done** | Live allowlists drop `string`/`boolean`; import gate; report-only script |
+| 9. Round-trip / color compliance / UI / exports / types | **Not started** | Follow Phase 2 incremental order |
 
 ---
 
-## Files and modules added or changed (through Stage 7)
+## Stage 8 changes
 
-### Shared
-- [`shared/dtcg-basic-token-types.json`](../shared/dtcg-basic-token-types.json)
+### Client import gate
+- [`dtcg-validator.ts`](../client/src/utils/dtcg/dtcg-validator.ts) — `validateDtcgDocument` / `validateTokensStrict` now:
+  - run Stage 7 `validateDocumentStructure`
+  - apply `collectDeclaredTypeTaxonomyErrors` (`INVALID_DTCG_TYPE` / `UNSUPPORTED_BY_APPLICATION`)
+  - accept application-supported types from the shared manifest (including `dimension`, …)
+  - keep color subtree validation; number value shape checks
+- Type unions updated: `dtcg-parser`, `token-table-types`, CRUD/grid no longer treat `string`/`boolean` as valid token types
 
-### Client — Stage 7 new
-- [`client/src/utils/dtcg/token-validation-error.ts`](../client/src/utils/dtcg/token-validation-error.ts) — taxonomy codes + public message helpers
-- [`client/src/utils/dtcg/structural-validation.ts`](../client/src/utils/dtcg/structural-validation.ts) — structural walk
-- [`client/src/utils/dtcg/__tests__/structural-validation.test.ts`](../client/src/utils/dtcg/__tests__/structural-validation.test.ts)
+### Server allowlist
+- [`TokenController.js`](../server/src/controllers/TokenController.js) uses `APPLICATION_SUPPORTED_TYPES` from shared manifest
+- Override path no longer hardcodes `$type: "string"` — preserves existing token `$type`
 
-### Client — earlier stages
-- `effective-type.ts`, `reference-resolver.ts`, `source-document.ts`, `resolved-view.ts`, `token-types/`, characterization + contract tests
+### Report-only script
+- [`server/scripts/report-unsupported-token-types.js`](../server/scripts/report-unsupported-token-types.js)
+- Helpers: [`reportUnsupportedTokenTypes.js`](../server/src/utils/dtcg/reportUnsupportedTokenTypes.js), `classifyDeclaredTokenType` in [`allowedTokenTypes.js`](../server/src/utils/dtcg/allowedTokenTypes.js)
+- Usage:
+  ```bash
+  node server/scripts/report-unsupported-token-types.js --file path/to/tokens.json
+  node server/scripts/report-unsupported-token-types.js   # requires MONGO_URI
+  cd server && npm run report:unsupported-types -- --file ../path.json
+  ```
+- Output: `{ workspaceId, fileName?, path, $type, classification, message }`
+- **`--purge` is rejected** (report-only; no destructive migration)
 
----
-
-## Stage 7: structural validation + taxonomy API
-
-### Taxonomy — [`token-validation-error.ts`](../client/src/utils/dtcg/token-validation-error.ts)
-- `TokenValidationError` / `TokenValidationErrorCode`
-- `classifyDeclaredTokenType(type)` → `INVALID_DTCG_TYPE` (string/boolean/unknown) or `UNSUPPORTED_BY_APPLICATION` (typography, …) or `null` if supported
-- Message helpers with approved Phase 2 public wording
-- `formatTokenValidationError` → `path: CODE — message`
-
-### Structural — [`structural-validation.ts`](../client/src/utils/dtcg/structural-validation.ts)
-- `validateDocumentStructure(doc)` — collect-all, fail-closed result
-- `TOKEN_AND_GROUP_CONFLICT` — `$value` + non-`$` children
-- `UNSUPPORTED_BY_APPLICATION` — group `$extends` or group-level `$ref` (no target inspection)
-- Reference one-hop checks via Stage 5 resolver: `ALIAS_TARGETS_GROUP`, `INVALID_ROOT_USAGE`, `UNRESOLVED_ALIAS`, `INVALID_POINTER`, `INVALID_VALUE` (legacy `{alias}`)
-- `EMPTY_DOCUMENT` — non-object root or no `$value` leaves
-- `collectDeclaredTypeTaxonomyErrors(doc)` — **opt-in** type taxonomy pass (not applied by structural validation yet)
-
-### Explicitly not done in Stage 7
-- Live `dtcg-validator` / CRUD allowlists still accept `string`/`boolean`
-- Structural module **not** wired into `validateTokensStrict` / import UI yet
-- No report-only migration script yet
-- No color compliance / UI / exporters / additional types
+### Characterization updates
+- `dimension` is now **accepted** by import validation (application-supported)
+- New tests reject `string` / `boolean` / `typography` with approved public wording
 
 ---
 
@@ -67,36 +58,33 @@ Date: 2026-08-05
 
 ```bash
 cd client && npm run test:unit -- --run src/utils/dtcg/__tests__/
-# Result: 7 files, 79 tests passed (2026-08-05)
+# Result: 8 files, 85 tests passed
 
 cd client && npm run type-check
 # Result: pass
 
-cd client && npm run lint -- src/utils/dtcg/structural-validation.ts src/utils/dtcg/token-validation-error.ts src/utils/dtcg/__tests__/structural-validation.test.ts
-# Result: pass
-
 cd server && npm run test:unit
-# Result: 8 tests passed
+# Result: 13 tests passed
 ```
 
 ---
 
 ## Exact next task
 
-**Stage 8 — Error-taxonomy removal (string/boolean) + report script**
+Per Phase 2 incremental order after taxonomy:
 
-1. Wire `classifyDeclaredTokenType` / taxonomy into import validation (`validateTokensStrict` or successor).
-2. Remove `string`/`boolean` from live client/server allowlists with precise `INVALID_DTCG_TYPE` messages.
-3. Add report-only migration script (`report-unsupported-token-types.js`); **no `--purge`**.
-4. Keep characterization updated for the new rejection behavior.
-5. Do **not** start color compliance, generic UI, export split, or non-color token types unless the stage brief expands.
+1. **Round-trip preservation tests** (metadata/extensions/aliases on source writes), and/or
+2. **Color compliance** (spaces, ranges, `none`, alpha, hex; hex-string → source normalize), then
+3. Generic UI + Color nav, export split, then remaining types one-by-one.
+
+Do **not** start Figma plugin refactor. Do **not** add `--purge` to the report script.
 
 ---
 
-## Deviations from the approved plan (to date)
+## Known limitations (through Stage 8)
 
-1. Plan item 7 bundled structural + taxonomy removal + report script; this stage delivered **structural + taxonomy helpers only**, leaving live string/boolean removal for Stage 8 (per Stage 6 handoff guidance).
-2. Hex-string → source normalize still deferred to color-compliance.
-3. Reference resolver / effective-type / structural modules still additive (not fully replacing `dtcg-parser` / `dtcg-validator` in the UI pipeline).
-4. Server `TokenController.ALLOWED_TOKEN_TYPES` not switched to shared manifest yet.
-5. Migration branches are stacked (`…-28cb` → `…-e607` Stage 6 → `…-e607` Stage 7); **not merged to `main`**.
+1. Effective-type / reference-resolver still not fully replacing `dtcg-parser` alias helpers in the live table path.
+2. Hex-string normalize-into-source still deferred to color-compliance.
+3. Non-color application-supported types are allowed by taxonomy but lack dedicated value validators/UI (registry still Color-only).
+4. `uploadedResolver` mode-apply still has string/boolean branches for resolving existing values (not an allowlist).
+5. Branches remain stacked; **not merged to `main`**.

@@ -160,17 +160,62 @@ describe('color characterization: validation', () => {
     }
   })
 
-  it('rejects unsupported $type values at structural validation', async () => {
+  it('accepts application-supported dimension $type at import validation', async () => {
     const doc = {
       space: {
         md: { $type: 'dimension', $value: { value: 16, unit: 'px' } },
       },
     }
     const result = await validateTokensStrict(doc)
+    expect(result).toEqual({ ok: true })
+  })
+
+  it('rejects string $type with INVALID_DTCG_TYPE wording', async () => {
+    const doc = {
+      brand: {
+        label: { $type: 'string', $value: 'hello' },
+      },
+    }
+    const result = await validateTokensStrict(doc)
     expect(result.ok).toBe(false)
     if (!result.ok) {
       expect(result.kind).toBe('structural')
-      expect(result.errors.some((e) => /dimension/i.test(e))).toBe(true)
+      expect(result.errors.some((e) => /INVALID_DTCG_TYPE/.test(e) && /string/.test(e))).toBe(
+        true,
+      )
+    }
+  })
+
+  it('rejects boolean $type with INVALID_DTCG_TYPE wording', async () => {
+    const doc = {
+      brand: {
+        flags: { isEnabled: { $type: 'boolean', $value: true } },
+      },
+    }
+    const result = await validateTokensStrict(doc)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(result.errors.some((e) => /INVALID_DTCG_TYPE/.test(e) && /boolean/.test(e))).toBe(
+        true,
+      )
+    }
+  })
+
+  it('rejects typography $type with UNSUPPORTED_BY_APPLICATION wording', async () => {
+    const doc = {
+      text: {
+        title: {
+          $type: 'typography',
+          $value: { fontFamily: 'Inter', fontSize: { value: 16, unit: 'px' } },
+        },
+      },
+    }
+    const result = await validateTokensStrict(doc)
+    expect(result.ok).toBe(false)
+    if (!result.ok) {
+      expect(
+        result.errors.some((e) => /UNSUPPORTED_BY_APPLICATION/.test(e) && /typography/.test(e)),
+      ).toBe(true)
     }
   })
 })

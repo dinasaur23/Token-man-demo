@@ -1,3 +1,6 @@
+import type { ApplicationSupportedTokenType } from './token-type-manifest'
+import { isApplicationSupportedTokenType } from './token-type-manifest'
+
 export type ColorRow = {
   name: string
   value: string
@@ -9,7 +12,7 @@ export type ColorRow = {
 type Json = unknown
 type JsonObject = Record<string, Json>
 
-export type TokenType = 'color' | 'number' | 'string' | 'boolean'
+export type TokenType = ApplicationSupportedTokenType
 
 export type ColorTokenEntry = {
   path: string
@@ -22,8 +25,7 @@ export type TokenEntry = {
   value: Json
 }
 
-const isTokenType = (t: unknown): t is TokenType =>
-  t === 'color' || t === 'number' || t === 'string' || t === 'boolean'
+const isTokenType = (t: unknown): t is TokenType => isApplicationSupportedTokenType(t)
 
 export function collectTokensWithPath(root: Json): TokenEntry[] {
   const results: TokenEntry[] = []

@@ -1,9 +1,8 @@
 /**
  * Shared DTCG validation error taxonomy (Phase 2).
  *
- * Structural Stage 7 begins wiring these codes and public messages.
- * Live allowlists still accept string/boolean until the dedicated
- * error-taxonomy / removal stage updates import paths.
+ * Stage 8 wires these codes into import validation (`validateTokensStrict`)
+ * and removes string/boolean from live allowlists.
  */
 
 import {
