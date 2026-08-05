@@ -42,9 +42,42 @@ export function getSourceNodeAtPath(
 }
 
 /**
+ * When replacing a color `$value`, keep unedited optional fields from the
+ * previous color object (e.g. `alpha` when the editor only supplied a new hex).
+ * Does not invent fields; only copies keys present on previous and absent on next.
+ */
+export function mergeColorValuePreservingOptionalFields(
+  previous: Json,
+  next: Json,
+): Json {
+  if (!isJsonObject(previous) || !isJsonObject(next)) return next
+  if (typeof next.colorSpace !== 'string' || !Array.isArray(next.components)) {
+    return next
+  }
+  if (typeof previous.colorSpace !== 'string') return next
+
+  const out: JsonObject = { ...next }
+
+  // Documented optional color fields: alpha, hex. Preserve when the edit omitted them.
+  if (!Object.prototype.hasOwnProperty.call(next, 'alpha') &&
+      Object.prototype.hasOwnProperty.call(previous, 'alpha')) {
+    out.alpha = previous.alpha
+  }
+  if (!Object.prototype.hasOwnProperty.call(next, 'hex') &&
+      Object.prototype.hasOwnProperty.call(previous, 'hex')) {
+    out.hex = previous.hex
+  }
+
+  return out
+}
+
+/**
  * Update only `$value` on an existing token leaf, preserving every other
  * property on that node ($type, $description, $extensions, $deprecated, …)
  * and leaving sibling/group structure untouched.
+ *
+ * When both previous and next `$value` are color objects, optional color
+ * fields omitted from `nextValue` are carried forward from the previous value.
  */
 export function setSourceTokenValueAtPath(
   root: SourceDocument,
@@ -81,9 +114,31 @@ export function setSourceTokenValueAtPath(
     )
   }
 
+  const mergedValue = mergeColorValuePreservingOptionalFields(leaf.$value, nextValue)
+
   // Preserve all existing leaf properties; only replace $value.
-  parent[leafKey] = { ...leaf, $value: nextValue }
+  parent[leafKey] = { ...leaf, $value: mergedValue }
   return cloned
+}
+
+/**
+ * Apply a single-token `$value` edit on one file in a source document map.
+ * Returns a new map; does not mutate `docs`. Never writes a resolved view.
+ */
+export function applySourceTokenValueEdit(
+  docs: SourceDocumentMap,
+  fileName: string,
+  pathSegments: string[],
+  nextValue: Json,
+): SourceDocumentMap {
+  const doc = docs[fileName]
+  if (doc === undefined) {
+    throw new Error(`applySourceTokenValueEdit: missing document "${fileName}"`)
+  }
+  return {
+    ...docs,
+    [fileName]: setSourceTokenValueAtPath(doc, pathSegments, nextValue),
+  }
 }
 
 /**
@@ -97,4 +152,18 @@ export function serializeSourceDocumentsForPersistence(
     name,
     content: cloneSourceDocument(content),
   }))
+}
+
+/**
+ * Rehydrate a persistence payload back into a source document map.
+ * Round-trip companion to `serializeSourceDocumentsForPersistence`.
+ */
+export function rehydrateSourceDocumentsFromPersistence(
+  files: Array<{ name: string; content: SourceDocument }>,
+): SourceDocumentMap {
+  const out: SourceDocumentMap = {}
+  for (const file of files) {
+    out[file.name] = cloneSourceDocument(file.content)
+  }
+  return out
 }

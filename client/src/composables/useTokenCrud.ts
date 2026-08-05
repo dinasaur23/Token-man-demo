@@ -16,6 +16,9 @@ import {
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
 import { createDefaultColorValue, parseColorFromEditor } from '@/utils/dtcg/token-types'
+import {
+  setSourceTokenValueAtPath,
+} from '@/utils/dtcg/source-document'
 
 type WorkspaceStore = ReturnType<typeof useTokenWorkspaceStore>
 
@@ -572,27 +575,26 @@ export function useTokenCrud({
       await persistUploadedDocsAndReload()
       return
     }
-    const beforeToken = JSON.stringify(token)
-    const beforeDoc = JSON.stringify(doc)
 
     const type = row.type
     const coerced =
       type === 'color' && typeof newValue === 'string' ? makeDtcgColorValue(newValue) : newValue
+
+    // Value-only edit: preserve $type, $description, $extensions, $deprecated, and
+    // optional color fields. Do not force $type onto inherited-type leaves.
     if (isJsonRecord(token)) {
-      const tokenRecord: JsonRecord = token
-      tokenRecord['$type'] = type
-      tokenRecord['$value'] = coerced
+      uploadedDocs.value[fileName] = setSourceTokenValueAtPath(
+        doc,
+        segments,
+        coerced,
+      ) as JsonValue
     } else {
       parent[key] = {
         $type: type,
         $value: coerced,
       }
+      uploadedDocs.value[fileName] = doc
     }
-    const afterToken = JSON.stringify(token)
-    const afterDoc = JSON.stringify(doc)
-
-    console.log('token changed?', beforeToken !== afterToken)
-    console.log('doc changed?', beforeDoc !== afterDoc)
 
     if (workspaceStore.overrides[row.path] !== undefined) {
       const copy = { ...workspaceStore.overrides }
@@ -601,7 +603,6 @@ export function useTokenCrud({
       await workspaceStore.saveToServer()
     }
 
-    uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
 
@@ -637,19 +638,25 @@ export function useTokenCrud({
 
     const { fileName, doc, token, parent, key } = found
 
+    const nextColor = makeDtcgColorValue(newHex)
+
     if (isJsonRecord(token)) {
-      const tokenRecord: JsonRecord = token
-      tokenRecord['$value'] = makeDtcgColorValue(newHex)
+      // Preserve leaf metadata and optional color fields (e.g. existing alpha).
+      uploadedDocs.value[fileName] = setSourceTokenValueAtPath(
+        doc,
+        segments,
+        nextColor,
+      ) as JsonValue
     } else {
       parent[key] = {
         $type: 'color',
-        $value: makeDtcgColorValue(newHex),
+        $value: nextColor,
       }
+      uploadedDocs.value[fileName] = doc
     }
 
     delete workspaceStore.overrides[row.path]
 
-    uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
 
@@ -1390,13 +1397,18 @@ export function useTokenCrud({
     const existing = parent[key]
 
     if (isJsonRecord(existing)) {
-      ;(existing as JsonRecord).$value = aliasValue
-      if (!(existing as JsonRecord).$type) (existing as JsonRecord).$type = row.type
+      // Alias edit updates $value only; do not strip metadata or invent $type
+      // when the leaf inherits type from a group.
+      uploadedDocs.value[fileName] = setSourceTokenValueAtPath(
+        doc,
+        row.path.split('.'),
+        aliasValue,
+      ) as JsonValue
     } else {
       parent[key] = { $type: row.type, $value: aliasValue }
+      uploadedDocs.value[fileName] = doc
     }
 
-    uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
 
@@ -1464,13 +1476,17 @@ export function useTokenCrud({
     }
 
     if (isJsonRecord(existing)) {
-      ;(existing as JsonRecord).$value = literal
-      if (!(existing as JsonRecord).$type) (existing as JsonRecord).$type = row.type
+      // Clear-alias is a $value-only edit; preserve all other leaf properties.
+      uploadedDocs.value[fileName] = setSourceTokenValueAtPath(
+        doc,
+        row.path.split('.'),
+        literal,
+      ) as JsonValue
     } else {
       parent[key] = { $type: row.type, $value: literal }
+      uploadedDocs.value[fileName] = doc
     }
 
-    uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
 
