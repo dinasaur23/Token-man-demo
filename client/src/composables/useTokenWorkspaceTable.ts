@@ -19,6 +19,7 @@ import { makeDisplayColor } from '@/utils/dtcg/color-display'
 import type { GroupNode, TableRow } from '@/utils/dtcg/token-table-types'
 import { convertHexColorsInDocument } from '@/utils/dtcg/color-conversion'
 import { pruneEmptyChildren } from '@/utils/dtcg/grouping'
+import { serializeSourceDocumentsForPersistence } from '@/utils/dtcg/source-document'
 import { useTokenCrud } from './useTokenCrud'
 import type { FigmaModifierOptions } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
@@ -243,6 +244,7 @@ export function useTokenWorkspaceTable() {
   //   console.log('ui sees errorMessage =', val)
   // })
   const activeNodeIds = ref<string[]>([])
+  // Authoritative DTCG source documents (persisted). Never replace with a resolved/derived tree.
   const uploadedDocs = ref<Record<string, JsonValue>>({})
   const detectedModifiers = ref<DetectedModifier[]>([])
   const selectedModifiers = ref<Record<string, string>>({})
@@ -680,10 +682,8 @@ export function useTokenWorkspaceTable() {
 
     try {
       performance.mark('crud-buildfiles-start')
-      workspaceStore.files = Object.entries(uploadedDocs.value).map(([name, content]) => ({
-        name,
-        content,
-      }))
+      // Persist source documents only — never a resolved/derived view.
+      workspaceStore.files = serializeSourceDocumentsForPersistence(uploadedDocs.value)
       performance.mark('crud-buildfiles-end')
       performance.measure('CRUD build files array', 'crud-buildfiles-start', 'crud-buildfiles-end')
 
@@ -1023,6 +1023,8 @@ export function useTokenWorkspaceTable() {
   }
 
   async function resolveAndPopulateFromUploadedDocs(): Promise<void> {
+    // Derive a resolved view from source. Name-override ref rewriting runs on clones only.
+    // The merged document is ephemeral display/export input and must not be written to files.
     const docs = uploadedDocs.value
     if (Object.keys(docs).length === 0) return
 
