@@ -1,6 +1,7 @@
 # DTCG Multi-Type Migration Handoff
 
-Branch: `cursor/dtcg-export-split-21a3` (continues Stage 11 from `cursor/dtcg-generic-ui-nav-cbd6`)  
+Branch: `cursor/dtcg-dimension-type-21a3` (continues Stage 12 from `cursor/dtcg-export-split-21a3`)  
+Stage 13 PR: https://github.com/dinasaur23/Token-man-demo/pull/10  
 Stage 12 PR: https://github.com/dinasaur23/Token-man-demo/pull/9  
 Stage 11 PR: https://github.com/dinasaur23/Token-man-demo/pull/8  
 Stage 10 PR: https://github.com/dinasaur23/Token-man-demo/pull/7  
@@ -9,12 +10,13 @@ Stage 8 PR: https://github.com/dinasaur23/Token-man-demo/pull/5
 Stage 7 PR: https://github.com/dinasaur23/Token-man-demo/pull/4  
 Stage 6 PR: https://github.com/dinasaur23/Token-man-demo/pull/3  
 Prior PR (Stages 1–5): https://github.com/dinasaur23/Token-man-demo/pull/2  
-Last completed stage: **Stage 12 — Export split**  
+Last completed stage: **Stage 13 — Dimension type**  
 Date: 2026-08-05
 
 Spec references:
 - Format: https://www.designtokens.org/tr/2025.10/format/
 - Color module: https://www.designtokens.org/tr/2025.10/color/
+- Dimension (§8.2): `{ value, unit: "px" | "rem" }`
 
 ---
 
@@ -29,55 +31,53 @@ Spec references:
 | 9. Round-trip preservation | Done | Metadata/extensions/aliases on source writes; source-only persist |
 | 10. Color compliance | Done | colorSpace/ranges/`none`/alpha/6-digit hex; hex-string → source normalize |
 | 11. Generic UI + Color nav | Done | `/tokens/:tokenType`; registry nav; Color-only shell; typed create |
-| 12. Export split | **Done** | Canonical source JSON vs per-platform exporters; remBasePx; structured issues |
-| 13+. Remaining types | **Not started** | dimension → number → duration → fontFamily → fontWeight → cubicBezier |
+| 12. Export split | Done | Canonical source JSON vs per-platform exporters; remBasePx; structured issues |
+| 13. Dimension type | **Done** | Registry + nav + validate/display/editor; CSS stringify; Android rem unchanged |
+| 14+. Remaining types | **Not started** | number → duration → fontFamily → fontWeight → cubicBezier |
 
 ---
 
-## Stage 12 changes
+## Stage 13 changes
 
-### Export split architecture
-- Canonical DTCG JSON serializes the **source** document (aliases, hierarchy, metadata, `$extensions`, group `$type` as authored; no color flatten; no invented leaf `$type`)
-- CSS / Tailwind / Swift / Android exporters consume the **resolved** view via `preparePlatformExport(platform, doc, options)`
-- Shared `normalizeDtcgForCss` is no longer used by live export (kept only for Stage 1 characterization)
+### Registry
+- [`token-types/dimension/index.ts`](../client/src/utils/dtcg/token-types/dimension/index.ts) — validate / default `{ value: 0, unit: "px" }` / display `16px` / parse `16px|1rem|{alias}` / `navIcon: mdi-ruler`
+- [`registry.ts`](../client/src/utils/dtcg/token-types/registry.ts) — registers `dimension` beside `color`
+- Import validation: [`dtcg-validator.ts`](../client/src/utils/dtcg/dtcg-validator.ts) — `validateRegisteredTypeSubtree` for all registered types
 
-### New modules (`server/src/utils/dtcg/exporters/`)
-- `exportResult.js` — structured `{ ok, document, warnings[], errors[] }`
-- `canonicalJson.js` — `exportCanonicalJson`
-- `preparePlatform.js` — per-platform preparers
-- `colorMapping.js` — per-platform color→hex mapping with `EXPORT_LOSSY_COLOR` / `EXPORT_UNSUPPORTED_COLOR`
-- `android/rem.js` — rem→dp requires explicit `remBasePx` (`EXPORT_REM_BASE_REQUIRED` / `EXPORT_LOSSY_REM`)
-- `walkTokens.js` — shared leaf walker
+### UI
+- Nav drawer auto-includes Dimension via registry (`/tokens/dimension`)
+- [`useTokenGridColumns.ts`](../client/src/composables/useTokenGridColumns.ts) — Value column parses dimension via registry
+- [`useTokenWorkspaceTable.ts`](../client/src/composables/useTokenWorkspaceTable.ts) — display uses `formatDimensionForDisplay`
+- [`useTokenCrud.ts`](../client/src/composables/useTokenCrud.ts) — literal/DTCG parse for dimension rows
+- Hex / Color picker columns remain color-only
 
-### Controller / UI wiring
-- [`TokenController.js`](../server/src/controllers/TokenController.js) — JSON → canonical; platforms → preparers; `remBasePx` query; platform preflight before ZIP headers; `export-report.json` in ZIP when issues exist
-- [`TokenExportDialog.vue`](../client/src/components/TokenExportDialog.vue) — Android rem base field; passes `remBasePx`
-- [`uploadedResolver.js`](../server/src/utils/dtcg/uploadedResolver.js) — mode value apply no longer special-cases `string`/`boolean` `$type`
+### Export (keeps Stage 12 boundaries)
+- [`dimensionMapping.js`](../server/src/utils/dtcg/exporters/dimensionMapping.js) — CSS/Tailwind/Swift emit `Npx`/`Nrem`
+- Android rem→dp still requires explicit `remBasePx` (`android/rem.js`)
+- Canonical JSON still preserves `{ value, unit }` objects and aliases
 
 ### Tests
-- [`export-split.test.js`](../server/src/utils/dtcg/__tests__/export-split.test.js) — canonical, platform, aliases, structured errors, Android rem
-- [`export-split.test.ts`](../client/src/utils/dtcg/__tests__/export-split.test.ts) — source serialization vs resolved view
+- [`token-type-registry.dimension.test.ts`](../client/src/utils/dtcg/__tests__/token-type-registry.dimension.test.ts)
+- Updated [`generic-ui-nav.test.ts`](../client/src/utils/dtcg/__tests__/generic-ui-nav.test.ts), color registry test, export-split CSS dimension stringify
 
 ---
 
 ## Decisions
 
-1. Canonical JSON and platform export are separate entry points; JSON is never described as “resolved.”
-2. Lossy platform mappings emit structured warnings; unsupported mappings emit errors and abort (never silent omit/convert).
-3. Android rem conversion never assumes `16`; callers must pass `remBasePx`.
-4. Each platform owns color mapping call sites (shared hex helper is incidental, not a universal `toExportPrimitive`).
-5. Dimension type UI/registry is **not** added in this stage; rem handling exists only in the Android exporter path.
+1. Allowed units are exactly `"px"` and `"rem"` (DTCG §8.2); invalid unit message matches plan wording.
+2. Create default is `{ value: 0, unit: "px" }` (unit required at zero).
+3. CSS/Tailwind/Swift stringify dimensions; Android keeps object/`remBasePx` policy from Stage 12.
+4. No shared `toExportPrimitive` — dimension mapping is per-platform like color.
 
 ---
 
-## Known limitations (through Stage 12)
+## Known limitations (through Stage 13)
 
-1. Platform exporters still leave curly-brace aliases for Style Dictionary to resolve (merged/mode-resolved view, not fully dereferenced).
-2. Color→hex for SD remains the current platform emission; alpha / non-sRGB use warnings or errors rather than full multi-space emitters.
-3. Visual editors remain sRGB-first; nav/UI shell is Color-only until later type stages.
-4. Grid columns remain color-oriented (`useTokenGridColumns`).
-5. Branches remain stacked; **not merged to `main`**.
-6. `normalizeDtcgForCss` remains for characterization only — do not rewire live export to it.
+1. Remaining basic types (number, duration, fontFamily, fontWeight, cubicBezier) are not registered.
+2. Hex/Color grid columns still appear on Dimension pages (empty for non-color rows).
+3. Platform exporters still leave curly-brace aliases for Style Dictionary.
+4. Branches remain stacked; **not merged to `main`**.
+5. Figma plugin / `--purge` / multi-colorSpace editors unchanged.
 
 ---
 
@@ -85,7 +85,7 @@ Spec references:
 
 ```bash
 cd client && npm run test:unit -- --run src/utils/dtcg/__tests__/
-# Result: 12 files, 113 tests passed
+# Result: 13 files, 120 tests passed
 
 cd client && npm run type-check
 # Result: pass
@@ -94,7 +94,7 @@ cd client && npm run lint
 # Result: pass
 
 cd server && npm run test:unit
-# Result: 25 tests passed
+# Result: 26 tests passed
 
 cd server && npm run lint
 # Result: pass
@@ -104,11 +104,11 @@ cd server && npm run lint
 
 ## Exact next task
 
-**Stage 13 — Dimension type** (first remaining basic type):
+**Stage 14 — Number type**:
 
-1. Register `dimension` in the token-type registry (validate / defaults / display / nav).
-2. Extend generic UI columns/editors for dimension values (`{ value, unit }`).
-3. Keep export split boundaries (canonical source vs platform policy); extend Android/CSS dimension mapping as needed.
-4. Focused tests for dimension validate/create/display and export interactions.
+1. Register `number` in the token-type registry (validate / defaults / display / nav).
+2. Extend generic UI value editing for JSON numbers.
+3. Keep export split boundaries; add per-platform number mapping if needed.
+4. Focused tests for number validate/create/display and export interactions.
 
-Do **not** start Figma plugin refactor. Do **not** add `--purge`. Do **not** build full multi-colorSpace visual editors. Do **not** skip ahead to number/duration/font* before dimension.
+Do **not** start Figma plugin refactor. Do **not** add `--purge`. Do **not** skip ahead to duration/font* before number.
