@@ -1,6 +1,7 @@
 # DTCG Multi-Type Migration Handoff
 
 Branch: `cursor/dtcg-effective-type-e607` (continues Stage 5 from `cursor/dtcg-basic-token-types-28cb`)  
+Stage 6 PR: https://github.com/dinasaur23/Token-man-demo/pull/3  
 Prior PR (Stages 1–5): https://github.com/dinasaur23/Token-man-demo/pull/2  
 Last completed stage: **Stage 6 — Effective-type resolution**  
 Date: 2026-08-05
