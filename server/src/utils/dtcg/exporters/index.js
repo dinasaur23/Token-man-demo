@@ -33,3 +33,11 @@ export {
   mapDurationValueForAndroid,
   isDurationValue,
 } from './durationMapping.js'
+export {
+  mapFontFamilyValueForCss,
+  mapFontFamilyValueForTailwind,
+  mapFontFamilyValueForSwift,
+  mapFontFamilyValueForAndroid,
+  fontFamilyToCssString,
+  quoteCssFontName,
+} from './fontFamilyMapping.js'

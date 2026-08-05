@@ -16,12 +16,13 @@ import {
 import { validateTokensStrict } from '../dtcg-validator'
 
 describe('token-type registry (duration)', () => {
-  it('registers duration alongside color, dimension, and number', () => {
+  it('registers duration alongside color, dimension, number, and fontFamily', () => {
     expect(getRegisteredTokenTypeIds()).toEqual([
       'color',
       'dimension',
       'number',
       'duration',
+      'fontFamily',
     ])
     expect(getTokenTypeDefinition('duration')?.label).toBe('Duration')
     expect(requireTokenTypeDefinition('duration').navIcon).toBe('mdi-timer-outline')

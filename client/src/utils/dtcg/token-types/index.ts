@@ -50,3 +50,12 @@ export {
   type DurationUnit,
   type DurationValue,
 } from './duration'
+
+export {
+  validateFontFamilyValue,
+  createDefaultFontFamilyValue,
+  formatFontFamilyForDisplay,
+  parseFontFamilyFromEditor,
+  fontFamilyTokenTypeDefinition,
+  type FontFamilyValue,
+} from './fontFamily'

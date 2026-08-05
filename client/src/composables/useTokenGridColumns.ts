@@ -6,9 +6,11 @@ import { HEX_PATTERN } from '@/utils/dtcg/color-conversion'
 import {
   formatDimensionForDisplay,
   formatDurationForDisplay,
+  formatFontFamilyForDisplay,
   formatNumberForDisplay,
   parseDimensionFromEditor,
   parseDurationFromEditor,
+  parseFontFamilyFromEditor,
   parseNumberFromEditor,
 } from '@/utils/dtcg/token-types'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
@@ -164,6 +166,19 @@ export function useTokenGridColumns(
           const display = formatDurationForDisplay(parsedDur.value)
           row.value = display.primary
           await updateTokenValueAny(row, parsedDur.value as JsonValue)
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+          return
+        }
+
+        if (row.type === 'fontFamily') {
+          const parsedFf = parseFontFamilyFromEditor(newVal)
+          if (!parsedFf.ok) {
+            revert()
+            return
+          }
+          const display = formatFontFamilyForDisplay(parsedFf.value)
+          row.value = display.primary
+          await updateTokenValueAny(row, parsedFf.value as JsonValue)
           params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
           return
         }

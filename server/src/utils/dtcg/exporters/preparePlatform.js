@@ -24,6 +24,12 @@ import {
   mapDurationValueForTailwind,
 } from './durationMapping.js'
 import {
+  mapFontFamilyValueForAndroid,
+  mapFontFamilyValueForCss,
+  mapFontFamilyValueForSwift,
+  mapFontFamilyValueForTailwind,
+} from './fontFamilyMapping.js'
+import {
   mapNumberValueForAndroid,
   mapNumberValueForCss,
   mapNumberValueForSwift,
@@ -116,6 +122,17 @@ export function preparePlatformExport(platform, resolvedDocument, options = {}) 
       if (mapped.errors.length === 0) {
         node.$value = mapped.value
       }
+      return
+    }
+
+    if (effectiveType === 'fontFamily') {
+      const mapper = fontFamilyMapperFor(platform)
+      const mapped = mapper(value, path)
+      warnings.push(...mapped.warnings)
+      errors.push(...mapped.errors)
+      if (mapped.errors.length === 0) {
+        node.$value = mapped.value
+      }
     }
   })
 
@@ -180,6 +197,20 @@ function durationMapperFor(platform) {
     case 'css':
     default:
       return mapDurationValueForCss
+  }
+}
+
+function fontFamilyMapperFor(platform) {
+  switch (platform) {
+    case 'tailwind':
+      return mapFontFamilyValueForTailwind
+    case 'swift':
+      return mapFontFamilyValueForSwift
+    case 'android':
+      return mapFontFamilyValueForAndroid
+    case 'css':
+    default:
+      return mapFontFamilyValueForCss
   }
 }
 

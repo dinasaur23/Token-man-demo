@@ -1,5 +1,5 @@
 /**
- * Stage 11/13/14/15 — Generic UI + Color/Dimension/Number/Duration nav helpers.
+ * Stage 11–16 — Generic UI + registered-type nav helpers.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -10,20 +10,22 @@ import {
 } from '../token-types'
 
 describe('generic UI nav (registry-driven)', () => {
-  it('registers Color, Dimension, Number, and Duration for UI nav', () => {
+  it('registers Color, Dimension, Number, Duration, and Font Family for UI nav', () => {
     expect(getRegisteredTokenTypeIds()).toEqual([
       'color',
       'dimension',
       'number',
       'duration',
+      'fontFamily',
     ])
     const defs = getRegisteredTokenTypeDefinitions()
-    expect(defs).toHaveLength(4)
+    expect(defs).toHaveLength(5)
     expect(defs.map((d) => d.id)).toEqual([
       'color',
       'dimension',
       'number',
       'duration',
+      'fontFamily',
     ])
     expect(defs[0]).toMatchObject({
       id: 'color',
@@ -49,6 +51,12 @@ describe('generic UI nav (registry-driven)', () => {
       navPath: 'duration',
       navIcon: 'mdi-timer-outline',
     })
+    expect(defs[4]).toMatchObject({
+      id: 'fontFamily',
+      label: 'Font Family',
+      navPath: 'fontFamily',
+      navIcon: 'mdi-format-font',
+    })
   })
 
   it('resolves /tokens/:tokenType segments via navPath', () => {
@@ -56,6 +64,7 @@ describe('generic UI nav (registry-driven)', () => {
     expect(getTokenTypeDefinitionByNavPath('dimension')?.id).toBe('dimension')
     expect(getTokenTypeDefinitionByNavPath('number')?.id).toBe('number')
     expect(getTokenTypeDefinitionByNavPath('duration')?.id).toBe('duration')
+    expect(getTokenTypeDefinitionByNavPath('fontFamily')?.id).toBe('fontFamily')
     expect(getTokenTypeDefinitionByNavPath('ColorContentPage')).toBeUndefined()
   })
 
@@ -64,7 +73,8 @@ describe('generic UI nav (registry-driven)', () => {
     expect(isRegisteredTokenType('color')).toBe(true)
     expect(isRegisteredTokenType('number')).toBe(true)
     expect(isRegisteredTokenType('duration')).toBe(true)
-    expect(isRegisteredTokenType('fontFamily')).toBe(false)
+    expect(isRegisteredTokenType('fontFamily')).toBe(true)
+    expect(isRegisteredTokenType('fontWeight')).toBe(false)
   })
 })
 
@@ -107,5 +117,15 @@ describe('generic UI type filter helper', () => {
     ]
     const filtered = rows.filter((r) => r.type === 'duration')
     expect(filtered.map((r) => r.path)).toEqual(['m.two', 'm.three'])
+  })
+
+  it('filters table rows by tokenType (Font Family shell)', () => {
+    const rows = [
+      { path: 'a.one', type: 'color' as const },
+      { path: 'f.two', type: 'fontFamily' as const },
+      { path: 'f.three', type: 'fontFamily' as const },
+    ]
+    const filtered = rows.filter((r) => r.type === 'fontFamily')
+    expect(filtered.map((r) => r.path)).toEqual(['f.two', 'f.three'])
   })
 })

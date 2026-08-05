@@ -15,7 +15,7 @@ import {
 } from '@/utils/dtcg/json-path-helpers'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
-import { parseColorFromEditor, parseDimensionFromEditor, parseDurationFromEditor, parseNumberFromEditor } from '@/utils/dtcg/token-types'
+import { parseColorFromEditor, parseDimensionFromEditor, parseDurationFromEditor, parseFontFamilyFromEditor, parseNumberFromEditor } from '@/utils/dtcg/token-types'
 import { requireTokenTypeDefinition } from '@/utils/dtcg/token-types'
 import {
   setSourceTokenValueAtPath,
@@ -178,6 +178,12 @@ function parseRowValueForDtcg(row: TableRow): JsonValue {
     return { value: 0, unit: 'ms' }
   }
 
+  if (row.type === 'fontFamily') {
+    const parsed = parseFontFamilyFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return 'sans-serif'
+  }
+
   return String(row.value ?? '')
 }
 
@@ -200,6 +206,12 @@ function parseRowLiteralValue(row: TableRow): JsonValue {
     const parsed = parseDurationFromEditor(String(row.value ?? ''))
     if (parsed.ok) return parsed.value as JsonValue
     return { value: 0, unit: 'ms' }
+  }
+
+  if (row.type === 'fontFamily') {
+    const parsed = parseFontFamilyFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return 'sans-serif'
   }
   return String(row.value ?? '')
 }

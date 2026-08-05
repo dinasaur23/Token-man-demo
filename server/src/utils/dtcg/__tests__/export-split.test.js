@@ -326,3 +326,54 @@ describe('Stage 15: duration export', () => {
     assert.equal(result.errors.some((e) => e.code === 'EXPORT_UNSUPPORTED_DIMENSION'), false)
   })
 })
+
+describe('Stage 16: fontFamily export', () => {
+  it('canonical JSON preserves fontFamily strings, arrays, and aliases', () => {
+    const doc = {
+      fonts: {
+        $type: 'fontFamily',
+        sans: { $value: ['Inter', 'Helvetica Neue', 'sans-serif'] },
+        mono: { $value: 'Roboto Mono' },
+        alias: { $value: '{fonts.sans}' },
+      },
+    }
+    const result = exportCanonicalJson(doc)
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.document.fonts.sans.$value, [
+      'Inter',
+      'Helvetica Neue',
+      'sans-serif',
+    ])
+    assert.equal(result.document.fonts.mono.$value, 'Roboto Mono')
+    assert.equal(result.document.fonts.alias.$value, '{fonts.sans}')
+  })
+
+  it('platform exporters emit CSS font-family list strings', () => {
+    const doc = {
+      fonts: {
+        $type: 'fontFamily',
+        sans: { $value: ['Inter', 'Helvetica Neue', 'sans-serif'] },
+        mono: { $value: 'Roboto Mono' },
+        alias: { $value: '{fonts.sans}' },
+      },
+    }
+    const css = prepareCssExport(doc)
+    assert.equal(css.ok, true)
+    assert.equal(css.document.fonts.sans.$value, 'Inter, "Helvetica Neue", sans-serif')
+    assert.equal(css.document.fonts.mono.$value, '"Roboto Mono"')
+    assert.equal(css.document.fonts.alias.$value, '{fonts.sans}')
+  })
+
+  it('errors on empty fontFamily arrays instead of silently converting', () => {
+    const doc = {
+      fonts: {
+        $type: 'fontFamily',
+        bad: { $value: [] },
+      },
+    }
+    const result = prepareCssExport(doc)
+    assert.equal(result.ok, false)
+    assert.ok(result.errors.some((e) => e.code === 'EXPORT_UNSUPPORTED_FONTFAMILY'))
+    assert.deepEqual(result.document.fonts.bad.$value, [])
+  })
+})

@@ -16,12 +16,13 @@ import {
 import { validateTokensStrict } from '../dtcg-validator'
 
 describe('token-type registry (number)', () => {
-  it('registers number alongside color, dimension, and duration', () => {
+  it('registers number alongside color, dimension, duration, and fontFamily', () => {
     expect(getRegisteredTokenTypeIds()).toEqual([
       'color',
       'dimension',
       'number',
       'duration',
+      'fontFamily',
     ])
     expect(getTokenTypeDefinition('number')?.label).toBe('Number')
     expect(requireTokenTypeDefinition('number').navIcon).toBe('mdi-numeric')
