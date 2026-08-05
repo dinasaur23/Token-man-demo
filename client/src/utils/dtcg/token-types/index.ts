@@ -15,4 +15,6 @@ export {
   formatColorForDisplay,
   parseColorFromEditor,
   colorTokenTypeDefinition,
+  SUPPORTED_COLOR_SPACE_IDS,
+  CANONICAL_HEX_PATTERN,
 } from './color'

@@ -17,7 +17,7 @@ import { validateTokensStrict } from '@/utils/dtcg/dtcg-validator'
 import { buildGroupTree, extractGroupPath } from '@/utils/dtcg/grouping'
 import { makeDisplayColor } from '@/utils/dtcg/color-display'
 import type { GroupNode, TableRow } from '@/utils/dtcg/token-table-types'
-import { convertHexColorsInDocument } from '@/utils/dtcg/color-conversion'
+import { normalizeHexColorsInSourceDocument } from '@/utils/dtcg/color-conversion'
 import { pruneEmptyChildren } from '@/utils/dtcg/grouping'
 import { serializeSourceDocumentsForPersistence } from '@/utils/dtcg/source-document'
 import { useTokenCrud } from './useTokenCrud'
@@ -683,7 +683,13 @@ export function useTokenWorkspaceTable() {
     try {
       performance.mark('crud-buildfiles-start')
       // Persist source documents only — never a resolved/derived view.
-      workspaceStore.files = serializeSourceDocumentsForPersistence(uploadedDocs.value)
+      // Re-normalize hex-string compat values so saves always store canonical DTCG.
+      const sourceForPersist: Record<string, JsonValue> = {}
+      for (const [name, content] of Object.entries(uploadedDocs.value)) {
+        sourceForPersist[name] = normalizeHexColorsInSourceDocument(content) as JsonValue
+      }
+      uploadedDocs.value = sourceForPersist
+      workspaceStore.files = serializeSourceDocumentsForPersistence(sourceForPersist)
       performance.mark('crud-buildfiles-end')
       performance.measure('CRUD build files array', 'crud-buildfiles-start', 'crud-buildfiles-end')
 
@@ -712,7 +718,9 @@ export function useTokenWorkspaceTable() {
   }
 
   async function populateTableFromDocument(doc: unknown): Promise<void> {
-    const convertedDoc = convertHexColorsInDocument(doc)
+    // Source docs should already be hex-normalized on import/persist. Keep an
+    // idempotent pass here so display validation still accepts legacy payloads.
+    const convertedDoc = normalizeHexColorsInSourceDocument(doc)
     const validation = await validateTokensStrict(convertedDoc)
     //console.log('dtcg validation result:', validation)
 
@@ -1137,8 +1145,11 @@ export function useTokenWorkspaceTable() {
       try {
         const text = await file.text()
         const json = JSON.parse(text) as JsonValue
-        docs[file.name] = json
-        dtoFiles.push({ name: file.name, content: json })
+        // Documented non-DTCG compat: normalize hex-string color $values into
+        // canonical DTCG objects in the authoritative source before persist.
+        const normalized = normalizeHexColorsInSourceDocument(json) as JsonValue
+        docs[file.name] = normalized
+        dtoFiles.push({ name: file.name, content: normalized })
       } catch (err) {
         console.error('Error parsing file', file.name, err)
         errorMessage.value = `File "${file.name}" is not valid JSON.`
@@ -1160,10 +1171,22 @@ export function useTokenWorkspaceTable() {
 
   async function syncFromWorkspaceStoreFiles(): Promise<void> {
     const docs: Record<string, JsonValue> = {}
+    let sourceNormalized = false
     for (const file of workspaceStore.files) {
-      docs[file.name] = file.content as JsonValue
+      const raw = file.content as JsonValue
+      const normalized = normalizeHexColorsInSourceDocument(raw) as JsonValue
+      if (JSON.stringify(normalized) !== JSON.stringify(raw)) {
+        sourceNormalized = true
+      }
+      docs[file.name] = normalized
     }
     uploadedDocs.value = docs
+
+    // Persist canonical source when legacy hex-string values were upgraded.
+    if (sourceNormalized) {
+      workspaceStore.files = serializeSourceDocumentsForPersistence(docs)
+      await workspaceStore.saveToServer()
+    }
 
     const resolverMods = extractModifiersFromDocs(docs)
     let groupModesInfo = extractGroupModesFromResolverDocs(docs)

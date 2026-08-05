@@ -3,6 +3,8 @@
  * Edits MUST mutate source nodes, then rebuild the resolved view.
  */
 
+import { normalizeHexColorsInSourceDocument } from './color-conversion'
+
 export type Json = unknown
 export type JsonObject = Record<string, Json>
 
@@ -164,6 +166,20 @@ export function rehydrateSourceDocumentsFromPersistence(
   const out: SourceDocumentMap = {}
   for (const file of files) {
     out[file.name] = cloneSourceDocument(file.content)
+  }
+  return out
+}
+
+/**
+ * Normalize documented hex-string color `$value`s into canonical DTCG objects
+ * across a source document map. Writes source only — never a resolved view.
+ */
+export function normalizeHexColorsInSourceDocumentMap(
+  docs: SourceDocumentMap,
+): SourceDocumentMap {
+  const out: SourceDocumentMap = {}
+  for (const [name, content] of Object.entries(docs)) {
+    out[name] = normalizeHexColorsInSourceDocument(content)
   }
   return out
 }

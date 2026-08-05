@@ -1,50 +1,118 @@
-import { z } from 'zod'
-import { hexToDtcgColorValue, HEX_PATTERN } from '../../color-conversion'
+import {
+  hexToDtcgColorValue,
+  COMPAT_HEX_STRING_PATTERN,
+  CANONICAL_HEX_PATTERN,
+} from '../../color-conversion'
 import { makeDisplayColor } from '../../color-display'
 import type { TokenTypeDefinition, TokenValueValidationResult } from '../types'
+import {
+  describeComponentRange,
+  getColorSpaceDefinition,
+  isComponentInRange,
+  isNoneKeyword,
+  isSupportedColorSpace,
+  SUPPORTED_COLOR_SPACE_IDS,
+} from './color-spaces'
 
 const AliasPattern = /^\{[^}]+\}$/
 
-const StrictColorObject = z
-  .object({
-    colorSpace: z.string(),
-    components: z.array(z.number()).length(3),
-    alpha: z.number().min(0).max(1).optional(),
-    hex: z
-      .string()
-      .regex(/^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i)
-      .optional(),
-  })
-  .refine((v) => v.hex !== undefined || v.components !== undefined, {
-    message: 'Color object must have hex or components',
-  })
+function isJsonObject(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
 
-const HexPattern = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
-
-const ColorValueSchema = z.union([
-  StrictColorObject,
-  z.string().regex(HexPattern, 'Expected hex color'),
-  z.string().regex(AliasPattern, 'Expected alias like {path.to.token}'),
-])
+function fail(path: string, message: string): TokenValueValidationResult {
+  return { ok: false, errors: [{ path, message }] }
+}
 
 /**
- * Color value validation matching current characterization behavior.
- * Stricter colorSpace / none / 6-digit hex rules land in the color-compliance stage.
+ * Validate a color `$value` per Design Tokens Color Module 2025.10.
+ * @see https://www.designtokens.org/tr/2025.10/color/
+ *
+ * - Canonical objects: supported colorSpace, arity, ranges, exact `"none"`,
+ *   alpha ∈ [0,1], optional 6-digit `#RRGGBB` hex only.
+ * - Curly-brace aliases: accepted.
+ * - Plain hex-string `$value`: documented non-DTCG compatibility (normalized
+ *   into source on import); accepted here so pre-normalize validation stays green.
  */
 export function validateColorValue(
   value: unknown,
   path = '$value',
 ): TokenValueValidationResult {
-  const parseResult = ColorValueSchema.safeParse(value)
-  if (parseResult.success) return { ok: true }
-
-  return {
-    ok: false,
-    errors: parseResult.error.issues.map((issue) => {
-      const issuePath = issue.path.length > 0 ? `${path}.${issue.path.join('.')}` : path
-      return { path: issuePath, message: issue.message }
-    }),
+  if (typeof value === 'string') {
+    if (AliasPattern.test(value)) return { ok: true }
+    if (COMPAT_HEX_STRING_PATTERN.test(value)) return { ok: true }
+    return fail(
+      path,
+      'INVALID_VALUE — Expected a DTCG color object, a curly-brace alias, or a documented hex-string compatibility value.',
+    )
   }
+
+  if (!isJsonObject(value)) {
+    return fail(path, 'INVALID_VALUE — Color value must be an object, alias string, or hex string.')
+  }
+
+  const colorSpace = value.colorSpace
+  if (typeof colorSpace !== 'string') {
+    return fail(`${path}.colorSpace`, 'INVALID_VALUE — "colorSpace" is required and must be a string.')
+  }
+  if (!isSupportedColorSpace(colorSpace)) {
+    return fail(
+      `${path}.colorSpace`,
+      `INVALID_VALUE — Unknown colorSpace "${colorSpace}". Supported: ${SUPPORTED_COLOR_SPACE_IDS.join(', ')}.`,
+    )
+  }
+
+  const space = getColorSpaceDefinition(colorSpace)!
+  const components = value.components
+  if (!Array.isArray(components)) {
+    return fail(`${path}.components`, 'INVALID_VALUE — "components" is required and must be an array.')
+  }
+  if (components.length !== space.componentCount) {
+    return fail(
+      `${path}.components`,
+      `INVALID_VALUE — colorSpace "${colorSpace}" requires ${space.componentCount} components; got ${components.length}.`,
+    )
+  }
+
+  for (let i = 0; i < components.length; i++) {
+    const component = components[i]
+    const range = space.components[i]!
+    const componentPath = `${path}.components.${i}`
+
+    if (isNoneKeyword(component)) continue
+
+    if (typeof component !== 'number') {
+      return fail(
+        componentPath,
+        'INVALID_VALUE — Each component must be a number or the exact keyword "none".',
+      )
+    }
+    if (!isComponentInRange(component, range)) {
+      return fail(
+        componentPath,
+        `INVALID_VALUE — Component out of range for "${colorSpace}" (expected ${describeComponentRange(range)}).`,
+      )
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(value, 'alpha')) {
+    const alpha = value.alpha
+    if (typeof alpha !== 'number' || !Number.isFinite(alpha) || alpha < 0 || alpha > 1) {
+      return fail(`${path}.alpha`, 'INVALID_VALUE — "alpha" must be a number in [0, 1].')
+    }
+  }
+
+  if (Object.prototype.hasOwnProperty.call(value, 'hex')) {
+    const hex = value.hex
+    if (typeof hex !== 'string' || !CANONICAL_HEX_PATTERN.test(hex)) {
+      return fail(
+        `${path}.hex`,
+        'INVALID_VALUE — Optional "hex" must be a 6-digit CSS hex color (#RRGGBB).',
+      )
+    }
+  }
+
+  return { ok: true }
 }
 
 export function createDefaultColorValue(): unknown {
@@ -63,7 +131,7 @@ export function parseColorFromEditor(
   if (AliasPattern.test(trimmed)) {
     return { ok: true, value: trimmed }
   }
-  if (!HEX_PATTERN.test(trimmed)) {
+  if (!COMPAT_HEX_STRING_PATTERN.test(trimmed)) {
     return { ok: false, message: 'Expected a hex color or {alias} reference' }
   }
   try {
@@ -85,3 +153,15 @@ export const colorTokenTypeDefinition: TokenTypeDefinition = {
   formatForDisplay: formatColorForDisplay,
   parseFromEditor: parseColorFromEditor,
 }
+
+export {
+  CANONICAL_HEX_PATTERN,
+  COMPAT_HEX_STRING_PATTERN,
+} from '../../color-conversion'
+
+export {
+  SUPPORTED_COLOR_SPACE_IDS,
+  SUPPORTED_COLOR_SPACES,
+  getColorSpaceDefinition,
+  isSupportedColorSpace,
+} from './color-spaces'
