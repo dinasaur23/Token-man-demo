@@ -14,7 +14,7 @@ import {
   type TokenEntry,
 } from '@/utils/dtcg/dtcg-parser'
 import { validateTokensStrict } from '@/utils/dtcg/dtcg-validator'
-import { buildGroupTree, extractGroupPath } from '@/utils/dtcg/grouping'
+import { buildGroupTree, extractGroupPath, pruneEmptyChildren, applyGroupNameOverrides } from '@/utils/dtcg/grouping'
 import { makeDisplayColor } from '@/utils/dtcg/color-display'
 import {
   formatCubicBezierForDisplay,
@@ -27,7 +27,6 @@ import {
 } from '@/utils/dtcg/token-types'
 import type { GroupNode, TableRow } from '@/utils/dtcg/token-table-types'
 import { normalizeHexColorsInSourceDocument } from '@/utils/dtcg/color-conversion'
-import { pruneEmptyChildren } from '@/utils/dtcg/grouping'
 import { serializeSourceDocumentsForPersistence } from '@/utils/dtcg/source-document'
 import { useTokenCrud } from './useTokenCrud'
 import type { FigmaModifierOptions } from '@/stores/TokenWorkspace'
@@ -364,27 +363,7 @@ export function useTokenWorkspaceTable() {
   const groupTreeItems = computed<GroupNode[]>(() => {
     const base = pruneEmptyChildren(buildGroupTree(rows.value))
     const overrides = workspaceStore.groupNameOverrides ?? {}
-
-    function applyOverrides(nodes: GroupNode[]): GroupNode[] {
-      return nodes.map((node) => {
-        const overriddenTitle = overrides[node.id] ?? node.title
-
-        if (node.children && node.children.length > 0) {
-          return {
-            id: node.id,
-            title: overriddenTitle,
-            children: applyOverrides(node.children),
-          }
-        }
-
-        return {
-          id: node.id,
-          title: overriddenTitle,
-        }
-      })
-    }
-
-    return applyOverrides(base)
+    return applyGroupNameOverrides(base, overrides)
   })
 
   watch(

@@ -43,7 +43,21 @@
       </v-alert>
     </v-col>
   </v-row>
-  <v-row v-show="rows.length" class="mt-4 ml-4">
+
+  <v-row v-if="showTypeEmptyState" class="mt-4 ml-4 mr-4">
+    <v-col cols="12">
+      <v-alert type="info" variant="tonal">
+        <div class="font-weight-medium mb-1">No {{ tokenTypeLabel }} tokens</div>
+        <div>
+          This workspace has no tokens of type
+          <code>{{ tokenType }}</code>. Switch token type in the navigation, or import a
+          document that includes {{ tokenTypeLabel }} tokens.
+        </div>
+      </v-alert>
+    </v-col>
+  </v-row>
+
+  <v-row v-show="rowsOfSelectedType.length" class="mt-4 ml-4">
     <v-col cols="12" md="3">
       <div style="overflow-y: auto">
         <div class="mb-2">
@@ -280,7 +294,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, toRef } from 'vue'
+import { ref, watch, toRef, computed } from 'vue'
 import type { GridApi, GridReadyEvent } from 'ag-grid-community'
 import { AgGridVue } from 'ag-grid-vue3'
 import { themeQuartz } from 'ag-grid-community'
@@ -288,7 +302,7 @@ import TokenExportDialog from './TokenExportDialog.vue'
 import { useTokenGridColumns } from '@/composables/useTokenGridColumns'
 import { useTokenTableComponent } from '@/composables/useTokenTableComponent'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
-import type { TokenTypeId } from '@/utils/dtcg/token-types'
+import { getTokenTypeDefinition, type TokenTypeId } from '@/utils/dtcg/token-types'
 
 const props = withDefaults(
   defineProps<{
@@ -302,6 +316,7 @@ const myTheme = themeQuartz.withParams({ accentColor: 'red' })
 const gridTheme = ref(myTheme)
 
 const {
+  tokenType,
   files,
   rows,
   errorMessage,
@@ -310,6 +325,8 @@ const {
   uiSelectedModifiers,
   groupTreeItems,
   filteredRows,
+  rowsOfSelectedType,
+  showTypeEmptyState,
   groupScopedModifierName,
   modeOptionsForActiveGroup,
   visibleModifiers,
@@ -360,6 +377,10 @@ const {
   confirmRenameGroup,
   cancelRenameGroup,
 } = useTokenTableComponent(toRef(props, 'tokenType'))
+
+const tokenTypeLabel = computed(
+  () => getTokenTypeDefinition(tokenType.value)?.label ?? tokenType.value,
+)
 
 const gridApi = ref<GridApi | null>(null)
 

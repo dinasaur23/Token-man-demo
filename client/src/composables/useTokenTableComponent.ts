@@ -1,14 +1,20 @@
-import { ref, computed, type Ref } from 'vue'
+import { ref, computed, watch, type Ref } from 'vue'
 import { type GridApi, type GridReadyEvent } from 'ag-grid-community'
 import { useTokenWorkspaceTable } from './useTokenWorkspaceTable'
 import { useTokenGridContextMenu } from './useTokenGridContextMenu'
 import type { TableRow, GroupNode } from '@/utils/dtcg/token-table-types'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import type { TokenTypeId } from '@/utils/dtcg/token-types'
+import {
+  applyGroupNameOverrides,
+  buildGroupTreeForTokenType,
+  collectGroupTreeIds,
+  filterRowsByTokenType,
+} from '@/utils/dtcg/grouping'
 
 /**
  * Generic token-table shell composable.
- * Filters workspace rows to `tokenType` and passes that type into create flows.
+ * Filters workspace rows and group tree to `tokenType`.
  */
 export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId) {
   const tokenTypeRef = computed(() =>
@@ -16,6 +22,7 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
   )
 
   const files = ref<File[] | null>(null)
+  const wsStore = useTokenWorkspaceStore()
 
   const {
     rows,
@@ -23,7 +30,6 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     activeNodeIds,
     detectedModifiers,
     selectedModifiers,
-    groupTreeItems,
     filteredRows,
     groupScopedModifierName,
     modeOptionsForActiveGroup,
@@ -43,7 +49,45 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     toDisplayTokenPath,
   } = useTokenWorkspaceTable()
 
-  /** Rows for the active type page (generic shell filter). */
+  /** All workspace rows of the active type (effective type on each row). */
+  const rowsOfSelectedType = computed(() =>
+    filterRowsByTokenType(rows.value, tokenTypeRef.value),
+  )
+
+  /** True when the imported workspace has no tokens of the selected type. */
+  const showTypeEmptyState = computed(
+    () => rows.value.length > 0 && rowsOfSelectedType.value.length === 0,
+  )
+
+  /**
+   * Group tree filtered to the selected type.
+   * Ancestor paths to nested matches are preserved; unrelated groups are hidden.
+   */
+  const groupTreeItems = computed<GroupNode[]>(() => {
+    const base = buildGroupTreeForTokenType(rows.value, tokenTypeRef.value)
+    const overrides = wsStore.groupNameOverrides ?? {}
+    return applyGroupNameOverrides(base, overrides)
+  })
+
+  // Keep active selection inside the type-filtered tree when the type changes.
+  watch(
+    [tokenTypeRef, groupTreeItems],
+    () => {
+      const items = groupTreeItems.value
+      if (!items.length) {
+        if (activeNodeIds.value.length) activeNodeIds.value = []
+        return
+      }
+      const ids = collectGroupTreeIds(items)
+      const current = activeNodeIds.value[0]
+      if (!current || !ids.has(current)) {
+        activeNodeIds.value = [items[0]!.id]
+      }
+    },
+    { immediate: true },
+  )
+
+  /** Rows for the active type page within the active group. */
   const typeFilteredRows = computed(() =>
     filteredRows.value.filter((r) => r.type === tokenTypeRef.value),
   )
@@ -62,7 +106,6 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
   const newTokenName = ref('')
   const currentTokenGroupId = ref<string | null>(null)
 
-  const wsStore = useTokenWorkspaceStore()
   const editingGroupId = ref<string | null>(null)
   const editingGroupName = ref('')
 
@@ -298,6 +341,8 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     selectedModifiers,
     groupTreeItems,
     filteredRows: typeFilteredRows,
+    rowsOfSelectedType,
+    showTypeEmptyState,
     groupScopedModifierName,
     modeOptionsForActiveGroup,
     visibleModifiers,
