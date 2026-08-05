@@ -1,7 +1,7 @@
 # DTCG Multi-Type Migration Handoff
 
 Branch: `cursor/dtcg-error-taxonomy-e607` (continues Stage 7 from `cursor/dtcg-structural-validation-e607`)  
-Stage 8 PR: _(pending)_  
+Stage 8 PR: https://github.com/dinasaur23/Token-man-demo/pull/5  
 Stage 7 PR: https://github.com/dinasaur23/Token-man-demo/pull/4  
 Stage 6 PR: https://github.com/dinasaur23/Token-man-demo/pull/3  
 Prior PR (Stages 1–5): https://github.com/dinasaur23/Token-man-demo/pull/2  
