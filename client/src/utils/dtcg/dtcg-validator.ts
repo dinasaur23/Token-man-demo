@@ -1,5 +1,5 @@
-import { z } from 'zod'
 import type { Json } from './color-conversion'
+import { validateColorValue } from './token-types'
 
 type JsonObject = Record<string, Json>
 
@@ -12,6 +12,7 @@ export async function validateDtcgDocument(doc: Json): Promise<DtcgStructuralRes
   const errors: unknown[] = []
   let tokenCount = 0
   const AliasPattern = /^\{[^}]+\}$/
+  // Transitional allowlist until the error-taxonomy stage removes string/boolean.
   const SIMPLE_TYPES = new Set(['number', 'string', 'boolean', 'color'])
 
   async function visit(node: Json, inheritedType?: string): Promise<void> {
@@ -42,6 +43,7 @@ export async function validateDtcgDocument(doc: Json): Promise<DtcgStructuralRes
         if (!ok)
           errors.push(`$value for type "boolean" must be a boolean or alias like {path.to.token}`)
       } else {
+        // color value rules are applied in validateColorSubtree via the registry
       }
     }
 
@@ -60,31 +62,6 @@ export async function validateDtcgDocument(doc: Json): Promise<DtcgStructuralRes
 
   return errors.length > 0 ? { ok: false, errors } : { ok: true }
 }
-
-const AliasPattern = /^\{[^}]+\}$/
-
-const StrictColorObject = z
-  .object({
-    colorSpace: z.string(),
-    components: z.array(z.number()).length(3),
-    alpha: z.number().min(0).max(1).optional(),
-    hex: z
-      .string()
-      .regex(/^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i)
-      .optional(),
-  })
-  .refine((v) => v.hex !== undefined || v.components !== undefined, {
-    message: 'Color object must have hex or components',
-  })
-
-const HexPattern = /^#(?:[0-9a-f]{3}|[0-9a-f]{6}|[0-9a-f]{8})$/i
-
-const ColorValueSchema = z.union([
-  StrictColorObject,
-  z.string().regex(HexPattern, 'Expected hex color'),
-  z.string().regex(AliasPattern, 'Expected alias like {path.to.token}'),
-])
-
 export type ColorValidationResult = { ok: true } | { ok: false; errors: string[] }
 
 export function validateColorSubtree(doc: Json): ColorValidationResult {
@@ -103,12 +80,12 @@ export function validateColorSubtree(doc: Json): ColorValidationResult {
     const hasValue = Object.prototype.hasOwnProperty.call(node, '$value')
 
     if (effectiveType === 'color' && hasValue) {
-      const parseResult = ColorValueSchema.safeParse(node['$value'])
+      const tokenPath = path.length > 0 ? path.join('.') : '(root)'
+      const parseResult = validateColorValue(node['$value'], `${tokenPath}.$value`)
 
-      if (!parseResult.success) {
-        for (const issue of parseResult.error.issues) {
-          const fullPath = [...path, '$value', ...issue.path].join('.')
-          errors.push(`${fullPath}: ${issue.message}`)
+      if (!parseResult.ok) {
+        for (const issue of parseResult.errors) {
+          errors.push(`${issue.path}: ${issue.message}`)
         }
       }
     }

@@ -15,6 +15,7 @@ import {
 } from '@/utils/dtcg/json-path-helpers'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
+import { createDefaultColorValue, parseColorFromEditor } from '@/utils/dtcg/token-types'
 
 type WorkspaceStore = ReturnType<typeof useTokenWorkspaceStore>
 
@@ -59,6 +60,12 @@ function round(n: number, p = 6) {
   return Math.round(n * m) / m
 }
 function makeDtcgColorValue(hex = '#000000', alpha = 1): DtcgColorValue {
+  // Prefer registry defaults for the common opaque case.
+  if (alpha === 1 && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(hex)) {
+    const parsed = parseColorFromEditor(hex)
+    if (parsed.ok) return parsed.value as DtcgColorValue
+  }
+
   const [r, g, b] = hexToRgb01(hex)
 
   const out: DtcgColorValue = {
@@ -1143,7 +1150,9 @@ export function useTokenCrud({
 
     const newToken: JsonValue = {
       $type: 'color',
-      $value: makeDtcgColorValue(initialHex),
+      $value: (initialHex === '#000000'
+        ? createDefaultColorValue()
+        : makeDtcgColorValue(initialHex)) as JsonValue,
     }
 
     container[key] = newToken
