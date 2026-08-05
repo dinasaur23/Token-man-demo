@@ -23,6 +23,7 @@ describe('token-type registry (fontFamily)', () => {
       'number',
       'duration',
       'fontFamily',
+      'fontWeight',
     ])
     expect(getTokenTypeDefinition('fontFamily')?.label).toBe('Font Family')
     expect(requireTokenTypeDefinition('fontFamily').navIcon).toBe('mdi-format-font')

@@ -30,6 +30,12 @@ import {
   mapFontFamilyValueForTailwind,
 } from './fontFamilyMapping.js'
 import {
+  mapFontWeightValueForAndroid,
+  mapFontWeightValueForCss,
+  mapFontWeightValueForSwift,
+  mapFontWeightValueForTailwind,
+} from './fontWeightMapping.js'
+import {
   mapNumberValueForAndroid,
   mapNumberValueForCss,
   mapNumberValueForSwift,
@@ -133,6 +139,17 @@ export function preparePlatformExport(platform, resolvedDocument, options = {}) 
       if (mapped.errors.length === 0) {
         node.$value = mapped.value
       }
+      return
+    }
+
+    if (effectiveType === 'fontWeight') {
+      const mapper = fontWeightMapperFor(platform)
+      const mapped = mapper(value, path)
+      warnings.push(...mapped.warnings)
+      errors.push(...mapped.errors)
+      if (mapped.errors.length === 0) {
+        node.$value = mapped.value
+      }
     }
   })
 
@@ -211,6 +228,20 @@ function fontFamilyMapperFor(platform) {
     case 'css':
     default:
       return mapFontFamilyValueForCss
+  }
+}
+
+function fontWeightMapperFor(platform) {
+  switch (platform) {
+    case 'tailwind':
+      return mapFontWeightValueForTailwind
+    case 'swift':
+      return mapFontWeightValueForSwift
+    case 'android':
+      return mapFontWeightValueForAndroid
+    case 'css':
+    default:
+      return mapFontWeightValueForCss
   }
 }
 

@@ -3,6 +3,7 @@ import { colorTokenTypeDefinition } from './color'
 import { dimensionTokenTypeDefinition } from './dimension'
 import { durationTokenTypeDefinition } from './duration'
 import { fontFamilyTokenTypeDefinition } from './fontFamily'
+import { fontWeightTokenTypeDefinition } from './fontWeight'
 import { numberTokenTypeDefinition } from './number'
 import type { TokenTypeDefinition, TokenTypeId } from './types'
 
@@ -15,7 +16,8 @@ export type {
 
 /**
  * Registry of application-supported token types.
- * Registered: Color, Dimension, Number, Duration, Font Family. Others later.
+ * Registered: Color, Dimension, Number, Duration, Font Family, Font Weight.
+ * Remaining: cubicBezier.
  */
 const registeredDefinitions: Partial<Record<TokenTypeId, TokenTypeDefinition>> = {
   color: colorTokenTypeDefinition,
@@ -23,6 +25,7 @@ const registeredDefinitions: Partial<Record<TokenTypeId, TokenTypeDefinition>> =
   number: numberTokenTypeDefinition,
   duration: durationTokenTypeDefinition,
   fontFamily: fontFamilyTokenTypeDefinition,
+  fontWeight: fontWeightTokenTypeDefinition,
 }
 
 export function getRegisteredTokenTypeIds(): TokenTypeId[] {

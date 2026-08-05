@@ -20,6 +20,7 @@ import {
   formatDimensionForDisplay,
   formatDurationForDisplay,
   formatFontFamilyForDisplay,
+  formatFontWeightForDisplay,
   formatNumberForDisplay,
   getTokenTypeDefinition,
 } from '@/utils/dtcg/token-types'
@@ -917,6 +918,8 @@ export function useTokenWorkspaceTable() {
           value = formatDurationForDisplay(resolved).primary
         } else if (t.type === 'fontFamily') {
           value = formatFontFamilyForDisplay(resolved).primary
+        } else if (t.type === 'fontWeight') {
+          value = formatFontWeightForDisplay(resolved).primary
         } else if (typeof resolved === 'string') {
           value = resolved
         } else if (typeof resolved === 'number') {
@@ -999,6 +1002,8 @@ export function useTokenWorkspaceTable() {
           value = formatDurationForDisplay(resolved).primary
         } else if (a.type === 'fontFamily') {
           value = formatFontFamilyForDisplay(resolved).primary
+        } else if (a.type === 'fontWeight') {
+          value = formatFontWeightForDisplay(resolved).primary
         } else if (typeof resolved === 'string') {
           value = resolved
         } else if (typeof resolved === 'number') {

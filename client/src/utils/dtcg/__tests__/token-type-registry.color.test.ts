@@ -19,7 +19,8 @@ describe('token-type registry (color)', () => {
     expect(getTokenTypeDefinition('number')?.label).toBe('Number')
     expect(getTokenTypeDefinition('duration')?.label).toBe('Duration')
     expect(getTokenTypeDefinition('fontFamily')?.label).toBe('Font Family')
-    expect(() => requireTokenTypeDefinition('fontWeight')).toThrow(/not registered/)
+    expect(getTokenTypeDefinition('fontWeight')?.label).toBe('Font Weight')
+    expect(() => requireTokenTypeDefinition('cubicBezier')).toThrow(/not registered/)
   })
 
   it('createDefaultColorValue returns a canonical srgb object', () => {

@@ -1,5 +1,5 @@
 /**
- * Stage 11–16 — Generic UI + registered-type nav helpers.
+ * Stage 11–17 — Generic UI + registered-type nav helpers.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -9,47 +9,26 @@ import {
   isRegisteredTokenType,
 } from '../token-types'
 
+const REGISTERED_IDS = [
+  'color',
+  'dimension',
+  'number',
+  'duration',
+  'fontFamily',
+  'fontWeight',
+] as const
+
 describe('generic UI nav (registry-driven)', () => {
-  it('registers Color, Dimension, Number, Duration, and Font Family for UI nav', () => {
-    expect(getRegisteredTokenTypeIds()).toEqual([
-      'color',
-      'dimension',
-      'number',
-      'duration',
-      'fontFamily',
-    ])
+  it('registers Color through Font Weight for UI nav', () => {
+    expect(getRegisteredTokenTypeIds()).toEqual([...REGISTERED_IDS])
     const defs = getRegisteredTokenTypeDefinitions()
-    expect(defs).toHaveLength(5)
-    expect(defs.map((d) => d.id)).toEqual([
-      'color',
-      'dimension',
-      'number',
-      'duration',
-      'fontFamily',
-    ])
+    expect(defs).toHaveLength(6)
+    expect(defs.map((d) => d.id)).toEqual([...REGISTERED_IDS])
     expect(defs[0]).toMatchObject({
       id: 'color',
       label: 'Color',
       navPath: 'color',
       navIcon: 'mdi-palette',
-    })
-    expect(defs[1]).toMatchObject({
-      id: 'dimension',
-      label: 'Dimension',
-      navPath: 'dimension',
-      navIcon: 'mdi-ruler',
-    })
-    expect(defs[2]).toMatchObject({
-      id: 'number',
-      label: 'Number',
-      navPath: 'number',
-      navIcon: 'mdi-numeric',
-    })
-    expect(defs[3]).toMatchObject({
-      id: 'duration',
-      label: 'Duration',
-      navPath: 'duration',
-      navIcon: 'mdi-timer-outline',
     })
     expect(defs[4]).toMatchObject({
       id: 'fontFamily',
@@ -57,24 +36,25 @@ describe('generic UI nav (registry-driven)', () => {
       navPath: 'fontFamily',
       navIcon: 'mdi-format-font',
     })
+    expect(defs[5]).toMatchObject({
+      id: 'fontWeight',
+      label: 'Font Weight',
+      navPath: 'fontWeight',
+      navIcon: 'mdi-format-bold',
+    })
   })
 
   it('resolves /tokens/:tokenType segments via navPath', () => {
     expect(getTokenTypeDefinitionByNavPath('color')?.id).toBe('color')
-    expect(getTokenTypeDefinitionByNavPath('dimension')?.id).toBe('dimension')
-    expect(getTokenTypeDefinitionByNavPath('number')?.id).toBe('number')
-    expect(getTokenTypeDefinitionByNavPath('duration')?.id).toBe('duration')
     expect(getTokenTypeDefinitionByNavPath('fontFamily')?.id).toBe('fontFamily')
+    expect(getTokenTypeDefinitionByNavPath('fontWeight')?.id).toBe('fontWeight')
     expect(getTokenTypeDefinitionByNavPath('ColorContentPage')).toBeUndefined()
   })
 
   it('exposes only registered types as navigable', () => {
-    expect(isRegisteredTokenType('dimension')).toBe(true)
-    expect(isRegisteredTokenType('color')).toBe(true)
-    expect(isRegisteredTokenType('number')).toBe(true)
-    expect(isRegisteredTokenType('duration')).toBe(true)
+    expect(isRegisteredTokenType('fontWeight')).toBe(true)
     expect(isRegisteredTokenType('fontFamily')).toBe(true)
-    expect(isRegisteredTokenType('fontWeight')).toBe(false)
+    expect(isRegisteredTokenType('cubicBezier')).toBe(false)
   })
 })
 
@@ -89,43 +69,13 @@ describe('generic UI type filter helper', () => {
     expect(filtered.map((r) => r.path)).toEqual(['a.one', 'a.three'])
   })
 
-  it('filters table rows by tokenType (Dimension shell)', () => {
+  it('filters table rows by tokenType (Font Weight shell)', () => {
     const rows = [
       { path: 'a.one', type: 'color' as const },
-      { path: 'b.two', type: 'dimension' as const },
-      { path: 'b.three', type: 'dimension' as const },
+      { path: 'w.two', type: 'fontWeight' as const },
+      { path: 'w.three', type: 'fontWeight' as const },
     ]
-    const filtered = rows.filter((r) => r.type === 'dimension')
-    expect(filtered.map((r) => r.path)).toEqual(['b.two', 'b.three'])
-  })
-
-  it('filters table rows by tokenType (Number shell)', () => {
-    const rows = [
-      { path: 'a.one', type: 'color' as const },
-      { path: 'n.two', type: 'number' as const },
-      { path: 'n.three', type: 'number' as const },
-    ]
-    const filtered = rows.filter((r) => r.type === 'number')
-    expect(filtered.map((r) => r.path)).toEqual(['n.two', 'n.three'])
-  })
-
-  it('filters table rows by tokenType (Duration shell)', () => {
-    const rows = [
-      { path: 'a.one', type: 'color' as const },
-      { path: 'm.two', type: 'duration' as const },
-      { path: 'm.three', type: 'duration' as const },
-    ]
-    const filtered = rows.filter((r) => r.type === 'duration')
-    expect(filtered.map((r) => r.path)).toEqual(['m.two', 'm.three'])
-  })
-
-  it('filters table rows by tokenType (Font Family shell)', () => {
-    const rows = [
-      { path: 'a.one', type: 'color' as const },
-      { path: 'f.two', type: 'fontFamily' as const },
-      { path: 'f.three', type: 'fontFamily' as const },
-    ]
-    const filtered = rows.filter((r) => r.type === 'fontFamily')
-    expect(filtered.map((r) => r.path)).toEqual(['f.two', 'f.three'])
+    const filtered = rows.filter((r) => r.type === 'fontWeight')
+    expect(filtered.map((r) => r.path)).toEqual(['w.two', 'w.three'])
   })
 })

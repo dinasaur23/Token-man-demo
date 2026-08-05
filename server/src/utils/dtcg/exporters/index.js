@@ -41,3 +41,11 @@ export {
   fontFamilyToCssString,
   quoteCssFontName,
 } from './fontFamilyMapping.js'
+export {
+  mapFontWeightValueForCss,
+  mapFontWeightValueForTailwind,
+  mapFontWeightValueForSwift,
+  mapFontWeightValueForAndroid,
+  fontWeightToNumber,
+  FONT_WEIGHT_NAME_TO_NUMBER,
+} from './fontWeightMapping.js'

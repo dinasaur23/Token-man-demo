@@ -7,10 +7,12 @@ import {
   formatDimensionForDisplay,
   formatDurationForDisplay,
   formatFontFamilyForDisplay,
+  formatFontWeightForDisplay,
   formatNumberForDisplay,
   parseDimensionFromEditor,
   parseDurationFromEditor,
   parseFontFamilyFromEditor,
+  parseFontWeightFromEditor,
   parseNumberFromEditor,
 } from '@/utils/dtcg/token-types'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
@@ -179,6 +181,19 @@ export function useTokenGridColumns(
           const display = formatFontFamilyForDisplay(parsedFf.value)
           row.value = display.primary
           await updateTokenValueAny(row, parsedFf.value as JsonValue)
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+          return
+        }
+
+        if (row.type === 'fontWeight') {
+          const parsedFw = parseFontWeightFromEditor(newVal)
+          if (!parsedFw.ok) {
+            revert()
+            return
+          }
+          const display = formatFontWeightForDisplay(parsedFw.value)
+          row.value = display.primary
+          await updateTokenValueAny(row, parsedFw.value as JsonValue)
           params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
           return
         }

@@ -59,3 +59,17 @@ export {
   fontFamilyTokenTypeDefinition,
   type FontFamilyValue,
 } from './fontFamily'
+
+export {
+  validateFontWeightValue,
+  createDefaultFontWeightValue,
+  formatFontWeightForDisplay,
+  parseFontWeightFromEditor,
+  fontWeightTokenTypeDefinition,
+  FONT_WEIGHT_NAME_TO_NUMBER,
+  FONT_WEIGHT_NAMES,
+  isFontWeightName,
+  isFontWeightNumber,
+  type FontWeightName,
+  type FontWeightValue,
+} from './fontWeight'

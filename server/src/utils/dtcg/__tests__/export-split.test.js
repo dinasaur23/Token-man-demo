@@ -377,3 +377,54 @@ describe('Stage 16: fontFamily export', () => {
     assert.deepEqual(result.document.fonts.bad.$value, [])
   })
 })
+
+describe('Stage 17: fontWeight export', () => {
+  it('canonical JSON preserves numbers, named aliases, and references', () => {
+    const doc = {
+      fonts: {
+        $type: 'fontWeight',
+        regular: { $value: 400 },
+        bold: { $value: 'bold' },
+        alias: { $value: '{fonts.regular}' },
+      },
+    }
+    const result = exportCanonicalJson(doc)
+    assert.equal(result.ok, true)
+    assert.equal(result.document.fonts.regular.$value, 400)
+    assert.equal(result.document.fonts.bold.$value, 'bold')
+    assert.equal(result.document.fonts.alias.$value, '{fonts.regular}')
+  })
+
+  it('platform exporters resolve named weights to numbers', () => {
+    const doc = {
+      fonts: {
+        $type: 'fontWeight',
+        regular: { $value: 400 },
+        bold: { $value: 'bold' },
+        light: { $value: 'extra-light' },
+        alias: { $value: '{fonts.regular}' },
+      },
+    }
+    const css = prepareCssExport(doc)
+    assert.equal(css.ok, true)
+    assert.equal(css.document.fonts.regular.$value, 400)
+    assert.equal(css.document.fonts.bold.$value, 700)
+    assert.equal(css.document.fonts.light.$value, 200)
+    assert.equal(css.document.fonts.alias.$value, '{fonts.regular}')
+  })
+
+  it('errors on out-of-range or unknown fontWeight values', () => {
+    const badRange = prepareCssExport({
+      fonts: { $type: 'fontWeight', bad: { $value: 1001 } },
+    })
+    assert.equal(badRange.ok, false)
+    assert.ok(badRange.errors.some((e) => e.code === 'EXPORT_UNSUPPORTED_FONTWEIGHT'))
+
+    const badName = prepareCssExport({
+      fonts: { $type: 'fontWeight', bad: { $value: 'Bold' } },
+    })
+    assert.equal(badName.ok, false)
+    assert.ok(badName.errors.some((e) => e.code === 'EXPORT_UNSUPPORTED_FONTWEIGHT'))
+    assert.equal(badName.document.fonts.bad.$value, 'Bold')
+  })
+})
