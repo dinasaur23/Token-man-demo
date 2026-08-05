@@ -1271,7 +1271,10 @@ export function useTokenWorkspaceTable() {
     },
   })
 
-  async function addSiblingGroupForActiveGroup(newGroupName: string): Promise<void> {
+  async function addSiblingGroupForActiveGroup(
+    newGroupName: string,
+    tokenType: TableRow['type'] = 'color',
+  ): Promise<void> {
     const trimmed = newGroupName.trim()
     if (!trimmed) return
 
@@ -1279,7 +1282,7 @@ export function useTokenWorkspaceTable() {
 
     const siblingPath = activeId ? activeId.split('.') : []
 
-    await addSiblingGroupWithToken(siblingPath, trimmed)
+    await addSiblingGroupWithToken(siblingPath, trimmed, tokenType)
   }
 
   onMounted(() => {

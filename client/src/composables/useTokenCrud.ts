@@ -15,7 +15,8 @@ import {
 } from '@/utils/dtcg/json-path-helpers'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
-import { createDefaultColorValue, parseColorFromEditor } from '@/utils/dtcg/token-types'
+import { parseColorFromEditor } from '@/utils/dtcg/token-types'
+import { requireTokenTypeDefinition } from '@/utils/dtcg/token-types'
 import {
   setSourceTokenValueAtPath,
 } from '@/utils/dtcg/source-document'
@@ -1128,7 +1129,7 @@ export function useTokenCrud({
   async function addTokenToGroup(
     groupPath: string[],
     initialName = 'new-token',
-    initialHex = '#000000',
+    tokenType: TokenType = 'color',
   ): Promise<void> {
     if (groupPath.length === 0) {
       console.warn('addTokenToGroup: empty groupPath – not supported')
@@ -1143,12 +1144,11 @@ export function useTokenCrud({
 
     const { fileName, doc, container } = found
     const key = createDuplicateKey(container, initialName)
+    const typeDef = requireTokenTypeDefinition(tokenType)
 
     const newToken: JsonValue = {
-      $type: 'color',
-      $value: (initialHex === '#000000'
-        ? createDefaultColorValue()
-        : makeDtcgColorValue(initialHex)) as JsonValue,
+      $type: tokenType,
+      $value: typeDef.createDefaultValue() as JsonValue,
     }
 
     container[key] = newToken
@@ -1166,7 +1166,7 @@ export function useTokenCrud({
   async function addGroupWithToken(
     parentGroupPath: string[],
     groupName: string,
-    initialHex = '#000000',
+    tokenType: TokenType = 'color',
   ): Promise<void> {
     if (!groupName.trim()) {
       console.warn('addGroupWithToken: empty group name')
@@ -1196,10 +1196,11 @@ export function useTokenCrud({
     const groupContainer = ensurePath(doc, fullGroupPath)
 
     const tokenKey = createDuplicateKey(groupContainer, 'default')
+    const typeDef = requireTokenTypeDefinition(tokenType)
 
     groupContainer[tokenKey] = {
-      $type: 'color',
-      $value: makeDtcgColorValue(initialHex),
+      $type: tokenType,
+      $value: typeDef.createDefaultValue() as JsonValue,
     }
 
     const newPath = [...fullGroupPath, tokenKey].join('.')
@@ -1215,8 +1216,8 @@ export function useTokenCrud({
   async function addSiblingGroupWithToken(
     siblingOfGroupPath: string[],
     newGroupName: string,
+    tokenType: TokenType = 'color',
     initialTokenName = 'new-token',
-    initialHex = '#000000',
   ): Promise<void> {
     if (siblingOfGroupPath.length === 0) {
       console.warn('addSiblingGroupWithToken: empty sibling path is not supported')
@@ -1251,10 +1252,11 @@ export function useTokenCrud({
     const newGroup: JsonRecord = {}
     parentContainer[safeGroupName] = newGroup
 
+    const typeDef = requireTokenTypeDefinition(tokenType)
     const safeTokenName = createDuplicateKey(newGroup, initialTokenName)
     newGroup[safeTokenName] = {
-      $type: 'color',
-      $value: makeDtcgColorValue(initialHex),
+      $type: tokenType,
+      $value: typeDef.createDefaultValue() as JsonValue,
     }
 
     const order = ensureRowOrder(workspaceStore)

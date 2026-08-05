@@ -16,6 +16,8 @@ export type TokenTypeDefinition = {
   label: string
   /** Route segment for per-type navigation, e.g. "color". */
   navPath: string
+  /** Optional MDI icon for the nav drawer. */
+  navIcon?: string
   validateValue: (value: unknown, path?: string) => TokenValueValidationResult
   createDefaultValue: () => unknown
   formatForDisplay: (value: unknown) => { primary: string; secondary?: string }

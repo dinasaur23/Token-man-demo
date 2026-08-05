@@ -1,13 +1,14 @@
 # DTCG Multi-Type Migration Handoff
 
-Branch: `cursor/dtcg-color-compliance-cbd6` (continues Stage 9 from `cursor/dtcg-round-trip-cbd6`)  
+Branch: `cursor/dtcg-generic-ui-nav-cbd6` (continues Stage 10 from `cursor/dtcg-color-compliance-cbd6`)  
+Stage 11 PR: _(pending)_  
 Stage 10 PR: https://github.com/dinasaur23/Token-man-demo/pull/7  
 Stage 9 PR: https://github.com/dinasaur23/Token-man-demo/pull/6  
 Stage 8 PR: https://github.com/dinasaur23/Token-man-demo/pull/5  
 Stage 7 PR: https://github.com/dinasaur23/Token-man-demo/pull/4  
 Stage 6 PR: https://github.com/dinasaur23/Token-man-demo/pull/3  
 Prior PR (Stages 1–5): https://github.com/dinasaur23/Token-man-demo/pull/2  
-Last completed stage: **Stage 10 — Color compliance**  
+Last completed stage: **Stage 11 — Generic UI + Color nav**  
 Date: 2026-08-05
 
 Spec references:
@@ -25,31 +26,34 @@ Spec references:
 | 7. Structural validation | Done | `TOKEN_AND_GROUP_CONFLICT`; `$extends` reject; taxonomy helpers |
 | 8. Error-taxonomy removal | Done | Live allowlists drop `string`/`boolean`; import gate; report-only script |
 | 9. Round-trip preservation | Done | Metadata/extensions/aliases on source writes; source-only persist |
-| 10. Color compliance | **Done** | colorSpace/ranges/`none`/alpha/6-digit hex; hex-string → source normalize |
-| 11+. Generic UI / exports / types | **Not started** | Follow Phase 2 incremental order |
+| 10. Color compliance | Done | colorSpace/ranges/`none`/alpha/6-digit hex; hex-string → source normalize |
+| 11. Generic UI + Color nav | **Done** | `/tokens/:tokenType`; registry nav; Color-only shell; typed create |
+| 12+. Export split / types | **Not started** | Follow Phase 2 incremental order |
 
 ---
 
-## Stage 10 changes
+## Stage 11 changes
 
-### Color Module 2025.10 validation
-- [`token-types/color/color-spaces.ts`](../client/src/utils/dtcg/token-types/color/color-spaces.ts) — supported spaces + component ranges from the Color module table
-- [`token-types/color/index.ts`](../client/src/utils/dtcg/token-types/color/index.ts) — `validateColorValue`:
-  - allowlisted `colorSpace` (unknown → `INVALID_VALUE`)
-  - component arity (3) and per-space ranges
-  - exact `"none"` keyword preserved/accepted
-  - `alpha` ∈ `[0, 1]`
-  - optional `hex` is **6-digit `#RRGGBB` only** on canonical objects
-  - plain hex-string `$value` still accepted as documented non-DTCG compat (pre-normalize)
+### Routes
+- [`routes.ts`](../client/src/router/routes.ts) — `/tokens/:tokenType` → `TokenTypeContentPage`; `/ColorContentPage` redirects to `/tokens/color`
+- Unknown nav segments fall back to `color`
 
-### Hex-string → source normalize
-- [`color-conversion.ts`](../client/src/utils/dtcg/color-conversion.ts) — `normalizeHexColorsInSourceDocument` (canonical sRGB object with 6-digit hex)
-- [`source-document.ts`](../client/src/utils/dtcg/source-document.ts) — `normalizeHexColorsInSourceDocumentMap`
-- [`useTokenWorkspaceTable.ts`](../client/src/composables/useTokenWorkspaceTable.ts) — normalize on file import, sync-from-store, and persist; resolved view never written back
+### Generic UI shell
+- [`TokenTypeContentPage.vue`](../client/src/pages/TokenTypeContentPage.vue) — route-param type page
+- [`TokenTableComponent.vue`](../client/src/components/TokenTableComponent.vue) + [`useTokenTableComponent.ts`](../client/src/composables/useTokenTableComponent.ts) — `tokenType` prop; filter `row.type === tokenType`; create flows pass type from nav
+- Color hex/picker columns stay in [`useTokenGridColumns.ts`](../client/src/composables/useTokenGridColumns.ts)
+- Thin aliases: `ColorContentPage.vue`, `ColorTableComponent.vue`, `useColorTableComponent.ts`
+
+### Registry-driven nav
+- [`NavdrawerComponent.vue`](../client/src/components/NavdrawerComponent.vue) — items from `getRegisteredTokenTypeDefinitions()` (Color only)
+- [`DefaultLayout.vue`](../client/src/layouts/DefaultLayout.vue) — drawer re-enabled
+- Registry: `navIcon`, `getRegisteredTokenTypeDefinitions`, `getTokenTypeDefinitionByNavPath`
+
+### CRUD create
+- [`useTokenCrud.ts`](../client/src/composables/useTokenCrud.ts) — `addTokenToGroup` / `addGroupWithToken` / `addSiblingGroupWithToken` take `tokenType`; defaults from `createDefaultValue()`
 
 ### Tests
-- [`color-compliance.test.ts`](../client/src/utils/dtcg/__tests__/color-compliance.test.ts) — spaces, ranges, `none`, alpha, 6-digit hex, hex→source normalize, import gate
-- Characterization + round-trip suites remain green
+- [`generic-ui-nav.test.ts`](../client/src/utils/dtcg/__tests__/generic-ui-nav.test.ts)
 
 ---
 
@@ -57,12 +61,9 @@ Spec references:
 
 ```bash
 cd client && npm run test:unit -- --run src/utils/dtcg/__tests__/
-# Result: 10 files, 107 tests passed
+# Result: 11 files, 111 tests passed
 
 cd client && npm run type-check
-# Result: pass
-
-cd client && npm run lint -- src/utils/dtcg/ src/composables/useTokenWorkspaceTable.ts
 # Result: pass
 
 cd server && npm run test:unit
@@ -73,34 +74,31 @@ cd server && npm run test:unit
 
 ## Exact next task
 
-Per Phase 2 incremental order after color compliance:
+Per Phase 2 incremental order after generic UI:
 
-1. **Generic UI + Color nav**, then
-2. Export split (canonical source JSON; per-platform exporters), then
-3. Remaining types one-by-one: dimension → number → duration → fontFamily → fontWeight → cubicBezier.
+1. **Export split** — canonical source JSON export; per-platform exporters + rem option, then
+2. Remaining types one-by-one: dimension → number → duration → fontFamily → fontWeight → cubicBezier.
 
-Do **not** start Figma plugin refactor. Do **not** add `--purge` to the report script. Do **not** build full multi-colorSpace visual editors (UI remains sRGB-first).
+Do **not** start Figma plugin refactor. Do **not** add `--purge`. Do **not** build full multi-colorSpace visual editors.
 
 ---
 
-## Files to read first (for Stage 11+)
+## Files to read first (for Stage 12+)
 
 - `docs/dtcg-migration-handoff.md`
-- `client/src/utils/dtcg/token-types/color/index.ts`
-- `client/src/utils/dtcg/token-types/registry.ts`
-- `client/src/utils/dtcg/token-types/types.ts`
+- `client/src/components/TokenExportDialog.vue`
+- `server/src/utils/dtcg/normalizeDtcgForCss.js`
+- `client/src/utils/dtcg/source-document.ts`
+- `client/src/utils/dtcg/resolved-view.ts`
 - `client/src/composables/useTokenWorkspaceTable.ts`
-- `client/src/composables/useTokenCrud.ts`
-- `client/src/composables/useTokenGridColumns.ts`
-- `client/src/utils/dtcg/__tests__/color-compliance.test.ts`
 - `shared/dtcg-basic-token-types.json`
 
 ---
 
-## Known limitations (through Stage 10)
+## Known limitations (through Stage 11)
 
 1. Effective-type / reference-resolver still not fully replacing `dtcg-parser` alias helpers in the live table path.
 2. Visual editors remain sRGB-first; non-sRGB / `"none"` tokens are preserved but limited-edit.
-3. Non-color application-supported types are allowed by taxonomy but lack dedicated value validators/UI (registry still Color-only).
-4. `uploadedResolver` mode-apply still has string/boolean branches for resolving existing values (not an allowlist).
+3. Nav/UI shell is Color-only until later type stages register additional definitions.
+4. Grid columns remain color-oriented (`useTokenGridColumns`); per-type column factories come with later types.
 5. Branches remain stacked; **not merged to `main`**.

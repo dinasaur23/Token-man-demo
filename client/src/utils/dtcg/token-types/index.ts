@@ -1,5 +1,7 @@
 export {
   getRegisteredTokenTypeIds,
+  getRegisteredTokenTypeDefinitions,
+  getTokenTypeDefinitionByNavPath,
   getTokenTypeDefinition,
   requireTokenTypeDefinition,
   isRegisteredTokenType,

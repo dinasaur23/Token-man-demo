@@ -47,7 +47,7 @@ const selectedDsId = computed<string | null>({
   set: (id: string | null) => {
     dsStore.setCurrent(id)
     if (id && route.name === 'start') {
-      router.push({ name: 'colors' }).catch(() => {})
+      router.push({ name: 'token-type', params: { tokenType: 'color' } }).catch(() => {})
     }
   },
 })

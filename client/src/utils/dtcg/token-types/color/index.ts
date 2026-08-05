@@ -148,6 +148,7 @@ export const colorTokenTypeDefinition: TokenTypeDefinition = {
   id: 'color',
   label: 'Color',
   navPath: 'color',
+  navIcon: 'mdi-palette',
   validateValue: validateColorValue,
   createDefaultValue: createDefaultColorValue,
   formatForDisplay: formatColorForDisplay,

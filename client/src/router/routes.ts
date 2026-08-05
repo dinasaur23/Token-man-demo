@@ -3,10 +3,12 @@ import AuthenticationLayout from '@/layouts/AuthenticationLayout.vue'
 import DefaultLayout from '@/layouts/DefaultLayout.vue'
 import SignupPage from '../pages/SignupPage.vue'
 import StartPage from '../pages/StartPage.vue'
-import ColorContentPage from '@/pages/ColorContentPage.vue'
+import TokenTypeContentPage from '@/pages/TokenTypeContentPage.vue'
 import EditTokenPage from '@/pages/EditTokenPage.vue'
 import LoginPage from '@/pages/LoginPage.vue'
 import HomePage from '@/pages/HomePage.vue'
+import { getTokenTypeDefinitionByNavPath } from '@/utils/dtcg/token-types'
+
 const API_URL = import.meta.env.VITE_API_URL
 
 const router = createRouter({
@@ -27,10 +29,22 @@ const router = createRouter({
       component: DefaultLayout,
       children: [
         {
-          path: 'ColorContentPage',
-          name: 'colors',
-          component: ColorContentPage,
+          path: 'tokens/:tokenType',
+          name: 'token-type',
+          component: TokenTypeContentPage,
           meta: { requiresAuth: true },
+          beforeEnter: (to) => {
+            const segment = String(to.params.tokenType ?? '')
+            if (!getTokenTypeDefinitionByNavPath(segment)) {
+              return { name: 'token-type', params: { tokenType: 'color' } }
+            }
+            return true
+          },
+        },
+        // Bookmark / deep-link compatibility (Stage 11).
+        {
+          path: 'ColorContentPage',
+          redirect: { name: 'token-type', params: { tokenType: 'color' } },
         },
         { path: 'EditTokenPage', name: 'edit', component: EditTokenPage },
       ],

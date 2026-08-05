@@ -19,16 +19,28 @@
     <v-divider></v-divider>
 
     <v-list density="compact" nav>
-      <router-link to="/ColorContentPage">
-        <v-list-item prepend-icon="mdi mdi-palette" title="Color" value="color"></v-list-item>
+      <router-link
+        v-for="item in navItems"
+        :key="item.id"
+        :to="{ name: 'token-type', params: { tokenType: item.navPath } }"
+      >
+        <v-list-item
+          :prepend-icon="item.navIcon ?? 'mdi-circle-small'"
+          :title="item.label"
+          :value="item.navPath"
+        />
       </router-link>
     </v-list>
   </v-navigation-drawer>
 </template>
 
 <script lang="ts" setup>
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
+import { getRegisteredTokenTypeDefinitions } from '@/utils/dtcg/token-types'
 
 const drawer = ref(true)
 const rail = ref(true)
+
+/** Registry-driven nav — Color only until other types are registered. */
+const navItems = computed(() => getRegisteredTokenTypeDefinitions())
 </script>
