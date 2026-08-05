@@ -24,6 +24,20 @@
           <v-icon size="20">{{ fmt.icon }}</v-icon>
           <span style="font-size: 15px">{{ fmt.label }}</span>
         </div>
+
+        <v-text-field
+          v-if="selectedFormats.includes('android')"
+          v-model.number="remBasePx"
+          class="mt-4"
+          type="number"
+          min="1"
+          step="1"
+          label="Android rem base (px)"
+          hint="Required when any token uses rem. Converted as rem × remBasePx → dp."
+          persistent-hint
+          density="compact"
+          variant="outlined"
+        />
       </v-card-text>
 
       <v-card-actions>
@@ -33,7 +47,7 @@
           color="primary"
           variant="flat"
           :loading="loading"
-          :disabled="selectedFormats.length === 0"
+          :disabled="selectedFormats.length === 0 || androidRemInvalid"
           @click="exportNow"
         >
           Download
@@ -44,28 +58,37 @@
 </template>
 
 <script setup lang="ts">
-import { ref } from 'vue'
+import { computed, ref } from 'vue'
 import axios from 'axios'
 import { useDesignSystemStore } from '@/stores/DesignSystem'
-//import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 
 const API_URL = import.meta.env.VITE_API_URL
 type ExportFormat = 'css' | 'tailwind' | 'swift' | 'android' | 'json'
 
 const dsStore = useDesignSystemStore()
-//const wsStore = useTokenWorkspaceStore()
 
 const dialog = ref(false)
 const loading = ref(false)
+/** Explicit Android rem→dp base; never assumed by the exporter. */
+const remBasePx = ref<number | null>(null)
 
 const formats = [
   { label: 'CSS variables', value: 'css', icon: 'mdi-language-css3' },
   { label: 'Tailwind config', value: 'tailwind', icon: 'mdi-tailwind' },
   { label: 'Swift (iOS)', value: 'swift', icon: 'mdi-apple' },
   { label: 'Android', value: 'android', icon: 'mdi-android' },
-  { label: 'JSON', value: 'json', icon: 'mdi-code-json' },
+  { label: 'JSON (canonical DTCG source)', value: 'json', icon: 'mdi-code-json' },
 ]
 const selectedFormats = ref<ExportFormat[]>([])
+
+const androidRemInvalid = computed(() => {
+  if (!selectedFormats.value.includes('android')) return false
+  // Allow export without remBasePx when the workspace has no rem tokens;
+  // the server returns EXPORT_REM_BASE_REQUIRED if rem tokens exist.
+  // When the user has typed a value, it must be a positive finite number.
+  if (remBasePx.value === null) return false
+  return !(Number.isFinite(remBasePx.value) && remBasePx.value > 0)
+})
 
 function openDialog() {
   dialog.value = true
@@ -83,8 +106,18 @@ async function downloadOne(format: ExportFormat) {
 
   const url = `${API_URL}/api/tokens/export/${encodeURIComponent(designSystemId)}`
 
+  const params: Record<string, string | number> = { format, bundle: 1 }
+  if (
+    format === 'android' &&
+    typeof remBasePx.value === 'number' &&
+    Number.isFinite(remBasePx.value) &&
+    remBasePx.value > 0
+  ) {
+    params.remBasePx = remBasePx.value
+  }
+
   const res = await axios.get(url, {
-    params: { format, bundle: 1 },
+    params,
     responseType: 'blob',
     withCredentials: true,
   })

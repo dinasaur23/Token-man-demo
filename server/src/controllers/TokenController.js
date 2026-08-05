@@ -4,7 +4,10 @@ import os from "os";
 import path from "path";
 import StyleDictionary from "style-dictionary";
 import { applyOverridesToTokens } from "../utils/dtcg/applyOverrides.js";
-import { normalizeDtcgForCss } from "../utils/dtcg/normalizeDtcgForCss.js";
+import {
+  exportCanonicalJson,
+  preparePlatformExport,
+} from "../utils/dtcg/exporters/index.js";
 import { createSdConfig } from "../utils/sd/index.js";
 import {
   pruneDeletedTokens,
@@ -1086,6 +1089,21 @@ export async function exportTokens(req, res) {
 
     const format = (req.query.format || "css").toString();
     const bundle = String(req.query.bundle || "") === "1";
+    const remBasePxRaw = req.query.remBasePx;
+    const remBasePx =
+      remBasePxRaw === undefined || remBasePxRaw === null || remBasePxRaw === ""
+        ? undefined
+        : Number(remBasePxRaw);
+    const platformExportOptions = {
+      remBasePx:
+        typeof remBasePx === "number" && Number.isFinite(remBasePx)
+          ? remBasePx
+          : undefined,
+    };
+    /** @type {import('../utils/dtcg/exporters/exportResult.js').ExportIssue[]} */
+    const exportWarnings = [];
+    /** @type {import('../utils/dtcg/exporters/exportResult.js').ExportIssue[]} */
+    const exportErrors = [];
 
     if (!bundle) {
       return res.status(400).json({
@@ -1179,6 +1197,25 @@ export async function exportTokens(req, res) {
     );
     const exportedKeySet = new Set();
 
+    // Platform preflight on the resolved base view — fail with structured
+    // errors before ZIP headers when remBasePx is missing or colors are unsupported.
+    if (format !== "json") {
+      const preflight = preparePlatformExport(
+        format,
+        baseMerged,
+        platformExportOptions,
+      );
+      if (!preflight.ok) {
+        return res.status(400).json({
+          ok: false,
+          stage: "platformPreflight",
+          message: preflight.errors.map((e) => e.message).join("; "),
+          errors: preflight.errors,
+          warnings: preflight.warnings,
+        });
+      }
+    }
+
     const dsSuffix = designSystemId ? `-${designSystemId}` : "";
     const zipName = `tokens${dsSuffix}.${format}.zip`;
 
@@ -1236,9 +1273,14 @@ export async function exportTokens(req, res) {
       }
       for (const col of collectionsWithoutModes) {
         const colTree = pickCollectionTree(mergedTokens, col);
-        const jsonOut = JSON.stringify(colTree, null, 2);
+        const canonical = exportCanonicalJson(colTree);
+        exportWarnings.push(...canonical.warnings);
+        if (!canonical.ok) {
+          exportErrors.push(...canonical.errors);
+          continue;
+        }
         const entryPath = path.posix.join(col, "default", "tokens.dtcg.json");
-        archive.append(jsonOut, { name: entryPath });
+        archive.append(canonical.json, { name: entryPath });
       }
     }
 
@@ -1283,13 +1325,35 @@ export async function exportTokens(req, res) {
         );
         console.log("[exportTokens] wrote debug dump:", dumpPath);
       }
-      normalizeDtcgForCss(mergedTokens);
+
+      const preparedNoMode = preparePlatformExport(
+        format,
+        mergedTokens,
+        platformExportOptions,
+      );
+      exportWarnings.push(...preparedNoMode.warnings);
+      if (!preparedNoMode.ok) {
+        exportErrors.push(...preparedNoMode.errors);
+        const report = JSON.stringify(
+          { ok: false, warnings: exportWarnings, errors: exportErrors },
+          null,
+          2,
+        );
+        throw Object.assign(
+          new Error(
+            preparedNoMode.errors.map((e) => e.message).join("; ") ||
+              "Platform export failed",
+          ),
+          { exportReport: report, exportErrors, exportWarnings, status: 400 },
+        );
+      }
+      const platformTokensNoMode = preparedNoMode.document;
 
       const jsonFilePath = path.join(buildBaseRoot, `tokens-nomode.json`);
       fs.mkdirSync(path.dirname(jsonFilePath), { recursive: true });
       fs.writeFileSync(
         jsonFilePath,
-        JSON.stringify(mergedTokens, null, 2),
+        JSON.stringify(platformTokensNoMode, null, 2),
         "utf8",
       );
 
@@ -1315,7 +1379,7 @@ export async function exportTokens(req, res) {
       fs.mkdirSync(platformConfig.buildPath, { recursive: true });
 
       const sd = new StyleDictionary(sdConfig);
-      const missing = findMissingReferences(mergedTokens);
+      const missing = findMissingReferences(platformTokensNoMode);
       if (missing.length) {
         console.error("Missing token references (showing up to 30):");
         for (const m of missing.slice(0, 30)) {
@@ -1329,7 +1393,7 @@ export async function exportTokens(req, res) {
       }
       console.log(
         "[exportTokens] sample rewritten ref:",
-        JSON.stringify(mergedTokens).includes("{brand.")
+        JSON.stringify(platformTokensNoMode).includes("{brand.")
           ? "STILL HAS {brand.}"
           : "OK",
       );
@@ -1424,14 +1488,39 @@ export async function exportTokens(req, res) {
           exportedKeySet.add(exportKey);
 
           const colTree = pickCollectionTree(mergedTokens, col);
-          const jsonOut = JSON.stringify(colTree, null, 2);
+          const canonical = exportCanonicalJson(colTree);
+          exportWarnings.push(...canonical.warnings);
+          if (!canonical.ok) {
+            exportErrors.push(...canonical.errors);
+            continue;
+          }
           const entryPath = path.posix.join(col, vf, "tokens.dtcg.json");
-          archive.append(jsonOut, { name: entryPath });
+          archive.append(canonical.json, { name: entryPath });
         }
         continue;
       }
 
-      normalizeDtcgForCss(mergedTokens);
+      const preparedVariant = preparePlatformExport(
+        format,
+        mergedTokens,
+        platformExportOptions,
+      );
+      exportWarnings.push(...preparedVariant.warnings);
+      if (!preparedVariant.ok) {
+        exportErrors.push(...preparedVariant.errors);
+        throw Object.assign(
+          new Error(
+            preparedVariant.errors.map((e) => e.message).join("; ") ||
+              "Platform export failed",
+          ),
+          {
+            exportErrors,
+            exportWarnings,
+            status: 400,
+          },
+        );
+      }
+      mergedTokens = preparedVariant.document;
       const safeVariantKey = String(variantFolder).replace(/[\\/]/g, "__");
       const jsonFilePath = path.join(
         buildBaseRoot,
@@ -1551,6 +1640,17 @@ export async function exportTokens(req, res) {
       }
     }
 
+    if (exportWarnings.length > 0 || exportErrors.length > 0) {
+      archive.append(
+        JSON.stringify(
+          { ok: exportErrors.length === 0, warnings: exportWarnings, errors: exportErrors },
+          null,
+          2,
+        ),
+        { name: "export-report.json" },
+      );
+    }
+
     await archive.finalize();
   } catch (err) {
     console.error("exportTokens error at stage:", stage, err);
@@ -1563,10 +1663,12 @@ export async function exportTokens(req, res) {
       }
       return;
     }
-    return res.status(500).json({
+    return res.status(err?.status && Number.isInteger(err.status) ? err.status : 500).json({
       ok: false,
       stage,
       message: err instanceof Error ? err.message : "Unknown export error",
+      errors: err?.exportErrors,
+      warnings: err?.exportWarnings,
     });
   }
 }

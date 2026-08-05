@@ -155,22 +155,10 @@ function applySelectedContextsToDoc(doc, input) {
               (defaultMode ? valuesByMode[defaultMode] : undefined) ??
               (keys.length ? valuesByMode[keys[0]] : undefined);
 
-            const tokenType = obj.$type;
-
-            if (chosen !== undefined && tokenType) {
-              if (
-                (tokenType === "color" || tokenType === "string") &&
-                typeof chosen === "string"
-              ) {
-                out.$value = chosen;
-              } else if (tokenType === "number" && typeof chosen === "number") {
-                out.$value = chosen;
-              } else if (
-                tokenType === "boolean" &&
-                typeof chosen === "boolean"
-              ) {
-                out.$value = chosen;
-              }
+            // Apply the mode value without inventing or corrupting `$type`.
+            // Do not special-case legacy non-DTCG types (string/boolean).
+            if (chosen !== undefined) {
+              out.$value = chosen;
             }
           }
         }

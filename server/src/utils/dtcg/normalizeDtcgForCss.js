@@ -1,3 +1,7 @@
+/**
+ * @deprecated Live export uses per-platform preparers in `exporters/`.
+ * Kept for Stage 1 characterization tests (`color-export-characterization.test.js`).
+ */
 import { extractPrimitiveColor } from "./extractPrimitiveColor.js";
 
 export function normalizeDtcgForCss(node, path = []) {

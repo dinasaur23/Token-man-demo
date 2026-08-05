@@ -1,0 +1,17 @@
+/**
+ * Stage 12 export split — public entry points.
+ *
+ * - Canonical JSON ← source document (aliases / hierarchy / metadata intact)
+ * - Platform exporters ← resolved view + per-target policy
+ */
+
+export { exportCanonicalJson, mergeSourceDocumentsForCanonicalExport } from './canonicalJson.js'
+export {
+  preparePlatformExport,
+  prepareCssExport,
+  prepareTailwindExport,
+  prepareSwiftExport,
+  prepareAndroidExport,
+} from './preparePlatform.js'
+export { createExportIssue, createExportResult } from './exportResult.js'
+export { mapDimensionValueForAndroid } from './android/rem.js'
