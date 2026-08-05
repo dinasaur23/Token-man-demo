@@ -17,7 +17,7 @@ import {
 } from './token-validation-error'
 import { isApplicationSupportedTokenType } from './token-type-manifest'
 import { isCurlyBraceAlias, isJsonObject, isJsonPointerRef, type JsonObject } from './reference-resolver'
-import { validateColorValue } from './token-types'
+import { getTokenTypeDefinition, validateColorValue } from './token-types'
 
 export type DtcgStructuralResult =
   | { ok: true }
@@ -27,7 +27,7 @@ export type ColorValidationResult = { ok: true } | { ok: false; errors: string[]
 
 export type CombinedValidationResult =
   | { ok: true }
-  | { ok: false; kind: 'structural' | 'color'; errors: string[] }
+  | { ok: false; kind: 'structural' | 'color' | 'value'; errors: string[] }
 
 function pathString(segments: string[]): string {
   return segments.join('.')
@@ -39,8 +39,8 @@ function childKeys(node: JsonObject): string[] {
 
 /**
  * Validate token leaves for application-supported type membership and basic
- * number value shape. Color values are checked separately via
- * {@link validateColorSubtree}.
+ * number value shape. Registered type `$value`s are checked separately via
+ * {@link validateRegisteredTypeSubtree} / {@link validateColorSubtree}.
  */
 export function validateDtcgDocument(doc: Json): DtcgStructuralResult {
   const errors: TokenValidationError[] = []
@@ -151,6 +151,48 @@ export function validateColorSubtree(doc: Json): ColorValidationResult {
   return errors.length > 0 ? { ok: false, errors } : { ok: true }
 }
 
+/**
+ * Validate `$value` for every registered token type (Color, Dimension, …)
+ * using the token-type registry.
+ */
+export function validateRegisteredTypeSubtree(doc: Json): ColorValidationResult {
+  const errors: string[] = []
+
+  const visit = (
+    node: Json,
+    inheritedType: string | undefined,
+    path: (string | number)[],
+  ): void => {
+    if (!isJsonObject(node)) return
+
+    const localType = typeof node.$type === 'string' ? node.$type : undefined
+    const effectiveType = localType ?? inheritedType
+    const hasValue = Object.prototype.hasOwnProperty.call(node, '$value')
+
+    if (hasValue && typeof effectiveType === 'string') {
+      const def = getTokenTypeDefinition(effectiveType)
+      if (def) {
+        const tokenPath = path.length > 0 ? path.join('.') : '(root)'
+        const parseResult = def.validateValue(node.$value, `${tokenPath}.$value`)
+        if (!parseResult.ok) {
+          for (const issue of parseResult.errors) {
+            errors.push(`${issue.path}: ${issue.message}`)
+          }
+        }
+      }
+    }
+
+    for (const [key, value] of Object.entries(node)) {
+      if (key.startsWith('$')) continue
+      visit(value, effectiveType, [...path, key])
+    }
+  }
+
+  visit(doc, undefined, [])
+
+  return errors.length > 0 ? { ok: false, errors } : { ok: true }
+}
+
 function formatStructuralIssue(issue: unknown): string {
   if (typeof issue === 'string') return issue
 
@@ -184,12 +226,12 @@ export async function validateTokensStrict(doc: Json): Promise<CombinedValidatio
     }
   }
 
-  const color = validateColorSubtree(doc)
-  if (!color.ok) {
+  const typed = validateRegisteredTypeSubtree(doc)
+  if (!typed.ok) {
     return {
       ok: false,
-      kind: 'color',
-      errors: color.errors,
+      kind: 'value',
+      errors: typed.errors,
     }
   }
 

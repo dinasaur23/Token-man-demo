@@ -3,6 +3,10 @@ import type { ColDef, ICellRendererParams, NewValueParams } from 'ag-grid-commun
 import type { TableRow } from '@/utils/dtcg/token-table-types'
 import { srgbFromHex } from '@/utils/dtcg/color-display'
 import { HEX_PATTERN } from '@/utils/dtcg/color-conversion'
+import {
+  formatDimensionForDisplay,
+  parseDimensionFromEditor,
+} from '@/utils/dtcg/token-types'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import type { JsonValue } from '@/utils/dtcg/resolver'
 
@@ -118,6 +122,19 @@ export function useTokenGridColumns(
             return
           }
           revert()
+          return
+        }
+
+        if (row.type === 'dimension') {
+          const parsedDim = parseDimensionFromEditor(newVal)
+          if (!parsedDim.ok) {
+            revert()
+            return
+          }
+          const display = formatDimensionForDisplay(parsedDim.value)
+          row.value = display.primary
+          await updateTokenValueAny(row, parsedDim.value as JsonValue)
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
           return
         }
 

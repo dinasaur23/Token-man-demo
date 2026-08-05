@@ -20,3 +20,14 @@ export {
   SUPPORTED_COLOR_SPACE_IDS,
   CANONICAL_HEX_PATTERN,
 } from './color'
+
+export {
+  validateDimensionValue,
+  createDefaultDimensionValue,
+  formatDimensionForDisplay,
+  parseDimensionFromEditor,
+  dimensionTokenTypeDefinition,
+  DIMENSION_UNITS,
+  type DimensionUnit,
+  type DimensionValue,
+} from './dimension'

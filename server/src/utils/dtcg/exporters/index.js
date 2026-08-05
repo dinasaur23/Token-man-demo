@@ -15,3 +15,8 @@ export {
 } from './preparePlatform.js'
 export { createExportIssue, createExportResult } from './exportResult.js'
 export { mapDimensionValueForAndroid } from './android/rem.js'
+export {
+  mapDimensionValueForCss,
+  mapDimensionValueForTailwind,
+  mapDimensionValueForSwift,
+} from './dimensionMapping.js'

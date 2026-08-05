@@ -62,6 +62,8 @@ describe('Stage 12: canonical JSON export', () => {
       components: [0, 0, 0],
       hex: '#000000',
     })
+    // Dimension objects stay as authored — no CSS stringify on canonical path.
+    assert.deepEqual(doc.spacing.md.$value, { value: 1, unit: 'rem' })
   })
 
   it('does not materialize inherited group $type onto leaves that lacked it', () => {
@@ -95,6 +97,13 @@ describe('Stage 12: resolved platform export', () => {
     assert.equal(result.document.colors.black.$value, '#000000')
     assert.equal(result.document.colors.primary.$value, '{colors.black}')
     assert.ok(result.warnings.some((w) => w.code === 'EXPORT_LOSSY_COLOR'))
+  })
+
+  it('CSS exporter stringifies dimension objects as 16px / 1rem', () => {
+    const result = prepareCssExport(sourceDoc)
+    assert.equal(result.ok, true)
+    assert.equal(result.document.spacing.md.$value, '1rem')
+    assert.equal(result.document.spacing.sm.$value, '8px')
   })
 
   it('does not invent $type on inherited leaves during platform prep', () => {

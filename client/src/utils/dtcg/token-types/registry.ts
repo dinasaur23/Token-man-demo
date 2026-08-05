@@ -1,5 +1,6 @@
 import { APPLICATION_SUPPORTED_TYPES } from '../token-type-manifest'
 import { colorTokenTypeDefinition } from './color'
+import { dimensionTokenTypeDefinition } from './dimension'
 import type { TokenTypeDefinition, TokenTypeId } from './types'
 
 export type {
@@ -11,11 +12,11 @@ export type {
 
 /**
  * Registry of application-supported token types.
- * Stage: Color only is fully registered; other manifest types are reserved
- * until their implementation stages land.
+ * Registered: Color, Dimension. Other manifest types land in later stages.
  */
 const registeredDefinitions: Partial<Record<TokenTypeId, TokenTypeDefinition>> = {
   color: colorTokenTypeDefinition,
+  dimension: dimensionTokenTypeDefinition,
 }
 
 export function getRegisteredTokenTypeIds(): TokenTypeId[] {
@@ -24,7 +25,7 @@ export function getRegisteredTokenTypeIds(): TokenTypeId[] {
   )
 }
 
-/** Registered type definitions for registry-driven UI nav (Color only until later stages). */
+/** Registered type definitions for registry-driven UI nav. */
 export function getRegisteredTokenTypeDefinitions(): TokenTypeDefinition[] {
   return getRegisteredTokenTypeIds()
     .map((id) => registeredDefinitions[id])

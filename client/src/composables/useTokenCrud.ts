@@ -15,7 +15,7 @@ import {
 } from '@/utils/dtcg/json-path-helpers'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
-import { parseColorFromEditor } from '@/utils/dtcg/token-types'
+import { parseColorFromEditor, parseDimensionFromEditor } from '@/utils/dtcg/token-types'
 import { requireTokenTypeDefinition } from '@/utils/dtcg/token-types'
 import {
   setSourceTokenValueAtPath,
@@ -160,6 +160,12 @@ function parseRowValueForDtcg(row: TableRow): JsonValue {
     return makeDtcgColorValue(row.hex || '#000000')
   }
 
+  if (row.type === 'dimension') {
+    const parsed = parseDimensionFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return { value: 0, unit: 'px' }
+  }
+
   if (row.type === 'number') {
     const n = Number(row.value)
     return Number.isFinite(n) ? n : 0
@@ -170,6 +176,12 @@ function parseRowValueForDtcg(row: TableRow): JsonValue {
 
 function parseRowLiteralValue(row: TableRow): JsonValue {
   if (row.type === 'color') return makeDtcgColorValue(row.hex || '#000000')
+
+  if (row.type === 'dimension') {
+    const parsed = parseDimensionFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return { value: 0, unit: 'px' }
+  }
 
   if (row.type === 'number') {
     const n = Number(row.value)

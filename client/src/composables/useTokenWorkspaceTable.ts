@@ -16,6 +16,7 @@ import {
 import { validateTokensStrict } from '@/utils/dtcg/dtcg-validator'
 import { buildGroupTree, extractGroupPath } from '@/utils/dtcg/grouping'
 import { makeDisplayColor } from '@/utils/dtcg/color-display'
+import { formatDimensionForDisplay, getTokenTypeDefinition } from '@/utils/dtcg/token-types'
 import type { GroupNode, TableRow } from '@/utils/dtcg/token-table-types'
 import { normalizeHexColorsInSourceDocument } from '@/utils/dtcg/color-conversion'
 import { pruneEmptyChildren } from '@/utils/dtcg/grouping'
@@ -902,6 +903,8 @@ export function useTokenWorkspaceTable() {
           const display = makeDisplayColor(resolved)
           value = display.srgb
           hex = display.hex
+        } else if (t.type === 'dimension') {
+          value = formatDimensionForDisplay(resolved).primary
         } else if (typeof resolved === 'string') {
           value = resolved
         } else if (typeof resolved === 'number') {
@@ -911,10 +914,15 @@ export function useTokenWorkspaceTable() {
         } else if (resolved == null) {
           value = ''
         } else {
-          try {
-            value = JSON.stringify(resolved)
-          } catch {
-            value = String(resolved)
+          const typeDef = getTokenTypeDefinition(t.type)
+          if (typeDef) {
+            value = typeDef.formatForDisplay(resolved).primary
+          } else {
+            try {
+              value = JSON.stringify(resolved)
+            } catch {
+              value = String(resolved)
+            }
           }
         }
 
@@ -971,6 +979,8 @@ export function useTokenWorkspaceTable() {
           const display = makeDisplayColor(resolved)
           value = display.srgb
           hex = display.hex
+        } else if (a.type === 'dimension') {
+          value = formatDimensionForDisplay(resolved).primary
         } else if (typeof resolved === 'string') {
           value = resolved
         } else if (typeof resolved === 'number') {
@@ -980,10 +990,15 @@ export function useTokenWorkspaceTable() {
         } else if (resolved == null) {
           value = ''
         } else {
-          try {
-            value = JSON.stringify(resolved)
-          } catch {
-            value = String(resolved)
+          const typeDef = getTokenTypeDefinition(a.type)
+          if (typeDef) {
+            value = typeDef.formatForDisplay(resolved).primary
+          } else {
+            try {
+              value = JSON.stringify(resolved)
+            } catch {
+              value = String(resolved)
+            }
           }
         }
 

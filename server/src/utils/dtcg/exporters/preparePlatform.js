@@ -12,6 +12,11 @@ import {
   mapColorValueForSwift,
   mapColorValueForTailwind,
 } from './colorMapping.js'
+import {
+  mapDimensionValueForCss,
+  mapDimensionValueForSwift,
+  mapDimensionValueForTailwind,
+} from './dimensionMapping.js'
 import { createExportResult } from './exportResult.js'
 import { mapDimensionValueForAndroid } from './android/rem.js'
 import { cloneJson, walkTokenLeaves } from './walkTokens.js'
@@ -60,12 +65,22 @@ export function preparePlatformExport(platform, resolvedDocument, options = {}) 
       return
     }
 
-    if (platform === 'android' && (effectiveType === 'dimension' || looksLikeDimension(value))) {
-      const mapped = mapDimensionValueForAndroid(value, path, options)
-      warnings.push(...mapped.warnings)
-      errors.push(...mapped.errors)
-      if (mapped.errors.length === 0) {
-        node.$value = mapped.value
+    if (effectiveType === 'dimension' || looksLikeDimension(value)) {
+      if (platform === 'android') {
+        const mapped = mapDimensionValueForAndroid(value, path, options)
+        warnings.push(...mapped.warnings)
+        errors.push(...mapped.errors)
+        if (mapped.errors.length === 0) {
+          node.$value = mapped.value
+        }
+      } else {
+        const mapper = dimensionMapperFor(platform)
+        const mapped = mapper(value, path)
+        warnings.push(...mapped.warnings)
+        errors.push(...mapped.errors)
+        if (mapped.errors.length === 0) {
+          node.$value = mapped.value
+        }
       }
     }
   })
@@ -91,6 +106,18 @@ function colorMapperFor(platform) {
       return mapColorValueForAndroid
     default:
       return mapColorValueForCss
+  }
+}
+
+function dimensionMapperFor(platform) {
+  switch (platform) {
+    case 'tailwind':
+      return mapDimensionValueForTailwind
+    case 'swift':
+      return mapDimensionValueForSwift
+    case 'css':
+    default:
+      return mapDimensionValueForCss
   }
 }
 
