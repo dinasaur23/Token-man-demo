@@ -18,6 +18,12 @@ import {
   mapDimensionValueForTailwind,
 } from './dimensionMapping.js'
 import {
+  mapDurationValueForAndroid,
+  mapDurationValueForCss,
+  mapDurationValueForSwift,
+  mapDurationValueForTailwind,
+} from './durationMapping.js'
+import {
   mapNumberValueForAndroid,
   mapNumberValueForCss,
   mapNumberValueForSwift,
@@ -62,6 +68,17 @@ export function preparePlatformExport(platform, resolvedDocument, options = {}) 
 
     if (effectiveType === 'color' || looksLikeColorObject(value)) {
       const mapper = colorMapperFor(platform)
+      const mapped = mapper(value, path)
+      warnings.push(...mapped.warnings)
+      errors.push(...mapped.errors)
+      if (mapped.errors.length === 0) {
+        node.$value = mapped.value
+      }
+      return
+    }
+
+    if (effectiveType === 'duration' || looksLikeDuration(value)) {
+      const mapper = durationMapperFor(platform)
       const mapped = mapper(value, path)
       warnings.push(...mapped.warnings)
       errors.push(...mapped.errors)
@@ -152,6 +169,20 @@ function numberMapperFor(platform) {
   }
 }
 
+function durationMapperFor(platform) {
+  switch (platform) {
+    case 'tailwind':
+      return mapDurationValueForTailwind
+    case 'swift':
+      return mapDurationValueForSwift
+    case 'android':
+      return mapDurationValueForAndroid
+    case 'css':
+    default:
+      return mapDurationValueForCss
+  }
+}
+
 function looksLikeColorObject(value) {
   return (
     value &&
@@ -161,13 +192,25 @@ function looksLikeColorObject(value) {
   )
 }
 
+/** Dimension heuristic: only px/rem so duration {value, unit: ms|s} is not mis-routed. */
 function looksLikeDimension(value) {
   return (
     value &&
     typeof value === 'object' &&
     !Array.isArray(value) &&
     typeof value.value === 'number' &&
-    typeof value.unit === 'string'
+    (value.unit === 'px' || value.unit === 'rem')
+  )
+}
+
+/** Duration heuristic: ms/s units only. */
+function looksLikeDuration(value) {
+  return (
+    value &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    typeof value.value === 'number' &&
+    (value.unit === 'ms' || value.unit === 's')
   )
 }
 

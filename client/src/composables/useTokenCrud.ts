@@ -15,7 +15,7 @@ import {
 } from '@/utils/dtcg/json-path-helpers'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
-import { parseColorFromEditor, parseDimensionFromEditor, parseNumberFromEditor } from '@/utils/dtcg/token-types'
+import { parseColorFromEditor, parseDimensionFromEditor, parseDurationFromEditor, parseNumberFromEditor } from '@/utils/dtcg/token-types'
 import { requireTokenTypeDefinition } from '@/utils/dtcg/token-types'
 import {
   setSourceTokenValueAtPath,
@@ -172,6 +172,12 @@ function parseRowValueForDtcg(row: TableRow): JsonValue {
     return 0
   }
 
+  if (row.type === 'duration') {
+    const parsed = parseDurationFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return { value: 0, unit: 'ms' }
+  }
+
   return String(row.value ?? '')
 }
 
@@ -188,6 +194,12 @@ function parseRowLiteralValue(row: TableRow): JsonValue {
     const parsed = parseNumberFromEditor(String(row.value ?? ''))
     if (parsed.ok) return parsed.value as JsonValue
     return 0
+  }
+
+  if (row.type === 'duration') {
+    const parsed = parseDurationFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return { value: 0, unit: 'ms' }
   }
   return String(row.value ?? '')
 }

@@ -26,3 +26,10 @@ export {
   mapNumberValueForSwift,
   mapNumberValueForAndroid,
 } from './numberMapping.js'
+export {
+  mapDurationValueForCss,
+  mapDurationValueForTailwind,
+  mapDurationValueForSwift,
+  mapDurationValueForAndroid,
+  isDurationValue,
+} from './durationMapping.js'

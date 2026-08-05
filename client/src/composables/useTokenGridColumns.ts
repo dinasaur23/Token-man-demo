@@ -5,8 +5,10 @@ import { srgbFromHex } from '@/utils/dtcg/color-display'
 import { HEX_PATTERN } from '@/utils/dtcg/color-conversion'
 import {
   formatDimensionForDisplay,
+  formatDurationForDisplay,
   formatNumberForDisplay,
   parseDimensionFromEditor,
+  parseDurationFromEditor,
   parseNumberFromEditor,
 } from '@/utils/dtcg/token-types'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
@@ -149,6 +151,19 @@ export function useTokenGridColumns(
           const display = formatNumberForDisplay(parsedNum.value)
           row.value = display.primary
           await updateTokenValueAny(row, parsedNum.value as JsonValue)
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+          return
+        }
+
+        if (row.type === 'duration') {
+          const parsedDur = parseDurationFromEditor(newVal)
+          if (!parsedDur.ok) {
+            revert()
+            return
+          }
+          const display = formatDurationForDisplay(parsedDur.value)
+          row.value = display.primary
+          await updateTokenValueAny(row, parsedDur.value as JsonValue)
           params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
           return
         }

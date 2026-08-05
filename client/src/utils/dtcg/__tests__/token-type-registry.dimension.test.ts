@@ -16,8 +16,13 @@ import {
 import { validateTokensStrict } from '../dtcg-validator'
 
 describe('token-type registry (dimension)', () => {
-  it('registers dimension alongside color (and later Stage 14 number)', () => {
-    expect(getRegisteredTokenTypeIds()).toEqual(['color', 'dimension', 'number'])
+  it('registers dimension alongside color, number, and duration', () => {
+    expect(getRegisteredTokenTypeIds()).toEqual([
+      'color',
+      'dimension',
+      'number',
+      'duration',
+    ])
     expect(getTokenTypeDefinition('dimension')?.label).toBe('Dimension')
     expect(requireTokenTypeDefinition('dimension').navIcon).toBe('mdi-ruler')
     expect(getTokenTypeDefinitionByNavPath('dimension')?.id).toBe('dimension')

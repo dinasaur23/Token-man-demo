@@ -1,5 +1,5 @@
 /**
- * Stage 11/13/14 — Generic UI + Color/Dimension/Number nav helpers.
+ * Stage 11/13/14/15 — Generic UI + Color/Dimension/Number/Duration nav helpers.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -10,11 +10,21 @@ import {
 } from '../token-types'
 
 describe('generic UI nav (registry-driven)', () => {
-  it('registers Color, Dimension, and Number for UI nav', () => {
-    expect(getRegisteredTokenTypeIds()).toEqual(['color', 'dimension', 'number'])
+  it('registers Color, Dimension, Number, and Duration for UI nav', () => {
+    expect(getRegisteredTokenTypeIds()).toEqual([
+      'color',
+      'dimension',
+      'number',
+      'duration',
+    ])
     const defs = getRegisteredTokenTypeDefinitions()
-    expect(defs).toHaveLength(3)
-    expect(defs.map((d) => d.id)).toEqual(['color', 'dimension', 'number'])
+    expect(defs).toHaveLength(4)
+    expect(defs.map((d) => d.id)).toEqual([
+      'color',
+      'dimension',
+      'number',
+      'duration',
+    ])
     expect(defs[0]).toMatchObject({
       id: 'color',
       label: 'Color',
@@ -33,12 +43,19 @@ describe('generic UI nav (registry-driven)', () => {
       navPath: 'number',
       navIcon: 'mdi-numeric',
     })
+    expect(defs[3]).toMatchObject({
+      id: 'duration',
+      label: 'Duration',
+      navPath: 'duration',
+      navIcon: 'mdi-timer-outline',
+    })
   })
 
   it('resolves /tokens/:tokenType segments via navPath', () => {
     expect(getTokenTypeDefinitionByNavPath('color')?.id).toBe('color')
     expect(getTokenTypeDefinitionByNavPath('dimension')?.id).toBe('dimension')
     expect(getTokenTypeDefinitionByNavPath('number')?.id).toBe('number')
+    expect(getTokenTypeDefinitionByNavPath('duration')?.id).toBe('duration')
     expect(getTokenTypeDefinitionByNavPath('ColorContentPage')).toBeUndefined()
   })
 
@@ -46,7 +63,8 @@ describe('generic UI nav (registry-driven)', () => {
     expect(isRegisteredTokenType('dimension')).toBe(true)
     expect(isRegisteredTokenType('color')).toBe(true)
     expect(isRegisteredTokenType('number')).toBe(true)
-    expect(isRegisteredTokenType('duration')).toBe(false)
+    expect(isRegisteredTokenType('duration')).toBe(true)
+    expect(isRegisteredTokenType('fontFamily')).toBe(false)
   })
 })
 
@@ -79,5 +97,15 @@ describe('generic UI type filter helper', () => {
     ]
     const filtered = rows.filter((r) => r.type === 'number')
     expect(filtered.map((r) => r.path)).toEqual(['n.two', 'n.three'])
+  })
+
+  it('filters table rows by tokenType (Duration shell)', () => {
+    const rows = [
+      { path: 'a.one', type: 'color' as const },
+      { path: 'm.two', type: 'duration' as const },
+      { path: 'm.three', type: 'duration' as const },
+    ]
+    const filtered = rows.filter((r) => r.type === 'duration')
+    expect(filtered.map((r) => r.path)).toEqual(['m.two', 'm.three'])
   })
 })

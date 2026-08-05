@@ -264,3 +264,65 @@ describe('Stage 14: number export', () => {
     assert.ok(result.errors.some((e) => e.code === 'EXPORT_UNSUPPORTED_NUMBER'))
   })
 })
+
+describe('Stage 15: duration export', () => {
+  it('canonical JSON preserves duration objects and aliases', () => {
+    const doc = {
+      motion: {
+        $type: 'duration',
+        fast: { $value: { value: 200, unit: 'ms' } },
+        slow: { $value: '{motion.fast}' },
+      },
+    }
+    const result = exportCanonicalJson(doc)
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.document.motion.fast.$value, { value: 200, unit: 'ms' })
+    assert.equal(result.document.motion.slow.$value, '{motion.fast}')
+  })
+
+  it('platform exporters stringify duration objects as 200ms / 0.3s', () => {
+    const doc = {
+      motion: {
+        $type: 'duration',
+        fast: { $value: { value: 200, unit: 'ms' } },
+        medium: { $value: { value: 0.3, unit: 's' } },
+        alias: { $value: '{motion.fast}' },
+      },
+    }
+    const css = prepareCssExport(doc)
+    assert.equal(css.ok, true)
+    assert.equal(css.document.motion.fast.$value, '200ms')
+    assert.equal(css.document.motion.medium.$value, '0.3s')
+    assert.equal(css.document.motion.alias.$value, '{motion.fast}')
+
+    const android = preparePlatformExport('android', doc)
+    assert.equal(android.ok, true)
+    assert.equal(android.document.motion.fast.$value, '200ms')
+  })
+
+  it('errors on unsupported duration units instead of silently converting', () => {
+    const doc = {
+      motion: {
+        $type: 'duration',
+        bad: { $value: { value: 200, unit: 'sec' } },
+      },
+    }
+    const result = prepareCssExport(doc)
+    assert.equal(result.ok, false)
+    assert.ok(result.errors.some((e) => e.code === 'EXPORT_UNSUPPORTED_DURATION'))
+    assert.deepEqual(result.document.motion.bad.$value, { value: 200, unit: 'sec' })
+  })
+
+  it('does not mis-route duration values through dimension mapping', () => {
+    const doc = {
+      motion: {
+        $type: 'duration',
+        fast: { $value: { value: 150, unit: 'ms' } },
+      },
+    }
+    const result = prepareCssExport(doc)
+    assert.equal(result.ok, true)
+    assert.equal(result.document.motion.fast.$value, '150ms')
+    assert.equal(result.errors.some((e) => e.code === 'EXPORT_UNSUPPORTED_DIMENSION'), false)
+  })
+})

@@ -17,7 +17,8 @@ describe('token-type registry (color)', () => {
     expect(getTokenTypeDefinition('color')?.label).toBe('Color')
     expect(getTokenTypeDefinition('dimension')?.label).toBe('Dimension')
     expect(getTokenTypeDefinition('number')?.label).toBe('Number')
-    expect(() => requireTokenTypeDefinition('duration')).toThrow(/not registered/)
+    expect(getTokenTypeDefinition('duration')?.label).toBe('Duration')
+    expect(() => requireTokenTypeDefinition('fontFamily')).toThrow(/not registered/)
   })
 
   it('createDefaultColorValue returns a canonical srgb object', () => {

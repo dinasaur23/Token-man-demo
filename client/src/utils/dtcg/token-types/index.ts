@@ -39,3 +39,14 @@ export {
   parseNumberFromEditor,
   numberTokenTypeDefinition,
 } from './number'
+
+export {
+  validateDurationValue,
+  createDefaultDurationValue,
+  formatDurationForDisplay,
+  parseDurationFromEditor,
+  durationTokenTypeDefinition,
+  DURATION_UNITS,
+  type DurationUnit,
+  type DurationValue,
+} from './duration'

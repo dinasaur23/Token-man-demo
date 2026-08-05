@@ -18,6 +18,7 @@ import { buildGroupTree, extractGroupPath } from '@/utils/dtcg/grouping'
 import { makeDisplayColor } from '@/utils/dtcg/color-display'
 import {
   formatDimensionForDisplay,
+  formatDurationForDisplay,
   formatNumberForDisplay,
   getTokenTypeDefinition,
 } from '@/utils/dtcg/token-types'
@@ -911,6 +912,8 @@ export function useTokenWorkspaceTable() {
           value = formatDimensionForDisplay(resolved).primary
         } else if (t.type === 'number') {
           value = formatNumberForDisplay(resolved).primary
+        } else if (t.type === 'duration') {
+          value = formatDurationForDisplay(resolved).primary
         } else if (typeof resolved === 'string') {
           value = resolved
         } else if (typeof resolved === 'number') {
@@ -989,6 +992,8 @@ export function useTokenWorkspaceTable() {
           value = formatDimensionForDisplay(resolved).primary
         } else if (a.type === 'number') {
           value = formatNumberForDisplay(resolved).primary
+        } else if (a.type === 'duration') {
+          value = formatDurationForDisplay(resolved).primary
         } else if (typeof resolved === 'string') {
           value = resolved
         } else if (typeof resolved === 'number') {
