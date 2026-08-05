@@ -6,7 +6,8 @@
   "scripts": {
     "dev": "nodemon src/app.js",
     "start": "node src/app.js",
-    "lint": "eslint \"src/**/*.js\""
+    "lint": "eslint \"src/**/*.js\"",
+    "test:unit": "node --test 'src/utils/dtcg/__tests__/*.test.js'"
   },
   "keywords": [],
   "author": "",
