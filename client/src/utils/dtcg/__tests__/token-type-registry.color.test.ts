@@ -12,11 +12,12 @@ import { validateTokensStrict } from '../dtcg-validator'
 import { convertHexColorsInDocument } from '../color-conversion'
 
 describe('token-type registry (color)', () => {
-  it('registers color (dimension lands in Stage 13)', () => {
+  it('registers color (later types land in subsequent stages)', () => {
     expect(getRegisteredTokenTypeIds()).toContain('color')
     expect(getTokenTypeDefinition('color')?.label).toBe('Color')
     expect(getTokenTypeDefinition('dimension')?.label).toBe('Dimension')
-    expect(() => requireTokenTypeDefinition('number')).toThrow(/not registered/)
+    expect(getTokenTypeDefinition('number')?.label).toBe('Number')
+    expect(() => requireTokenTypeDefinition('duration')).toThrow(/not registered/)
   })
 
   it('createDefaultColorValue returns a canonical srgb object', () => {

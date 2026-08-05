@@ -17,6 +17,12 @@ import {
   mapDimensionValueForSwift,
   mapDimensionValueForTailwind,
 } from './dimensionMapping.js'
+import {
+  mapNumberValueForAndroid,
+  mapNumberValueForCss,
+  mapNumberValueForSwift,
+  mapNumberValueForTailwind,
+} from './numberMapping.js'
 import { createExportResult } from './exportResult.js'
 import { mapDimensionValueForAndroid } from './android/rem.js'
 import { cloneJson, walkTokenLeaves } from './walkTokens.js'
@@ -82,6 +88,17 @@ export function preparePlatformExport(platform, resolvedDocument, options = {}) 
           node.$value = mapped.value
         }
       }
+      return
+    }
+
+    if (effectiveType === 'number') {
+      const mapper = numberMapperFor(platform)
+      const mapped = mapper(value, path)
+      warnings.push(...mapped.warnings)
+      errors.push(...mapped.errors)
+      if (mapped.errors.length === 0) {
+        node.$value = mapped.value
+      }
     }
   })
 
@@ -118,6 +135,20 @@ function dimensionMapperFor(platform) {
     case 'css':
     default:
       return mapDimensionValueForCss
+  }
+}
+
+function numberMapperFor(platform) {
+  switch (platform) {
+    case 'tailwind':
+      return mapNumberValueForTailwind
+    case 'swift':
+      return mapNumberValueForSwift
+    case 'android':
+      return mapNumberValueForAndroid
+    case 'css':
+    default:
+      return mapNumberValueForCss
   }
 }
 

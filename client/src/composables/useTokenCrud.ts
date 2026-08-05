@@ -15,7 +15,7 @@ import {
 } from '@/utils/dtcg/json-path-helpers'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
-import { parseColorFromEditor, parseDimensionFromEditor } from '@/utils/dtcg/token-types'
+import { parseColorFromEditor, parseDimensionFromEditor, parseNumberFromEditor } from '@/utils/dtcg/token-types'
 import { requireTokenTypeDefinition } from '@/utils/dtcg/token-types'
 import {
   setSourceTokenValueAtPath,
@@ -167,8 +167,9 @@ function parseRowValueForDtcg(row: TableRow): JsonValue {
   }
 
   if (row.type === 'number') {
-    const n = Number(row.value)
-    return Number.isFinite(n) ? n : 0
+    const parsed = parseNumberFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return 0
   }
 
   return String(row.value ?? '')
@@ -184,8 +185,9 @@ function parseRowLiteralValue(row: TableRow): JsonValue {
   }
 
   if (row.type === 'number') {
-    const n = Number(row.value)
-    return Number.isFinite(n) ? n : 0
+    const parsed = parseNumberFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return 0
   }
   return String(row.value ?? '')
 }
@@ -1025,9 +1027,13 @@ export function useTokenCrud({
         const newValue: JsonValue =
           row.type === 'color'
             ? makeDtcgColorValue(defaultHex)
-            : row.type === 'number'
-              ? 0
-              : ''
+            : (() => {
+                try {
+                  return requireTokenTypeDefinition(row.type).createDefaultValue() as JsonValue
+                } catch {
+                  return ''
+                }
+              })()
 
         const newRow: ModeAddedRow = {
           path: newPath,
@@ -1076,9 +1082,13 @@ export function useTokenCrud({
       const newValue: JsonValue =
         row.type === 'color'
           ? makeDtcgColorValue(defaultHex)
-          : row.type === 'number'
-            ? 0
-            : ''
+          : (() => {
+              try {
+                return requireTokenTypeDefinition(row.type).createDefaultValue() as JsonValue
+              } catch {
+                return ''
+              }
+            })()
 
       const newRow: ModeAddedRow = {
         path: newPath,
@@ -1109,9 +1119,13 @@ export function useTokenCrud({
       $value:
         row.type === 'color'
           ? makeDtcgColorValue('#000000')
-          : row.type === 'number'
-            ? 0
-            : '',
+          : (() => {
+              try {
+                return requireTokenTypeDefinition(row.type).createDefaultValue() as JsonValue
+              } catch {
+                return ''
+              }
+            })(),
     }
 
     const clickedNode = parent[clickedKey]

@@ -5,7 +5,9 @@ import { srgbFromHex } from '@/utils/dtcg/color-display'
 import { HEX_PATTERN } from '@/utils/dtcg/color-conversion'
 import {
   formatDimensionForDisplay,
+  formatNumberForDisplay,
   parseDimensionFromEditor,
+  parseNumberFromEditor,
 } from '@/utils/dtcg/token-types'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import type { JsonValue } from '@/utils/dtcg/resolver'
@@ -138,17 +140,21 @@ export function useTokenGridColumns(
           return
         }
 
-        let parsed: JsonValue
-
         if (row.type === 'number') {
-          const n = Number(newVal)
-          if (!Number.isFinite(n)) return revert()
-          parsed = n
-          row.value = String(n)
-        } else {
-          parsed = newVal
-          row.value = newVal
+          const parsedNum = parseNumberFromEditor(newVal)
+          if (!parsedNum.ok) {
+            revert()
+            return
+          }
+          const display = formatNumberForDisplay(parsedNum.value)
+          row.value = display.primary
+          await updateTokenValueAny(row, parsedNum.value as JsonValue)
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+          return
         }
+
+        const parsed: JsonValue = newVal
+        row.value = newVal
 
         await updateTokenValueAny(row, parsed)
         params.api.refreshCells({ rowNodes: [node], columns: ['value'] })

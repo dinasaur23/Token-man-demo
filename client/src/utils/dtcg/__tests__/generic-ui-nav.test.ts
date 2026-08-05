@@ -1,5 +1,5 @@
 /**
- * Stage 11/13 — Generic UI + Color/Dimension nav helpers.
+ * Stage 11/13/14 — Generic UI + Color/Dimension/Number nav helpers.
  */
 import { describe, expect, it } from 'vitest'
 import {
@@ -10,11 +10,11 @@ import {
 } from '../token-types'
 
 describe('generic UI nav (registry-driven)', () => {
-  it('registers Color and Dimension for UI nav', () => {
-    expect(getRegisteredTokenTypeIds()).toEqual(['color', 'dimension'])
+  it('registers Color, Dimension, and Number for UI nav', () => {
+    expect(getRegisteredTokenTypeIds()).toEqual(['color', 'dimension', 'number'])
     const defs = getRegisteredTokenTypeDefinitions()
-    expect(defs).toHaveLength(2)
-    expect(defs.map((d) => d.id)).toEqual(['color', 'dimension'])
+    expect(defs).toHaveLength(3)
+    expect(defs.map((d) => d.id)).toEqual(['color', 'dimension', 'number'])
     expect(defs[0]).toMatchObject({
       id: 'color',
       label: 'Color',
@@ -27,18 +27,26 @@ describe('generic UI nav (registry-driven)', () => {
       navPath: 'dimension',
       navIcon: 'mdi-ruler',
     })
+    expect(defs[2]).toMatchObject({
+      id: 'number',
+      label: 'Number',
+      navPath: 'number',
+      navIcon: 'mdi-numeric',
+    })
   })
 
   it('resolves /tokens/:tokenType segments via navPath', () => {
     expect(getTokenTypeDefinitionByNavPath('color')?.id).toBe('color')
     expect(getTokenTypeDefinitionByNavPath('dimension')?.id).toBe('dimension')
+    expect(getTokenTypeDefinitionByNavPath('number')?.id).toBe('number')
     expect(getTokenTypeDefinitionByNavPath('ColorContentPage')).toBeUndefined()
   })
 
   it('exposes only registered types as navigable', () => {
     expect(isRegisteredTokenType('dimension')).toBe(true)
     expect(isRegisteredTokenType('color')).toBe(true)
-    expect(isRegisteredTokenType('number')).toBe(false)
+    expect(isRegisteredTokenType('number')).toBe(true)
+    expect(isRegisteredTokenType('duration')).toBe(false)
   })
 })
 
@@ -61,5 +69,15 @@ describe('generic UI type filter helper', () => {
     ]
     const filtered = rows.filter((r) => r.type === 'dimension')
     expect(filtered.map((r) => r.path)).toEqual(['b.two', 'b.three'])
+  })
+
+  it('filters table rows by tokenType (Number shell)', () => {
+    const rows = [
+      { path: 'a.one', type: 'color' as const },
+      { path: 'n.two', type: 'number' as const },
+      { path: 'n.three', type: 'number' as const },
+    ]
+    const filtered = rows.filter((r) => r.type === 'number')
+    expect(filtered.map((r) => r.path)).toEqual(['n.two', 'n.three'])
   })
 })

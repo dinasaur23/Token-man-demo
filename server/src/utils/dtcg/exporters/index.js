@@ -20,3 +20,9 @@ export {
   mapDimensionValueForTailwind,
   mapDimensionValueForSwift,
 } from './dimensionMapping.js'
+export {
+  mapNumberValueForCss,
+  mapNumberValueForTailwind,
+  mapNumberValueForSwift,
+  mapNumberValueForAndroid,
+} from './numberMapping.js'

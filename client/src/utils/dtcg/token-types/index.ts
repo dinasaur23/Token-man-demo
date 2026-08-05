@@ -31,3 +31,11 @@ export {
   type DimensionUnit,
   type DimensionValue,
 } from './dimension'
+
+export {
+  validateNumberValue,
+  createDefaultNumberValue,
+  formatNumberForDisplay,
+  parseNumberFromEditor,
+  numberTokenTypeDefinition,
+} from './number'

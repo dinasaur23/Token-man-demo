@@ -222,3 +222,45 @@ describe('Stage 12: Android rem handling', () => {
     assert.deepEqual(mapped.value, { value: 1.5, unit: 'rem' })
   })
 })
+
+describe('Stage 14: number export', () => {
+  it('canonical JSON preserves number values and aliases', () => {
+    const doc = {
+      opacity: {
+        $type: 'number',
+        full: { $value: 1 },
+        muted: { $value: '{opacity.full}' },
+      },
+    }
+    const result = exportCanonicalJson(doc)
+    assert.equal(result.ok, true)
+    assert.equal(result.document.opacity.full.$value, 1)
+    assert.equal(result.document.opacity.muted.$value, '{opacity.full}')
+  })
+
+  it('platform exporters leave finite numbers as numbers', () => {
+    const doc = {
+      opacity: {
+        $type: 'number',
+        full: { $value: 0.85 },
+        muted: { $value: '{opacity.full}' },
+      },
+    }
+    const css = prepareCssExport(doc)
+    assert.equal(css.ok, true)
+    assert.equal(css.document.opacity.full.$value, 0.85)
+    assert.equal(css.document.opacity.muted.$value, '{opacity.full}')
+  })
+
+  it('errors on non-finite number values instead of silently converting', () => {
+    const doc = {
+      opacity: {
+        $type: 'number',
+        bad: { $value: Number.NaN },
+      },
+    }
+    const result = prepareCssExport(doc)
+    assert.equal(result.ok, false)
+    assert.ok(result.errors.some((e) => e.code === 'EXPORT_UNSUPPORTED_NUMBER'))
+  })
+})

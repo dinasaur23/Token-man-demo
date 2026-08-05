@@ -16,7 +16,11 @@ import {
 import { validateTokensStrict } from '@/utils/dtcg/dtcg-validator'
 import { buildGroupTree, extractGroupPath } from '@/utils/dtcg/grouping'
 import { makeDisplayColor } from '@/utils/dtcg/color-display'
-import { formatDimensionForDisplay, getTokenTypeDefinition } from '@/utils/dtcg/token-types'
+import {
+  formatDimensionForDisplay,
+  formatNumberForDisplay,
+  getTokenTypeDefinition,
+} from '@/utils/dtcg/token-types'
 import type { GroupNode, TableRow } from '@/utils/dtcg/token-table-types'
 import { normalizeHexColorsInSourceDocument } from '@/utils/dtcg/color-conversion'
 import { pruneEmptyChildren } from '@/utils/dtcg/grouping'
@@ -905,6 +909,8 @@ export function useTokenWorkspaceTable() {
           hex = display.hex
         } else if (t.type === 'dimension') {
           value = formatDimensionForDisplay(resolved).primary
+        } else if (t.type === 'number') {
+          value = formatNumberForDisplay(resolved).primary
         } else if (typeof resolved === 'string') {
           value = resolved
         } else if (typeof resolved === 'number') {
@@ -981,6 +987,8 @@ export function useTokenWorkspaceTable() {
           hex = display.hex
         } else if (a.type === 'dimension') {
           value = formatDimensionForDisplay(resolved).primary
+        } else if (a.type === 'number') {
+          value = formatNumberForDisplay(resolved).primary
         } else if (typeof resolved === 'string') {
           value = resolved
         } else if (typeof resolved === 'number') {

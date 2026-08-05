@@ -2,7 +2,7 @@
  * DTCG document validation for import/load (Stage 8).
  *
  * Combines Stage 7 structural checks, type taxonomy (rejects string/boolean
- * and out-of-scope composites), number shape checks, and color value checks.
+ * and out-of-scope composites), and registered-type `$value` checks.
  */
 
 import type { Json } from './color-conversion'
@@ -15,8 +15,7 @@ import {
   formatTokenValidationError,
   type TokenValidationError,
 } from './token-validation-error'
-import { isApplicationSupportedTokenType } from './token-type-manifest'
-import { isCurlyBraceAlias, isJsonObject, isJsonPointerRef, type JsonObject } from './reference-resolver'
+import { isJsonObject, type JsonObject } from './reference-resolver'
 import { getTokenTypeDefinition, validateColorValue } from './token-types'
 
 export type DtcgStructuralResult =
@@ -38,8 +37,8 @@ function childKeys(node: JsonObject): string[] {
 }
 
 /**
- * Validate token leaves for application-supported type membership and basic
- * number value shape. Registered type `$value`s are checked separately via
+ * Validate token leaves for declared-type taxonomy.
+ * Registered type `$value`s are checked separately via
  * {@link validateRegisteredTypeSubtree} / {@link validateColorSubtree}.
  */
 export function validateDtcgDocument(doc: Json): DtcgStructuralResult {
@@ -74,21 +73,6 @@ export function validateDtcgDocument(doc: Json): DtcgStructuralResult {
             code: classified.code,
             message: classified.message,
             $type: classified.$type,
-          })
-        }
-      }
-
-      if (isApplicationSupportedTokenType(effectiveType) && effectiveType === 'number') {
-        const v = node.$value
-        const ok =
-          typeof v === 'number' || isCurlyBraceAlias(v) || isJsonPointerRef(v)
-        if (!ok) {
-          errors.push({
-            path,
-            code: 'INVALID_VALUE',
-            message:
-              '$value for type "number" must be a number, curly-brace alias, or JSON Pointer $ref',
-            $type: 'number',
           })
         }
       }
