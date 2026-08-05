@@ -428,3 +428,47 @@ describe('Stage 17: fontWeight export', () => {
     assert.equal(badName.document.fonts.bad.$value, 'Bold')
   })
 })
+
+describe('Stage 18: cubicBezier export', () => {
+  it('canonical JSON preserves cubicBezier arrays and aliases', () => {
+    const doc = {
+      motion: {
+        $type: 'cubicBezier',
+        ease: { $value: [0.25, 0.1, 0.25, 1] },
+        alias: { $value: '{motion.ease}' },
+      },
+    }
+    const result = exportCanonicalJson(doc)
+    assert.equal(result.ok, true)
+    assert.deepEqual(result.document.motion.ease.$value, [0.25, 0.1, 0.25, 1])
+    assert.equal(result.document.motion.alias.$value, '{motion.ease}')
+  })
+
+  it('platform exporters stringify cubicBezier as CSS cubic-bezier()', () => {
+    const doc = {
+      motion: {
+        $type: 'cubicBezier',
+        ease: { $value: [0.25, 0.1, 0.25, 1] },
+        linear: { $value: [0, 0, 1, 1] },
+        alias: { $value: '{motion.ease}' },
+      },
+    }
+    const css = prepareCssExport(doc)
+    assert.equal(css.ok, true)
+    assert.equal(css.document.motion.ease.$value, 'cubic-bezier(0.25, 0.1, 0.25, 1)')
+    assert.equal(css.document.motion.linear.$value, 'cubic-bezier(0, 0, 1, 1)')
+    assert.equal(css.document.motion.alias.$value, '{motion.ease}')
+  })
+
+  it('errors on out-of-range P1x/P2x instead of silently converting', () => {
+    const result = prepareCssExport({
+      motion: {
+        $type: 'cubicBezier',
+        bad: { $value: [1.5, 0, 0.5, 1] },
+      },
+    })
+    assert.equal(result.ok, false)
+    assert.ok(result.errors.some((e) => e.code === 'EXPORT_UNSUPPORTED_CUBICBEZIER'))
+    assert.deepEqual(result.document.motion.bad.$value, [1.5, 0, 0.5, 1])
+  })
+})

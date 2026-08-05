@@ -24,6 +24,7 @@ describe('token-type registry (fontWeight)', () => {
       'duration',
       'fontFamily',
       'fontWeight',
+      'cubicBezier',
     ])
     expect(getTokenTypeDefinition('fontWeight')?.label).toBe('Font Weight')
     expect(requireTokenTypeDefinition('fontWeight').navIcon).toBe('mdi-format-bold')

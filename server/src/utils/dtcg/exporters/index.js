@@ -49,3 +49,11 @@ export {
   fontWeightToNumber,
   FONT_WEIGHT_NAME_TO_NUMBER,
 } from './fontWeightMapping.js'
+export {
+  mapCubicBezierValueForCss,
+  mapCubicBezierValueForTailwind,
+  mapCubicBezierValueForSwift,
+  mapCubicBezierValueForAndroid,
+  cubicBezierToCssString,
+  isCubicBezierArray,
+} from './cubicBezierMapping.js'

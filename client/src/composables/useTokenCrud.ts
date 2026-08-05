@@ -15,7 +15,7 @@ import {
 } from '@/utils/dtcg/json-path-helpers'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
-import { parseColorFromEditor, parseDimensionFromEditor, parseDurationFromEditor, parseFontFamilyFromEditor, parseFontWeightFromEditor, parseNumberFromEditor } from '@/utils/dtcg/token-types'
+import { parseColorFromEditor, parseCubicBezierFromEditor, parseDimensionFromEditor, parseDurationFromEditor, parseFontFamilyFromEditor, parseFontWeightFromEditor, parseNumberFromEditor } from '@/utils/dtcg/token-types'
 import { requireTokenTypeDefinition } from '@/utils/dtcg/token-types'
 import {
   setSourceTokenValueAtPath,
@@ -190,6 +190,12 @@ function parseRowValueForDtcg(row: TableRow): JsonValue {
     return 400
   }
 
+  if (row.type === 'cubicBezier') {
+    const parsed = parseCubicBezierFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return [0.25, 0.1, 0.25, 1]
+  }
+
   return String(row.value ?? '')
 }
 
@@ -224,6 +230,12 @@ function parseRowLiteralValue(row: TableRow): JsonValue {
     const parsed = parseFontWeightFromEditor(String(row.value ?? ''))
     if (parsed.ok) return parsed.value as JsonValue
     return 400
+  }
+
+  if (row.type === 'cubicBezier') {
+    const parsed = parseCubicBezierFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return [0.25, 0.1, 0.25, 1]
   }
   return String(row.value ?? '')
 }

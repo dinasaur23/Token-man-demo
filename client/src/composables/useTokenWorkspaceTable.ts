@@ -17,6 +17,7 @@ import { validateTokensStrict } from '@/utils/dtcg/dtcg-validator'
 import { buildGroupTree, extractGroupPath } from '@/utils/dtcg/grouping'
 import { makeDisplayColor } from '@/utils/dtcg/color-display'
 import {
+  formatCubicBezierForDisplay,
   formatDimensionForDisplay,
   formatDurationForDisplay,
   formatFontFamilyForDisplay,
@@ -920,6 +921,8 @@ export function useTokenWorkspaceTable() {
           value = formatFontFamilyForDisplay(resolved).primary
         } else if (t.type === 'fontWeight') {
           value = formatFontWeightForDisplay(resolved).primary
+        } else if (t.type === 'cubicBezier') {
+          value = formatCubicBezierForDisplay(resolved).primary
         } else if (typeof resolved === 'string') {
           value = resolved
         } else if (typeof resolved === 'number') {
@@ -1004,6 +1007,8 @@ export function useTokenWorkspaceTable() {
           value = formatFontFamilyForDisplay(resolved).primary
         } else if (a.type === 'fontWeight') {
           value = formatFontWeightForDisplay(resolved).primary
+        } else if (a.type === 'cubicBezier') {
+          value = formatCubicBezierForDisplay(resolved).primary
         } else if (typeof resolved === 'string') {
           value = resolved
         } else if (typeof resolved === 'number') {

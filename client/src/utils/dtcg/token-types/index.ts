@@ -73,3 +73,13 @@ export {
   type FontWeightName,
   type FontWeightValue,
 } from './fontWeight'
+
+export {
+  validateCubicBezierValue,
+  createDefaultCubicBezierValue,
+  formatCubicBezierForDisplay,
+  parseCubicBezierFromEditor,
+  cubicBezierTokenTypeDefinition,
+  isCubicBezierArray,
+  type CubicBezierValue,
+} from './cubicBezier'

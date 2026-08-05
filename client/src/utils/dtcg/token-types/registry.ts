@@ -1,5 +1,6 @@
 import { APPLICATION_SUPPORTED_TYPES } from '../token-type-manifest'
 import { colorTokenTypeDefinition } from './color'
+import { cubicBezierTokenTypeDefinition } from './cubicBezier'
 import { dimensionTokenTypeDefinition } from './dimension'
 import { durationTokenTypeDefinition } from './duration'
 import { fontFamilyTokenTypeDefinition } from './fontFamily'
@@ -16,8 +17,7 @@ export type {
 
 /**
  * Registry of application-supported token types.
- * Registered: Color, Dimension, Number, Duration, Font Family, Font Weight.
- * Remaining: cubicBezier.
+ * All seven basic DTCG types are registered.
  */
 const registeredDefinitions: Partial<Record<TokenTypeId, TokenTypeDefinition>> = {
   color: colorTokenTypeDefinition,
@@ -26,6 +26,7 @@ const registeredDefinitions: Partial<Record<TokenTypeId, TokenTypeDefinition>> =
   duration: durationTokenTypeDefinition,
   fontFamily: fontFamilyTokenTypeDefinition,
   fontWeight: fontWeightTokenTypeDefinition,
+  cubicBezier: cubicBezierTokenTypeDefinition,
 }
 
 export function getRegisteredTokenTypeIds(): TokenTypeId[] {

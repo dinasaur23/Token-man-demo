@@ -24,6 +24,7 @@ describe('token-type registry (duration)', () => {
       'duration',
       'fontFamily',
       'fontWeight',
+      'cubicBezier',
     ])
     expect(getTokenTypeDefinition('duration')?.label).toBe('Duration')
     expect(requireTokenTypeDefinition('duration').navIcon).toBe('mdi-timer-outline')

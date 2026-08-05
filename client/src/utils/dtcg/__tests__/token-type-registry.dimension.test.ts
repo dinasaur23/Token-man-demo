@@ -24,6 +24,7 @@ describe('token-type registry (dimension)', () => {
       'duration',
       'fontFamily',
       'fontWeight',
+      'cubicBezier',
     ])
     expect(getTokenTypeDefinition('dimension')?.label).toBe('Dimension')
     expect(requireTokenTypeDefinition('dimension').navIcon).toBe('mdi-ruler')

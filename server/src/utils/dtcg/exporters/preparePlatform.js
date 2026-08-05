@@ -36,6 +36,12 @@ import {
   mapFontWeightValueForTailwind,
 } from './fontWeightMapping.js'
 import {
+  mapCubicBezierValueForAndroid,
+  mapCubicBezierValueForCss,
+  mapCubicBezierValueForSwift,
+  mapCubicBezierValueForTailwind,
+} from './cubicBezierMapping.js'
+import {
   mapNumberValueForAndroid,
   mapNumberValueForCss,
   mapNumberValueForSwift,
@@ -150,6 +156,17 @@ export function preparePlatformExport(platform, resolvedDocument, options = {}) 
       if (mapped.errors.length === 0) {
         node.$value = mapped.value
       }
+      return
+    }
+
+    if (effectiveType === 'cubicBezier') {
+      const mapper = cubicBezierMapperFor(platform)
+      const mapped = mapper(value, path)
+      warnings.push(...mapped.warnings)
+      errors.push(...mapped.errors)
+      if (mapped.errors.length === 0) {
+        node.$value = mapped.value
+      }
     }
   })
 
@@ -242,6 +259,20 @@ function fontWeightMapperFor(platform) {
     case 'css':
     default:
       return mapFontWeightValueForCss
+  }
+}
+
+function cubicBezierMapperFor(platform) {
+  switch (platform) {
+    case 'tailwind':
+      return mapCubicBezierValueForTailwind
+    case 'swift':
+      return mapCubicBezierValueForSwift
+    case 'android':
+      return mapCubicBezierValueForAndroid
+    case 'css':
+    default:
+      return mapCubicBezierValueForCss
   }
 }
 

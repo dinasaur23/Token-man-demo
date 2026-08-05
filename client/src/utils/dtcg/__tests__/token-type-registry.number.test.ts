@@ -24,6 +24,7 @@ describe('token-type registry (number)', () => {
       'duration',
       'fontFamily',
       'fontWeight',
+      'cubicBezier',
     ])
     expect(getTokenTypeDefinition('number')?.label).toBe('Number')
     expect(requireTokenTypeDefinition('number').navIcon).toBe('mdi-numeric')

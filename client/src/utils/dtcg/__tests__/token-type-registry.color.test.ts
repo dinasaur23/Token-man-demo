@@ -5,14 +5,13 @@ import {
   getRegisteredTokenTypeIds,
   getTokenTypeDefinition,
   parseColorFromEditor,
-  requireTokenTypeDefinition,
   validateColorValue,
 } from '../token-types'
 import { validateTokensStrict } from '../dtcg-validator'
 import { convertHexColorsInDocument } from '../color-conversion'
 
 describe('token-type registry (color)', () => {
-  it('registers color (later types land in subsequent stages)', () => {
+  it('registers color among all seven basic DTCG types', () => {
     expect(getRegisteredTokenTypeIds()).toContain('color')
     expect(getTokenTypeDefinition('color')?.label).toBe('Color')
     expect(getTokenTypeDefinition('dimension')?.label).toBe('Dimension')
@@ -20,7 +19,8 @@ describe('token-type registry (color)', () => {
     expect(getTokenTypeDefinition('duration')?.label).toBe('Duration')
     expect(getTokenTypeDefinition('fontFamily')?.label).toBe('Font Family')
     expect(getTokenTypeDefinition('fontWeight')?.label).toBe('Font Weight')
-    expect(() => requireTokenTypeDefinition('cubicBezier')).toThrow(/not registered/)
+    expect(getTokenTypeDefinition('cubicBezier')?.label).toBe('Cubic Bézier')
+    expect(getTokenTypeDefinition('transition')).toBeUndefined()
   })
 
   it('createDefaultColorValue returns a canonical srgb object', () => {

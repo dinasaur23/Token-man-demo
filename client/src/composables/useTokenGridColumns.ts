@@ -4,11 +4,13 @@ import type { TableRow } from '@/utils/dtcg/token-table-types'
 import { srgbFromHex } from '@/utils/dtcg/color-display'
 import { HEX_PATTERN } from '@/utils/dtcg/color-conversion'
 import {
+  formatCubicBezierForDisplay,
   formatDimensionForDisplay,
   formatDurationForDisplay,
   formatFontFamilyForDisplay,
   formatFontWeightForDisplay,
   formatNumberForDisplay,
+  parseCubicBezierFromEditor,
   parseDimensionFromEditor,
   parseDurationFromEditor,
   parseFontFamilyFromEditor,
@@ -194,6 +196,19 @@ export function useTokenGridColumns(
           const display = formatFontWeightForDisplay(parsedFw.value)
           row.value = display.primary
           await updateTokenValueAny(row, parsedFw.value as JsonValue)
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+          return
+        }
+
+        if (row.type === 'cubicBezier') {
+          const parsedCb = parseCubicBezierFromEditor(newVal)
+          if (!parsedCb.ok) {
+            revert()
+            return
+          }
+          const display = formatCubicBezierForDisplay(parsedCb.value)
+          row.value = display.primary
+          await updateTokenValueAny(row, parsedCb.value as JsonValue)
           params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
           return
         }
