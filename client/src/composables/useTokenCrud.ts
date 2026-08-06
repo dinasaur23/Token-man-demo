@@ -15,6 +15,11 @@ import {
 } from '@/utils/dtcg/json-path-helpers'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
+import { parseColorFromEditor, parseCubicBezierFromEditor, parseDimensionFromEditor, parseDurationFromEditor, parseFontFamilyFromEditor, parseFontWeightFromEditor, parseNumberFromEditor } from '@/utils/dtcg/token-types'
+import { requireTokenTypeDefinition } from '@/utils/dtcg/token-types'
+import {
+  setSourceTokenValueAtPath,
+} from '@/utils/dtcg/source-document'
 
 type WorkspaceStore = ReturnType<typeof useTokenWorkspaceStore>
 
@@ -31,7 +36,7 @@ interface ResolverModifierLike {
 }
 
 type Json = unknown
-type TokenType = 'color' | 'number' | 'string' | 'boolean'
+type TokenType = import('@/utils/dtcg/token-type-manifest').ApplicationSupportedTokenType
 type DtcgColorValue = {
   colorSpace: 'srgb'
   components: [number, number, number]
@@ -59,6 +64,12 @@ function round(n: number, p = 6) {
   return Math.round(n * m) / m
 }
 function makeDtcgColorValue(hex = '#000000', alpha = 1): DtcgColorValue {
+  // Prefer registry defaults for the common opaque case.
+  if (alpha === 1 && /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{6})$/.test(hex)) {
+    const parsed = parseColorFromEditor(hex)
+    if (parsed.ok) return parsed.value as DtcgColorValue
+  }
+
   const [r, g, b] = hexToRgb01(hex)
 
   const out: DtcgColorValue = {
@@ -134,23 +145,55 @@ function getFigmaOrder(node: JsonValue): number | undefined {
 }
 
 function isTokenType(t: unknown): t is TokenType {
-  return t === 'color' || t === 'number' || t === 'string' || t === 'boolean'
+  return (
+    t === 'color' ||
+    t === 'number' ||
+    t === 'dimension' ||
+    t === 'fontFamily' ||
+    t === 'fontWeight' ||
+    t === 'duration' ||
+    t === 'cubicBezier'
+  )
 }
 function parseRowValueForDtcg(row: TableRow): JsonValue {
   if (row.type === 'color') {
     return makeDtcgColorValue(row.hex || '#000000')
   }
 
-  if (row.type === 'number') {
-    const n = Number(row.value)
-    return Number.isFinite(n) ? n : 0
+  if (row.type === 'dimension') {
+    const parsed = parseDimensionFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return { value: 0, unit: 'px' }
   }
 
-  if (row.type === 'boolean') {
-    const s = String(row.value ?? '')
-      .trim()
-      .toLowerCase()
-    return s === 'true'
+  if (row.type === 'number') {
+    const parsed = parseNumberFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return 0
+  }
+
+  if (row.type === 'duration') {
+    const parsed = parseDurationFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return { value: 0, unit: 'ms' }
+  }
+
+  if (row.type === 'fontFamily') {
+    const parsed = parseFontFamilyFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return 'sans-serif'
+  }
+
+  if (row.type === 'fontWeight') {
+    const parsed = parseFontWeightFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return 400
+  }
+
+  if (row.type === 'cubicBezier') {
+    const parsed = parseCubicBezierFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return [0.25, 0.1, 0.25, 1]
   }
 
   return String(row.value ?? '')
@@ -159,15 +202,40 @@ function parseRowValueForDtcg(row: TableRow): JsonValue {
 function parseRowLiteralValue(row: TableRow): JsonValue {
   if (row.type === 'color') return makeDtcgColorValue(row.hex || '#000000')
 
-  if (row.type === 'number') {
-    const n = Number(row.value)
-    return Number.isFinite(n) ? n : 0
+  if (row.type === 'dimension') {
+    const parsed = parseDimensionFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return { value: 0, unit: 'px' }
   }
-  if (row.type === 'boolean') {
-    const s = String(row.value ?? '')
-      .trim()
-      .toLowerCase()
-    return s === 'true'
+
+  if (row.type === 'number') {
+    const parsed = parseNumberFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return 0
+  }
+
+  if (row.type === 'duration') {
+    const parsed = parseDurationFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return { value: 0, unit: 'ms' }
+  }
+
+  if (row.type === 'fontFamily') {
+    const parsed = parseFontFamilyFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return 'sans-serif'
+  }
+
+  if (row.type === 'fontWeight') {
+    const parsed = parseFontWeightFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return 400
+  }
+
+  if (row.type === 'cubicBezier') {
+    const parsed = parseCubicBezierFromEditor(String(row.value ?? ''))
+    if (parsed.ok) return parsed.value as JsonValue
+    return [0.25, 0.1, 0.25, 1]
   }
   return String(row.value ?? '')
 }
@@ -570,27 +638,26 @@ export function useTokenCrud({
       await persistUploadedDocsAndReload()
       return
     }
-    const beforeToken = JSON.stringify(token)
-    const beforeDoc = JSON.stringify(doc)
 
     const type = row.type
     const coerced =
       type === 'color' && typeof newValue === 'string' ? makeDtcgColorValue(newValue) : newValue
+
+    // Value-only edit: preserve $type, $description, $extensions, $deprecated, and
+    // optional color fields. Do not force $type onto inherited-type leaves.
     if (isJsonRecord(token)) {
-      const tokenRecord: JsonRecord = token
-      tokenRecord['$type'] = type
-      tokenRecord['$value'] = coerced
+      uploadedDocs.value[fileName] = setSourceTokenValueAtPath(
+        doc,
+        segments,
+        coerced,
+      ) as JsonValue
     } else {
       parent[key] = {
         $type: type,
         $value: coerced,
       }
+      uploadedDocs.value[fileName] = doc
     }
-    const afterToken = JSON.stringify(token)
-    const afterDoc = JSON.stringify(doc)
-
-    console.log('token changed?', beforeToken !== afterToken)
-    console.log('doc changed?', beforeDoc !== afterDoc)
 
     if (workspaceStore.overrides[row.path] !== undefined) {
       const copy = { ...workspaceStore.overrides }
@@ -599,7 +666,6 @@ export function useTokenCrud({
       await workspaceStore.saveToServer()
     }
 
-    uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
 
@@ -635,19 +701,25 @@ export function useTokenCrud({
 
     const { fileName, doc, token, parent, key } = found
 
+    const nextColor = makeDtcgColorValue(newHex)
+
     if (isJsonRecord(token)) {
-      const tokenRecord: JsonRecord = token
-      tokenRecord['$value'] = makeDtcgColorValue(newHex)
+      // Preserve leaf metadata and optional color fields (e.g. existing alpha).
+      uploadedDocs.value[fileName] = setSourceTokenValueAtPath(
+        doc,
+        segments,
+        nextColor,
+      ) as JsonValue
     } else {
       parent[key] = {
         $type: 'color',
-        $value: makeDtcgColorValue(newHex),
+        $value: nextColor,
       }
+      uploadedDocs.value[fileName] = doc
     }
 
     delete workspaceStore.overrides[row.path]
 
-    uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
 
@@ -1003,11 +1075,13 @@ export function useTokenCrud({
         const newValue: JsonValue =
           row.type === 'color'
             ? makeDtcgColorValue(defaultHex)
-            : row.type === 'number'
-              ? 0
-              : row.type === 'boolean'
-                ? false
-                : ''
+            : (() => {
+                try {
+                  return requireTokenTypeDefinition(row.type).createDefaultValue() as JsonValue
+                } catch {
+                  return ''
+                }
+              })()
 
         const newRow: ModeAddedRow = {
           path: newPath,
@@ -1056,11 +1130,13 @@ export function useTokenCrud({
       const newValue: JsonValue =
         row.type === 'color'
           ? makeDtcgColorValue(defaultHex)
-          : row.type === 'number'
-            ? 0
-            : row.type === 'boolean'
-              ? false
-              : ''
+          : (() => {
+              try {
+                return requireTokenTypeDefinition(row.type).createDefaultValue() as JsonValue
+              } catch {
+                return ''
+              }
+            })()
 
       const newRow: ModeAddedRow = {
         path: newPath,
@@ -1091,11 +1167,13 @@ export function useTokenCrud({
       $value:
         row.type === 'color'
           ? makeDtcgColorValue('#000000')
-          : row.type === 'number'
-            ? 0
-            : row.type === 'boolean'
-              ? false
-              : '',
+          : (() => {
+              try {
+                return requireTokenTypeDefinition(row.type).createDefaultValue() as JsonValue
+              } catch {
+                return ''
+              }
+            })(),
     }
 
     const clickedNode = parent[clickedKey]
@@ -1125,7 +1203,7 @@ export function useTokenCrud({
   async function addTokenToGroup(
     groupPath: string[],
     initialName = 'new-token',
-    initialHex = '#000000',
+    tokenType: TokenType = 'color',
   ): Promise<void> {
     if (groupPath.length === 0) {
       console.warn('addTokenToGroup: empty groupPath – not supported')
@@ -1140,10 +1218,11 @@ export function useTokenCrud({
 
     const { fileName, doc, container } = found
     const key = createDuplicateKey(container, initialName)
+    const typeDef = requireTokenTypeDefinition(tokenType)
 
     const newToken: JsonValue = {
-      $type: 'color',
-      $value: makeDtcgColorValue(initialHex),
+      $type: tokenType,
+      $value: typeDef.createDefaultValue() as JsonValue,
     }
 
     container[key] = newToken
@@ -1161,7 +1240,7 @@ export function useTokenCrud({
   async function addGroupWithToken(
     parentGroupPath: string[],
     groupName: string,
-    initialHex = '#000000',
+    tokenType: TokenType = 'color',
   ): Promise<void> {
     if (!groupName.trim()) {
       console.warn('addGroupWithToken: empty group name')
@@ -1191,10 +1270,11 @@ export function useTokenCrud({
     const groupContainer = ensurePath(doc, fullGroupPath)
 
     const tokenKey = createDuplicateKey(groupContainer, 'default')
+    const typeDef = requireTokenTypeDefinition(tokenType)
 
     groupContainer[tokenKey] = {
-      $type: 'color',
-      $value: makeDtcgColorValue(initialHex),
+      $type: tokenType,
+      $value: typeDef.createDefaultValue() as JsonValue,
     }
 
     const newPath = [...fullGroupPath, tokenKey].join('.')
@@ -1210,8 +1290,8 @@ export function useTokenCrud({
   async function addSiblingGroupWithToken(
     siblingOfGroupPath: string[],
     newGroupName: string,
+    tokenType: TokenType = 'color',
     initialTokenName = 'new-token',
-    initialHex = '#000000',
   ): Promise<void> {
     if (siblingOfGroupPath.length === 0) {
       console.warn('addSiblingGroupWithToken: empty sibling path is not supported')
@@ -1246,10 +1326,11 @@ export function useTokenCrud({
     const newGroup: JsonRecord = {}
     parentContainer[safeGroupName] = newGroup
 
+    const typeDef = requireTokenTypeDefinition(tokenType)
     const safeTokenName = createDuplicateKey(newGroup, initialTokenName)
     newGroup[safeTokenName] = {
-      $type: 'color',
-      $value: makeDtcgColorValue(initialHex),
+      $type: tokenType,
+      $value: typeDef.createDefaultValue() as JsonValue,
     }
 
     const order = ensureRowOrder(workspaceStore)
@@ -1392,13 +1473,18 @@ export function useTokenCrud({
     const existing = parent[key]
 
     if (isJsonRecord(existing)) {
-      ;(existing as JsonRecord).$value = aliasValue
-      if (!(existing as JsonRecord).$type) (existing as JsonRecord).$type = row.type
+      // Alias edit updates $value only; do not strip metadata or invent $type
+      // when the leaf inherits type from a group.
+      uploadedDocs.value[fileName] = setSourceTokenValueAtPath(
+        doc,
+        row.path.split('.'),
+        aliasValue,
+      ) as JsonValue
     } else {
       parent[key] = { $type: row.type, $value: aliasValue }
+      uploadedDocs.value[fileName] = doc
     }
 
-    uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
 
@@ -1466,13 +1552,17 @@ export function useTokenCrud({
     }
 
     if (isJsonRecord(existing)) {
-      ;(existing as JsonRecord).$value = literal
-      if (!(existing as JsonRecord).$type) (existing as JsonRecord).$type = row.type
+      // Clear-alias is a $value-only edit; preserve all other leaf properties.
+      uploadedDocs.value[fileName] = setSourceTokenValueAtPath(
+        doc,
+        row.path.split('.'),
+        literal,
+      ) as JsonValue
     } else {
       parent[key] = { $type: row.type, $value: literal }
+      uploadedDocs.value[fileName] = doc
     }
 
-    uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
 

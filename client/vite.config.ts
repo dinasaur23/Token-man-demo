@@ -10,6 +10,10 @@ export default defineConfig({
     alias: { '@': fileURLToPath(new URL('./src', import.meta.url)) },
   },
   server: {
+    // Allow importing the shared DTCG manifest from the repo root.
+    fs: {
+      allow: [fileURLToPath(new URL('..', import.meta.url))],
+    },
     proxy: {
       // everything starting with /api will be proxied to your Express server
       '/api': {

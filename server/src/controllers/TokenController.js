@@ -2,15 +2,24 @@ import TokenWorkspace from "../models/TokenWorkspace.js";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import StyleDictionary from "style-dictionary";
 import { applyOverridesToTokens } from "../utils/dtcg/applyOverrides.js";
-import { normalizeDtcgForCss } from "../utils/dtcg/normalizeDtcgForCss.js";
-import { createSdConfig } from "../utils/sd/index.js";
+import {
+  exportCanonicalJson,
+  preparePlatformExport,
+} from "../utils/dtcg/exporters/index.js";
+import {
+  createSdConfig,
+  runStyleDictionaryExport,
+} from "../utils/sd/index.js";
 import {
   pruneDeletedTokens,
   buildCleanOverrides,
 } from "../utils/dtcg/cleanupWorkspaceTokens.js";
 import { resolveUploadedDocuments } from "../utils/dtcg/uploadedResolver.js";
+import {
+  APPLICATION_SUPPORTED_TYPES,
+  isApplicationSupportedTokenType,
+} from "../utils/dtcg/allowedTokenTypes.js";
 import archiver from "archiver";
 
 function getTokensRoot(root) {
@@ -241,6 +250,19 @@ function ensureContainer(root, pathSegments) {
   return cur;
 }
 
+function getTokenTypeAtPath(tokensRoot, tokenPath) {
+  const seg = String(tokenPath).split(".").filter(Boolean);
+  if (!seg.length) return undefined;
+
+  let node = tokensRoot;
+  for (const s of seg) {
+    if (!isRecord(node)) return undefined;
+    node = node[s];
+  }
+  if (!isRecord(node)) return undefined;
+  return typeof node.$type === "string" ? node.$type : undefined;
+}
+
 function setTokenAtPath(tokensRoot, tokenPath, type, value) {
   const seg = String(tokenPath).split(".").filter(Boolean);
   if (!seg.length) return;
@@ -250,10 +272,12 @@ function setTokenAtPath(tokensRoot, tokenPath, type, value) {
 
   const existing = parent[key];
   if (isRecord(existing)) {
-    existing.$type = type;
+    // Preserve an existing $type when the caller does not supply one
+    // (override paths must not hardcode "string").
+    if (type) existing.$type = type;
     existing.$value = value;
   } else {
-    parent[key] = { $type: type, $value: value };
+    parent[key] = type ? { $type: type, $value: value } : { $value: value };
   }
 }
 
@@ -322,8 +346,8 @@ function applyWorkspaceEditsForCollectionMode(
     if (k.startsWith(prefix)) {
       const tokenPath = k.slice(prefix.length);
       if (tokenPath === collection || tokenPath.startsWith(collection + ".")) {
-        const t = "string";
-        setTokenAtPath(tokensRoot, tokenPath, t, v);
+        const existingType = getTokenTypeAtPath(tokensRoot, tokenPath);
+        setTokenAtPath(tokensRoot, tokenPath, existingType, v);
       }
     }
   }
@@ -337,8 +361,8 @@ function applyWorkspaceEditsForCollectionMode(
     const modeKey = `${modeName}::${tokenPath}`;
     if (Object.prototype.hasOwnProperty.call(overrides, modeKey)) continue;
 
-    const t = "string";
-    setTokenAtPath(tokensRoot, tokenPath, t, v);
+    const existingType = getTokenTypeAtPath(tokensRoot, tokenPath);
+    setTokenAtPath(tokensRoot, tokenPath, existingType, v);
   }
 }
 
@@ -686,15 +710,17 @@ function applyTokenNameOverridesToTokens(rootMaybeWrapped, nameOverrides) {
   }
 }
 
-const ALLOWED_TOKEN_TYPES = ["color", "number", "string", "boolean"];
+const ALLOWED_TOKEN_TYPES = APPLICATION_SUPPORTED_TYPES;
 
 function validateToken(token) {
   if (!token || typeof token !== "object") {
     throw new Error("Invalid token object");
   }
 
-  if (!ALLOWED_TOKEN_TYPES.includes(token.$type)) {
-    throw new Error(`Unsupported token type: ${token.$type}`);
+  if (!isApplicationSupportedTokenType(token.$type)) {
+    throw new Error(
+      `Unsupported token type: ${token.$type}. Allowed: ${ALLOWED_TOKEN_TYPES.join(", ")}`,
+    );
   }
 }
 
@@ -1065,6 +1091,21 @@ export async function exportTokens(req, res) {
 
     const format = (req.query.format || "css").toString();
     const bundle = String(req.query.bundle || "") === "1";
+    const remBasePxRaw = req.query.remBasePx;
+    const remBasePx =
+      remBasePxRaw === undefined || remBasePxRaw === null || remBasePxRaw === ""
+        ? undefined
+        : Number(remBasePxRaw);
+    const platformExportOptions = {
+      remBasePx:
+        typeof remBasePx === "number" && Number.isFinite(remBasePx)
+          ? remBasePx
+          : undefined,
+    };
+    /** @type {import('../utils/dtcg/exporters/exportResult.js').ExportIssue[]} */
+    const exportWarnings = [];
+    /** @type {import('../utils/dtcg/exporters/exportResult.js').ExportIssue[]} */
+    const exportErrors = [];
 
     if (!bundle) {
       return res.status(400).json({
@@ -1158,26 +1199,50 @@ export async function exportTokens(req, res) {
     );
     const exportedKeySet = new Set();
 
+    // Platform preflight on the resolved base view — fail with structured
+    // errors before ZIP headers when remBasePx is missing or colors are unsupported.
+    if (format !== "json") {
+      const preflight = preparePlatformExport(
+        format,
+        baseMerged,
+        platformExportOptions,
+      );
+      if (!preflight.ok) {
+        return res.status(400).json({
+          ok: false,
+          stage: "platformPreflight",
+          message: preflight.errors.map((e) => e.message).join("; "),
+          errors: preflight.errors,
+          warnings: preflight.warnings,
+        });
+      }
+    }
+
     const dsSuffix = designSystemId ? `-${designSystemId}` : "";
     const zipName = `tokens${dsSuffix}.${format}.zip`;
 
-    res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
-
-    const archive = archiver("zip", { zlib: { level: 9 } });
-    archive.on("error", (err) => {
-      console.error("ZIP error", err);
-      throw err;
-    });
-    archive.pipe(res);
-
+    // Build all ZIP entries first. Never start streaming a ZIP until Style
+    // Dictionary + the object-fallthrough guard have succeeded, so the UI
+    // receives a JSON 400 instead of an invalid download.
     const tmpDir = os.tmpdir();
     const buildBaseRoot = path.join(
       tmpDir,
       `export-${userId}${dsSuffix}-${Date.now()}`,
     );
+    fs.mkdirSync(buildBaseRoot, { recursive: true });
 
+    /** @type {{ kind: 'file', absPath: string, name: string } | { kind: 'string', content: string, name: string }[]} */
+    const pendingZipEntries = [];
     const exported = new Set();
+
+    /** Destination filename from the format's SD template (tokens.css, etc.). */
+    function platformDestinationFile() {
+      const probe = createSdConfig(format, path.join(buildBaseRoot, "_probe.json"), path.join(buildBaseRoot, "_probe-build"));
+      const platformKey = Object.keys(probe.platforms)[0];
+      return probe.platforms[platformKey].files?.[0]?.destination || "tokens.out";
+    }
+    const originalDestination =
+      format === "json" ? "tokens.dtcg.json" : platformDestinationFile();
     if (format === "json" && collectionsWithoutModes.length > 0) {
       const mergedTokens = resolveUploadedDocuments(docs, {});
       pruneDeletedTokens(mergedTokens, deletedPathsFixed);
@@ -1215,9 +1280,18 @@ export async function exportTokens(req, res) {
       }
       for (const col of collectionsWithoutModes) {
         const colTree = pickCollectionTree(mergedTokens, col);
-        const jsonOut = JSON.stringify(colTree, null, 2);
+        const canonical = exportCanonicalJson(colTree);
+        exportWarnings.push(...canonical.warnings);
+        if (!canonical.ok) {
+          exportErrors.push(...canonical.errors);
+          continue;
+        }
         const entryPath = path.posix.join(col, "default", "tokens.dtcg.json");
-        archive.append(jsonOut, { name: entryPath });
+        pendingZipEntries.push({
+          kind: "string",
+          content: canonical.json,
+          name: entryPath,
+        });
       }
     }
 
@@ -1262,39 +1336,34 @@ export async function exportTokens(req, res) {
         );
         console.log("[exportTokens] wrote debug dump:", dumpPath);
       }
-      normalizeDtcgForCss(mergedTokens);
+
+      const preparedNoMode = preparePlatformExport(
+        format,
+        mergedTokens,
+        platformExportOptions,
+      );
+      exportWarnings.push(...preparedNoMode.warnings);
+      if (!preparedNoMode.ok) {
+        exportErrors.push(...preparedNoMode.errors);
+        throw Object.assign(
+          new Error(
+            preparedNoMode.errors.map((e) => e.message).join("; ") ||
+              "Platform export failed",
+          ),
+          { exportErrors, exportWarnings, status: 400 },
+        );
+      }
+      const platformTokensNoMode = preparedNoMode.document;
 
       const jsonFilePath = path.join(buildBaseRoot, `tokens-nomode.json`);
       fs.mkdirSync(path.dirname(jsonFilePath), { recursive: true });
       fs.writeFileSync(
         jsonFilePath,
-        JSON.stringify(mergedTokens, null, 2),
+        JSON.stringify(platformTokensNoMode, null, 2),
         "utf8",
       );
 
-      const buildBase = path.join(buildBaseRoot, `build-nomode`);
-      const sdConfig = createSdConfig(format, jsonFilePath, buildBase);
-      const platformKey = Object.keys(sdConfig.platforms)[0];
-      const platformConfig = sdConfig.platforms[platformKey];
-
-      const fileTemplateNoMode = platformConfig.files?.[0];
-      if (!fileTemplateNoMode)
-        throw new Error("SD config has no files[0] template (nomode).");
-
-      const originalDestination = fileTemplateNoMode.destination;
-      if (!originalDestination)
-        throw new Error("SD config has no destination (nomode).");
-
-      platformConfig.files = collectionsWithoutModes.map((col) => ({
-        ...fileTemplateNoMode,
-        destination: path.posix.join(col, "default", originalDestination),
-        filter: (token) => Array.isArray(token.path) && token.path[0] === col,
-      }));
-
-      fs.mkdirSync(platformConfig.buildPath, { recursive: true });
-
-      const sd = new StyleDictionary(sdConfig);
-      const missing = findMissingReferences(mergedTokens);
+      const missing = findMissingReferences(platformTokensNoMode);
       if (missing.length) {
         console.error("Missing token references (showing up to 30):");
         for (const m of missing.slice(0, 30)) {
@@ -1306,29 +1375,42 @@ export async function exportTokens(req, res) {
           `Reference Error: ${missing.length} token references could not be found.`,
         );
       }
-      console.log(
-        "[exportTokens] sample rewritten ref:",
-        JSON.stringify(mergedTokens).includes("{brand.")
-          ? "STILL HAS {brand.}"
-          : "OK",
-      );
 
-      await sd.buildAllPlatforms();
+      const buildBase = path.join(buildBaseRoot, `build-nomode`);
+      const sdResult = await runStyleDictionaryExport({
+        format,
+        jsonFilePath,
+        buildBase,
+        files: collectionsWithoutModes.map((col) => ({
+          destination: path.posix.join(col, "default", originalDestination),
+          filter: (token) => Array.isArray(token.path) && token.path[0] === col,
+        })),
+      });
+      exportWarnings.push(...sdResult.warnings);
+      if (!sdResult.ok) {
+        exportErrors.push(...sdResult.errors);
+        throw Object.assign(
+          new Error(
+            sdResult.errors.map((e) => e.message).join("; ") ||
+              "Export guard failed: raw object token values",
+          ),
+          { exportErrors, exportWarnings, status: 400 },
+        );
+      }
+      if (process.env.DEBUG_EXPORT === "1") {
+        console.log("[exportTokens] nomode SD diagnostics", sdResult.diagnostics);
+      }
 
       for (const col of collectionsWithoutModes) {
-        const builtPath = path.join(
-          platformConfig.buildPath,
-          col,
-          "default",
-          originalDestination,
+        const destRel = path.posix.join(col, "default", originalDestination);
+        const abs = (sdResult.outputFilePaths || []).find((p) =>
+          p.replace(/\\/g, "/").endsWith(destRel),
         );
-        if (!fs.existsSync(builtPath)) continue;
-
-        archive.file(builtPath, {
-          name: path.posix.join(col, "default", originalDestination),
-        });
+        if (!abs || !fs.existsSync(abs)) continue;
+        pendingZipEntries.push({ kind: "file", absPath: abs, name: destRel });
       }
     }
+
 
     for (const combo of combos) {
       const variantFolder = makeVariantFolder(combo);
@@ -1403,14 +1485,43 @@ export async function exportTokens(req, res) {
           exportedKeySet.add(exportKey);
 
           const colTree = pickCollectionTree(mergedTokens, col);
-          const jsonOut = JSON.stringify(colTree, null, 2);
+          const canonical = exportCanonicalJson(colTree);
+          exportWarnings.push(...canonical.warnings);
+          if (!canonical.ok) {
+            exportErrors.push(...canonical.errors);
+            continue;
+          }
           const entryPath = path.posix.join(col, vf, "tokens.dtcg.json");
-          archive.append(jsonOut, { name: entryPath });
+          pendingZipEntries.push({
+            kind: "string",
+            content: canonical.json,
+            name: entryPath,
+          });
         }
         continue;
       }
 
-      normalizeDtcgForCss(mergedTokens);
+      const preparedVariant = preparePlatformExport(
+        format,
+        mergedTokens,
+        platformExportOptions,
+      );
+      exportWarnings.push(...preparedVariant.warnings);
+      if (!preparedVariant.ok) {
+        exportErrors.push(...preparedVariant.errors);
+        throw Object.assign(
+          new Error(
+            preparedVariant.errors.map((e) => e.message).join("; ") ||
+              "Platform export failed",
+          ),
+          {
+            exportErrors,
+            exportWarnings,
+            status: 400,
+          },
+        );
+      }
+      mergedTokens = preparedVariant.document;
       const safeVariantKey = String(variantFolder).replace(/[\\/]/g, "__");
       const jsonFilePath = path.join(
         buildBaseRoot,
@@ -1424,30 +1535,12 @@ export async function exportTokens(req, res) {
       );
 
       const buildBase = path.join(buildBaseRoot, `build-${variantFolder}`);
-      const sdConfig = createSdConfig(format, jsonFilePath, buildBase);
-      if (!sdConfig) throw new Error(`Unsupported export format: ${format}`);
-
-      const destPlatformKey = Object.keys(sdConfig.platforms)[0];
-      const platformConfig = sdConfig.platforms[destPlatformKey];
-
-      platformConfig.buildPath = buildBase;
-
-      const fileTemplate = platformConfig.files?.[0];
-      if (!fileTemplate) {
-        throw new Error("Style Dictionary config has no files[0] template.");
-      }
-
-      const originalDestination = fileTemplate.destination;
-      if (!originalDestination) {
-        throw new Error("Style Dictionary config has no destination file.");
-      }
 
       const allowedCollections = collectionsWithModes.filter((col) =>
         isComboAllowedForCollection(combo, col, allowedModesByCollection),
       );
 
-      platformConfig.files = [];
-
+      const sdFiles = [];
       for (const col of allowedCollections) {
         const colVariantFolder = makeVariantFolderForCollection(
           combo,
@@ -1459,32 +1552,19 @@ export async function exportTokens(req, res) {
         if (exported.has(dedupeKey)) continue;
         exported.add(dedupeKey);
 
-        const dest = path.posix.join(
-          col,
-          colVariantFolder,
-          originalDestination,
-        );
-
-        platformConfig.files.push({
-          ...fileTemplate,
-          destination: dest,
+        sdFiles.push({
+          destination: path.posix.join(
+            col,
+            colVariantFolder,
+            originalDestination,
+          ),
           filter: (token) => Array.isArray(token.path) && token.path[0] === col,
         });
       }
-      if (platformConfig.files.length === 0) {
+      if (sdFiles.length === 0) {
         continue;
       }
 
-      fs.mkdirSync(platformConfig.buildPath, { recursive: true });
-      for (const f of platformConfig.files) {
-        const destDir = path.join(
-          platformConfig.buildPath,
-          ...String(f.destination).split("/"),
-        );
-        fs.mkdirSync(path.dirname(destDir), { recursive: true });
-      }
-
-      const sd = new StyleDictionary(sdConfig);
       const missing = findMissingReferences(mergedTokens);
       if (missing.length) {
         console.error("Missing token references (showing up to 30):");
@@ -1497,36 +1577,91 @@ export async function exportTokens(req, res) {
           `Reference Error: ${missing.length} token references could not be found.`,
         );
       }
-      console.log(
-        "[exportTokens] sample rewritten ref:",
-        JSON.stringify(mergedTokens).includes("{brand.")
-          ? "STILL HAS {brand.}"
-          : "OK",
-      );
 
-      await sd.buildAllPlatforms();
-
-      for (const col of allowedCollections) {
-        const colVariantFolder = makeVariantFolderForCollection(
-          combo,
-          col,
-          allowedModesByCollection,
+      const sdResult = await runStyleDictionaryExport({
+        format,
+        jsonFilePath,
+        buildBase,
+        files: sdFiles,
+      });
+      exportWarnings.push(...sdResult.warnings);
+      if (!sdResult.ok) {
+        exportErrors.push(...sdResult.errors);
+        throw Object.assign(
+          new Error(
+            sdResult.errors.map((e) => e.message).join("; ") ||
+              "Export guard failed: raw object token values",
+          ),
+          { exportErrors, exportWarnings, status: 400 },
         );
-
-        const builtPath = path.join(
-          platformConfig.buildPath,
-          col,
-          colVariantFolder,
-          originalDestination,
+      }
+      if (process.env.DEBUG_EXPORT === "1") {
+        console.log(
+          "[exportTokens] variant SD diagnostics",
+          variantFolder,
+          sdResult.diagnostics,
         );
-        if (!fs.existsSync(builtPath)) continue;
+      }
 
-        const zipEntry = path.posix.join(
-          col,
-          colVariantFolder,
-          originalDestination,
+      for (const fileSpec of sdFiles) {
+        const destRel = fileSpec.destination;
+        const abs = (sdResult.outputFilePaths || []).find((p) =>
+          p.replace(/\\/g, "/").endsWith(destRel),
         );
-        archive.file(builtPath, { name: zipEntry });
+        if (!abs || !fs.existsSync(abs)) continue;
+        pendingZipEntries.push({ kind: "file", absPath: abs, name: destRel });
+      }
+    }
+
+
+    if (exportErrors.length > 0) {
+      return res.status(400).json({
+        ok: false,
+        stage: "exportGuard",
+        message: exportErrors.map((e) => e.message).join("; "),
+        errors: exportErrors,
+        warnings: exportWarnings,
+      });
+    }
+
+    if (pendingZipEntries.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        stage: "exportEmpty",
+        message: "No exportable token files were produced.",
+        errors: [],
+        warnings: exportWarnings,
+      });
+    }
+
+    if (exportWarnings.length > 0) {
+      pendingZipEntries.push({
+        kind: "string",
+        content: JSON.stringify(
+          { ok: true, warnings: exportWarnings, errors: [] },
+          null,
+          2,
+        ),
+        name: "export-report.json",
+      });
+    }
+
+    // Only now start the ZIP download — builds and guards have passed.
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
+
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    archive.on("error", (err) => {
+      console.error("ZIP error", err);
+      throw err;
+    });
+    archive.pipe(res);
+
+    for (const entry of pendingZipEntries) {
+      if (entry.kind === "file") {
+        archive.file(entry.absPath, { name: entry.name });
+      } else {
+        archive.append(entry.content, { name: entry.name });
       }
     }
 
@@ -1542,10 +1677,12 @@ export async function exportTokens(req, res) {
       }
       return;
     }
-    return res.status(500).json({
+    return res.status(err?.status && Number.isInteger(err.status) ? err.status : 500).json({
       ok: false,
       stage,
       message: err instanceof Error ? err.message : "Unknown export error",
+      errors: err?.exportErrors,
+      warnings: err?.exportWarnings,
     });
   }
 }

@@ -3,6 +3,20 @@ import type { ColDef, ICellRendererParams, NewValueParams } from 'ag-grid-commun
 import type { TableRow } from '@/utils/dtcg/token-table-types'
 import { srgbFromHex } from '@/utils/dtcg/color-display'
 import { HEX_PATTERN } from '@/utils/dtcg/color-conversion'
+import {
+  formatCubicBezierForDisplay,
+  formatDimensionForDisplay,
+  formatDurationForDisplay,
+  formatFontFamilyForDisplay,
+  formatFontWeightForDisplay,
+  formatNumberForDisplay,
+  parseCubicBezierFromEditor,
+  parseDimensionFromEditor,
+  parseDurationFromEditor,
+  parseFontFamilyFromEditor,
+  parseFontWeightFromEditor,
+  parseNumberFromEditor,
+} from '@/utils/dtcg/token-types'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import type { JsonValue } from '@/utils/dtcg/resolver'
 
@@ -121,27 +135,86 @@ export function useTokenGridColumns(
           return
         }
 
-        let parsed: JsonValue
+        if (row.type === 'dimension') {
+          const parsedDim = parseDimensionFromEditor(newVal)
+          if (!parsedDim.ok) {
+            revert()
+            return
+          }
+          const display = formatDimensionForDisplay(parsedDim.value)
+          row.value = display.primary
+          await updateTokenValueAny(row, parsedDim.value as JsonValue)
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+          return
+        }
 
         if (row.type === 'number') {
-          const n = Number(newVal)
-          if (!Number.isFinite(n)) return revert()
-          parsed = n
-          row.value = String(n)
-        } else if (row.type === 'boolean') {
-          if (newVal === 'true' || newVal === '1') {
-            parsed = true
-            row.value = 'true'
-          } else if (newVal === 'false' || newVal === '0') {
-            parsed = false
-            row.value = 'false'
-          } else {
-            return revert()
+          const parsedNum = parseNumberFromEditor(newVal)
+          if (!parsedNum.ok) {
+            revert()
+            return
           }
-        } else {
-          parsed = newVal
-          row.value = newVal
+          const display = formatNumberForDisplay(parsedNum.value)
+          row.value = display.primary
+          await updateTokenValueAny(row, parsedNum.value as JsonValue)
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+          return
         }
+
+        if (row.type === 'duration') {
+          const parsedDur = parseDurationFromEditor(newVal)
+          if (!parsedDur.ok) {
+            revert()
+            return
+          }
+          const display = formatDurationForDisplay(parsedDur.value)
+          row.value = display.primary
+          await updateTokenValueAny(row, parsedDur.value as JsonValue)
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+          return
+        }
+
+        if (row.type === 'fontFamily') {
+          const parsedFf = parseFontFamilyFromEditor(newVal)
+          if (!parsedFf.ok) {
+            revert()
+            return
+          }
+          const display = formatFontFamilyForDisplay(parsedFf.value)
+          row.value = display.primary
+          await updateTokenValueAny(row, parsedFf.value as JsonValue)
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+          return
+        }
+
+        if (row.type === 'fontWeight') {
+          const parsedFw = parseFontWeightFromEditor(newVal)
+          if (!parsedFw.ok) {
+            revert()
+            return
+          }
+          const display = formatFontWeightForDisplay(parsedFw.value)
+          row.value = display.primary
+          await updateTokenValueAny(row, parsedFw.value as JsonValue)
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+          return
+        }
+
+        if (row.type === 'cubicBezier') {
+          const parsedCb = parseCubicBezierFromEditor(newVal)
+          if (!parsedCb.ok) {
+            revert()
+            return
+          }
+          const display = formatCubicBezierForDisplay(parsedCb.value)
+          row.value = display.primary
+          await updateTokenValueAny(row, parsedCb.value as JsonValue)
+          params.api.refreshCells({ rowNodes: [node], columns: ['value'] })
+          return
+        }
+
+        const parsed: JsonValue = newVal
+        row.value = newVal
 
         await updateTokenValueAny(row, parsed)
         params.api.refreshCells({ rowNodes: [node], columns: ['value'] })

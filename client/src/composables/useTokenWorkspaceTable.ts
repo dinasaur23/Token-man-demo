@@ -14,11 +14,20 @@ import {
   type TokenEntry,
 } from '@/utils/dtcg/dtcg-parser'
 import { validateTokensStrict } from '@/utils/dtcg/dtcg-validator'
-import { buildGroupTree, extractGroupPath } from '@/utils/dtcg/grouping'
+import { buildGroupTree, extractGroupPath, pruneEmptyChildren, applyGroupNameOverrides } from '@/utils/dtcg/grouping'
 import { makeDisplayColor } from '@/utils/dtcg/color-display'
+import {
+  formatCubicBezierForDisplay,
+  formatDimensionForDisplay,
+  formatDurationForDisplay,
+  formatFontFamilyForDisplay,
+  formatFontWeightForDisplay,
+  formatNumberForDisplay,
+  getTokenTypeDefinition,
+} from '@/utils/dtcg/token-types'
 import type { GroupNode, TableRow } from '@/utils/dtcg/token-table-types'
-import { convertHexColorsInDocument } from '@/utils/dtcg/color-conversion'
-import { pruneEmptyChildren } from '@/utils/dtcg/grouping'
+import { normalizeHexColorsInSourceDocument } from '@/utils/dtcg/color-conversion'
+import { serializeSourceDocumentsForPersistence } from '@/utils/dtcg/source-document'
 import { useTokenCrud } from './useTokenCrud'
 import type { FigmaModifierOptions } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
@@ -243,6 +252,7 @@ export function useTokenWorkspaceTable() {
   //   console.log('ui sees errorMessage =', val)
   // })
   const activeNodeIds = ref<string[]>([])
+  // Authoritative DTCG source documents (persisted). Never replace with a resolved/derived tree.
   const uploadedDocs = ref<Record<string, JsonValue>>({})
   const detectedModifiers = ref<DetectedModifier[]>([])
   const selectedModifiers = ref<Record<string, string>>({})
@@ -353,27 +363,7 @@ export function useTokenWorkspaceTable() {
   const groupTreeItems = computed<GroupNode[]>(() => {
     const base = pruneEmptyChildren(buildGroupTree(rows.value))
     const overrides = workspaceStore.groupNameOverrides ?? {}
-
-    function applyOverrides(nodes: GroupNode[]): GroupNode[] {
-      return nodes.map((node) => {
-        const overriddenTitle = overrides[node.id] ?? node.title
-
-        if (node.children && node.children.length > 0) {
-          return {
-            id: node.id,
-            title: overriddenTitle,
-            children: applyOverrides(node.children),
-          }
-        }
-
-        return {
-          id: node.id,
-          title: overriddenTitle,
-        }
-      })
-    }
-
-    return applyOverrides(base)
+    return applyGroupNameOverrides(base, overrides)
   })
 
   watch(
@@ -680,10 +670,14 @@ export function useTokenWorkspaceTable() {
 
     try {
       performance.mark('crud-buildfiles-start')
-      workspaceStore.files = Object.entries(uploadedDocs.value).map(([name, content]) => ({
-        name,
-        content,
-      }))
+      // Persist source documents only — never a resolved/derived view.
+      // Re-normalize hex-string compat values so saves always store canonical DTCG.
+      const sourceForPersist: Record<string, JsonValue> = {}
+      for (const [name, content] of Object.entries(uploadedDocs.value)) {
+        sourceForPersist[name] = normalizeHexColorsInSourceDocument(content) as JsonValue
+      }
+      uploadedDocs.value = sourceForPersist
+      workspaceStore.files = serializeSourceDocumentsForPersistence(sourceForPersist)
       performance.mark('crud-buildfiles-end')
       performance.measure('CRUD build files array', 'crud-buildfiles-start', 'crud-buildfiles-end')
 
@@ -712,7 +706,9 @@ export function useTokenWorkspaceTable() {
   }
 
   async function populateTableFromDocument(doc: unknown): Promise<void> {
-    const convertedDoc = convertHexColorsInDocument(doc)
+    // Source docs should already be hex-normalized on import/persist. Keep an
+    // idempotent pass here so display validation still accepts legacy payloads.
+    const convertedDoc = normalizeHexColorsInSourceDocument(doc)
     const validation = await validateTokensStrict(convertedDoc)
     //console.log('dtcg validation result:', validation)
 
@@ -894,6 +890,18 @@ export function useTokenWorkspaceTable() {
           const display = makeDisplayColor(resolved)
           value = display.srgb
           hex = display.hex
+        } else if (t.type === 'dimension') {
+          value = formatDimensionForDisplay(resolved).primary
+        } else if (t.type === 'number') {
+          value = formatNumberForDisplay(resolved).primary
+        } else if (t.type === 'duration') {
+          value = formatDurationForDisplay(resolved).primary
+        } else if (t.type === 'fontFamily') {
+          value = formatFontFamilyForDisplay(resolved).primary
+        } else if (t.type === 'fontWeight') {
+          value = formatFontWeightForDisplay(resolved).primary
+        } else if (t.type === 'cubicBezier') {
+          value = formatCubicBezierForDisplay(resolved).primary
         } else if (typeof resolved === 'string') {
           value = resolved
         } else if (typeof resolved === 'number') {
@@ -903,10 +911,15 @@ export function useTokenWorkspaceTable() {
         } else if (resolved == null) {
           value = ''
         } else {
-          try {
-            value = JSON.stringify(resolved)
-          } catch {
-            value = String(resolved)
+          const typeDef = getTokenTypeDefinition(t.type)
+          if (typeDef) {
+            value = typeDef.formatForDisplay(resolved).primary
+          } else {
+            try {
+              value = JSON.stringify(resolved)
+            } catch {
+              value = String(resolved)
+            }
           }
         }
 
@@ -963,6 +976,18 @@ export function useTokenWorkspaceTable() {
           const display = makeDisplayColor(resolved)
           value = display.srgb
           hex = display.hex
+        } else if (a.type === 'dimension') {
+          value = formatDimensionForDisplay(resolved).primary
+        } else if (a.type === 'number') {
+          value = formatNumberForDisplay(resolved).primary
+        } else if (a.type === 'duration') {
+          value = formatDurationForDisplay(resolved).primary
+        } else if (a.type === 'fontFamily') {
+          value = formatFontFamilyForDisplay(resolved).primary
+        } else if (a.type === 'fontWeight') {
+          value = formatFontWeightForDisplay(resolved).primary
+        } else if (a.type === 'cubicBezier') {
+          value = formatCubicBezierForDisplay(resolved).primary
         } else if (typeof resolved === 'string') {
           value = resolved
         } else if (typeof resolved === 'number') {
@@ -972,10 +997,15 @@ export function useTokenWorkspaceTable() {
         } else if (resolved == null) {
           value = ''
         } else {
-          try {
-            value = JSON.stringify(resolved)
-          } catch {
-            value = String(resolved)
+          const typeDef = getTokenTypeDefinition(a.type)
+          if (typeDef) {
+            value = typeDef.formatForDisplay(resolved).primary
+          } else {
+            try {
+              value = JSON.stringify(resolved)
+            } catch {
+              value = String(resolved)
+            }
           }
         }
 
@@ -1023,6 +1053,8 @@ export function useTokenWorkspaceTable() {
   }
 
   async function resolveAndPopulateFromUploadedDocs(): Promise<void> {
+    // Derive a resolved view from source. Name-override ref rewriting runs on clones only.
+    // The merged document is ephemeral display/export input and must not be written to files.
     const docs = uploadedDocs.value
     if (Object.keys(docs).length === 0) return
 
@@ -1135,8 +1167,11 @@ export function useTokenWorkspaceTable() {
       try {
         const text = await file.text()
         const json = JSON.parse(text) as JsonValue
-        docs[file.name] = json
-        dtoFiles.push({ name: file.name, content: json })
+        // Documented non-DTCG compat: normalize hex-string color $values into
+        // canonical DTCG objects in the authoritative source before persist.
+        const normalized = normalizeHexColorsInSourceDocument(json) as JsonValue
+        docs[file.name] = normalized
+        dtoFiles.push({ name: file.name, content: normalized })
       } catch (err) {
         console.error('Error parsing file', file.name, err)
         errorMessage.value = `File "${file.name}" is not valid JSON.`
@@ -1158,10 +1193,22 @@ export function useTokenWorkspaceTable() {
 
   async function syncFromWorkspaceStoreFiles(): Promise<void> {
     const docs: Record<string, JsonValue> = {}
+    let sourceNormalized = false
     for (const file of workspaceStore.files) {
-      docs[file.name] = file.content as JsonValue
+      const raw = file.content as JsonValue
+      const normalized = normalizeHexColorsInSourceDocument(raw) as JsonValue
+      if (JSON.stringify(normalized) !== JSON.stringify(raw)) {
+        sourceNormalized = true
+      }
+      docs[file.name] = normalized
     }
     uploadedDocs.value = docs
+
+    // Persist canonical source when legacy hex-string values were upgraded.
+    if (sourceNormalized) {
+      workspaceStore.files = serializeSourceDocumentsForPersistence(docs)
+      await workspaceStore.saveToServer()
+    }
 
     const resolverMods = extractModifiersFromDocs(docs)
     let groupModesInfo = extractGroupModesFromResolverDocs(docs)
@@ -1246,7 +1293,10 @@ export function useTokenWorkspaceTable() {
     },
   })
 
-  async function addSiblingGroupForActiveGroup(newGroupName: string): Promise<void> {
+  async function addSiblingGroupForActiveGroup(
+    newGroupName: string,
+    tokenType: TableRow['type'] = 'color',
+  ): Promise<void> {
     const trimmed = newGroupName.trim()
     if (!trimmed) return
 
@@ -1254,7 +1304,7 @@ export function useTokenWorkspaceTable() {
 
     const siblingPath = activeId ? activeId.split('.') : []
 
-    await addSiblingGroupWithToken(siblingPath, trimmed)
+    await addSiblingGroupWithToken(siblingPath, trimmed, tokenType)
   }
 
   onMounted(() => {

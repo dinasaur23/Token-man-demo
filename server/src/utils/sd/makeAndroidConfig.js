@@ -5,7 +5,7 @@ export function makeAndroidConfig(jsonFilePath, buildBase) {
     source: [jsonFilePath],
     platforms: {
       android: {
-        transformGroup: "android",
+        transformGroup: "token-manager/android",
         buildPath: path.join(buildBase, "android/"),
         files: [
           {

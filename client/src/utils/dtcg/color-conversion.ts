@@ -4,7 +4,19 @@ type JsonObject = Record<string, Json>
 const isObject = (value: Json): value is JsonObject =>
   typeof value === 'object' && value !== null && !Array.isArray(value)
 
-export const HEX_PATTERN = /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
+/**
+ * Documented non-DTCG compatibility: plain hex-string color `$value`s.
+ * Normalized to canonical DTCG sRGB objects on source import.
+ * @see https://www.designtokens.org/tr/2025.10/color/
+ */
+export const COMPAT_HEX_STRING_PATTERN =
+  /^#(?:[0-9a-fA-F]{3}|[0-9a-fA-F]{4}|[0-9a-fA-F]{6}|[0-9a-fA-F]{8})$/
+
+/** @deprecated Prefer COMPAT_HEX_STRING_PATTERN; kept for existing call sites. */
+export const HEX_PATTERN = COMPAT_HEX_STRING_PATTERN
+
+/** Canonical optional hex on DTCG color objects: 6-digit `#RRGGBB` only. */
+export const CANONICAL_HEX_PATTERN = /^#[0-9a-fA-F]{6}$/
 
 export interface DtcgSrgbValue {
   colorSpace: 'srgb'
@@ -37,8 +49,12 @@ const hexToChannels = (hex: string): { r: number; g: number; b: number; alpha: n
   return { r, g, b, alpha: a / 255 }
 }
 
+/**
+ * Convert a compatibility hex string into a canonical DTCG sRGB color object
+ * (Color Module 2025.10): colorSpace + components + optional alpha + 6-digit hex.
+ */
 export const hexToDtcgColorValue = (hex: string): DtcgSrgbValue => {
-  if (!HEX_PATTERN.test(hex)) {
+  if (!COMPAT_HEX_STRING_PATTERN.test(hex)) {
     throw new Error(`Invalid hex color: ${hex}`)
   }
 
@@ -64,8 +80,22 @@ export const hexToDtcgColorValue = (hex: string): DtcgSrgbValue => {
   return obj
 }
 
-export function convertHexColorsInDocument(doc: Json): Json {
+/**
+ * Normalize plain hex-string color `$value`s into canonical DTCG color objects
+ * in a **source** document. Documented non-DTCG compatibility feature.
+ *
+ * Idempotent for already-canonical color objects; preserves aliases and `"none"`.
+ */
+export function normalizeHexColorsInSourceDocument(doc: Json): Json {
   return convertNode(doc, false)
+}
+
+/**
+ * @deprecated Prefer {@link normalizeHexColorsInSourceDocument}.
+ * Kept so characterization tests and call sites keep working.
+ */
+export function convertHexColorsInDocument(doc: Json): Json {
+  return normalizeHexColorsInSourceDocument(doc)
 }
 
 function convertNode(node: Json, inColor: boolean): Json {
@@ -77,7 +107,12 @@ function convertNode(node: Json, inColor: boolean): Json {
   const out: JsonObject = {}
 
   for (const [key, value] of Object.entries(node)) {
-    if (nextInColor && key === '$value' && typeof value === 'string' && HEX_PATTERN.test(value)) {
+    if (
+      nextInColor &&
+      key === '$value' &&
+      typeof value === 'string' &&
+      COMPAT_HEX_STRING_PATTERN.test(value)
+    ) {
       out[key] = hexToDtcgColorValue(value)
     } else {
       out[key] = convertNode(value, nextInColor)

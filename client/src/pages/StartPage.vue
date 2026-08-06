@@ -103,7 +103,7 @@ async function goToWorkspace(designSystemId: string) {
   console.log('[StartPage] goToWorkspace', designSystemId)
   dsStore.setCurrent(designSystemId)
   wsStore.resetForDesignSystem(designSystemId)
-  await router.push({ name: 'colors' })
+  await router.push({ name: 'token-type', params: { tokenType: 'color' } })
 }
 
 async function onEnter() {
