@@ -1,30 +1,17 @@
 # DTCG Multi-Type Migration Handoff
 
-Branch: `cursor/token-table-columns-cab3` (continues from `cursor/dimension-visibility-cab3`)  
+Branch: `cursor/export-serialization-cab3` (continues from `cursor/token-table-columns-cab3`)  
+Export serialization PR: *(this branch)*  
 Token-table columns PR: https://github.com/dinasaur23/Token-man-demo/pull/18  
 Dimension visibility fix PR: https://github.com/dinasaur23/Token-man-demo/pull/17  
 Post-migration UI PR: https://github.com/dinasaur23/Token-man-demo/pull/16  
 Stage 18 PR: https://github.com/dinasaur23/Token-man-demo/pull/15  
-Stage 17 PR: https://github.com/dinasaur23/Token-man-demo/pull/14  
-Stage 16 PR: https://github.com/dinasaur23/Token-man-demo/pull/13  
-Stage 15 PR: https://github.com/dinasaur23/Token-man-demo/pull/12  
-Stage 14 PR: https://github.com/dinasaur23/Token-man-demo/pull/11  
-Stage 13 PR: https://github.com/dinasaur23/Token-man-demo/pull/10  
-Stage 12 PR: https://github.com/dinasaur23/Token-man-demo/pull/9  
-Stage 11 PR: https://github.com/dinasaur23/Token-man-demo/pull/8  
-Stage 10 PR: https://github.com/dinasaur23/Token-man-demo/pull/7  
-Stage 9 PR: https://github.com/dinasaur23/Token-man-demo/pull/6  
-Stage 8 PR: https://github.com/dinasaur23/Token-man-demo/pull/5  
-Stage 7 PR: https://github.com/dinasaur23/Token-man-demo/pull/4  
-Stage 6 PR: https://github.com/dinasaur23/Token-man-demo/pull/3  
-Prior PR (Stages 1–5): https://github.com/dinasaur23/Token-man-demo/pull/2  
-Last completed stage: **Stage 18 + group-tree filter + Dimension visibility + type-aware columns**  
+Last completed stage: **Stage 18 + UI fixes + per-platform export serialization**  
 Date: 2026-08-06
 
 Spec references:
 - Format: https://www.designtokens.org/tr/2025.10/format/
 - Color module: https://www.designtokens.org/tr/2025.10/color/
-- Dimension (§8.2): `{ value, unit: "px" | "rem" }`
 
 ---
 
@@ -32,58 +19,64 @@ Spec references:
 
 | Stage | Status | Summary |
 | --- | --- | --- |
-| 1–5 | Done | Characterization, manifest, source/resolved, color registry, reference resolver |
-| 6. Effective-type | Done | Explicit / alias / inherited; `MISSING_TYPE`; `ALIAS_TYPE_MISMATCH` |
-| 7. Structural validation | Done | `TOKEN_AND_GROUP_CONFLICT`; `$extends` reject; taxonomy helpers |
-| 8. Error-taxonomy removal | Done | Live allowlists drop `string`/`boolean`; import gate; report-only script |
-| 9. Round-trip preservation | Done | Metadata/extensions/aliases on source writes; source-only persist |
-| 10. Color compliance | Done | colorSpace/ranges/`none`/alpha/6-digit hex; hex-string → source normalize |
-| 11. Generic UI + Color nav | Done | `/tokens/:tokenType`; registry nav; Color-only shell; typed create |
-| 12. Export split | Done | Canonical source JSON vs per-platform exporters; remBasePx; structured issues |
-| 13–18 | Done | All seven basic types registered (dimension → cubicBezier) |
-| UI: group-tree type filter | Done | Tree shows only groups with selected-type tokens; empty state |
-| UI: Dimension visibility | Done | Fix empty Dimension tree/rows caused by `extractGroupPath` stripping |
-| UI: type-aware grid columns | **Done** | Hex/Color columns only on Color pages; modular column factory |
-
-**All seven application-supported basic DTCG types are registered.**
+| 1–18 | Done | Multi-type architecture through cubicBezier |
+| UI: group-tree type filter | Done | Tree shows only groups with selected-type tokens |
+| UI: Dimension visibility | Done | `extractGroupPath` no longer empties `spacing.*` |
+| UI: type-aware grid columns | Done | Hex/Color columns only on Color pages |
+| Export: serialization | **Done** | No `[object Object]`; per-platform mappers + safe SD transforms |
 
 ---
 
-## Type-aware token-table columns
+## Per-platform export serialization fix
 
 ### Root cause
-`useTokenGridColumns` always built a static column set that included **Hex** and **Color** (preview picker). Non-color pages (`/tokens/dimension`, `/tokens/cubicBezier`, …) still rendered those Color-specific columns (empty cells).
+Style Dictionary formatters coerce unknown object `$value`s with `String(value)` → **`[object Object]`**.
+
+1. **CSS / Tailwind** — DTCG dimension/duration objects `{ value, unit }` are not handled by `size/rem`; they pass through as objects and become `[object Object]` in `css/variables` unless preparers stringify first (`16px`, `150ms`).
+2. **Android** — `mapDimensionValueForAndroid` left `{ value, unit }` / `{ value, unit: "dp" }` objects; default `size/remToDp` cannot serialize them → `[object Object]` in `<dimen>`.
+3. **Swift** — default `size/swift/remToCGFloat` treats numbers/`16px` as rem and multiplies by 16 (`16px` → `CGFloat(256)`); CSS-like strings for cubicBezier/fontFamily were emitted unquoted.
+
+Canonical JSON was already correct (keeps structured values); the bug was platform prep + SD transform mismatch.
 
 ### Fix
-- Pure factory [`token-grid-columns.ts`](../client/src/utils/dtcg/token-grid-columns.ts) builds columns from the active `tokenType`.
-- Shared columns for every type: Name, Value, Alias path, Actions.
-- Hex + Color preview only when `tokenType === "color"`.
-- Value editing still uses registry parse/format per row type (dimension `16px`/`1rem`, duration, fontFamily, fontWeight, cubicBezier, number).
-- `useTokenGridColumns` takes a reactive `tokenType` and returns `computed` columnDefs.
-- `TokenTableComponent` passes `tokenType` and keys the grid on type so route switches remount columns immediately.
-- Color behavior unchanged on `/tokens/color`.
+**Per-platform preparers** (not one universal serializer):
+
+| Type | CSS / Tailwind | Swift | Android |
+| --- | --- | --- | --- |
+| dimension | `16px` / `1rem` | point number (`16`); rem needs `remBasePx` | `8px` / `16dp` strings |
+| duration | `150ms` / `0.3s` | seconds number (`0.15`) | `150ms` / `0.3s` strings |
+| cubicBezier | `cubic-bezier(...)` | Swift string literal | same CSS string |
+| fontFamily | CSS font list | Swift string literal | CSS font list |
+| fontWeight | number | number | number |
+| number | number | number | number |
+| color | hex (existing) | UIColor via SD (existing) | hex8android (existing) |
+
+**SD configs** drop rem-scaling size transforms for Android/Swift/Tailwind so pre-serialized values are not re-multiplied. CSS keeps `transformGroup: "css"` (stringified dims pass through; `cubicBezier/css` remains a safety net).
+
+**Guard:** after mapping, any remaining non-alias object/array `$value` → `EXPORT_UNSERIALIZED_VALUE` error (never silent `[object Object]`).
 
 ### Changed files
-- [`token-grid-columns.ts`](../client/src/utils/dtcg/token-grid-columns.ts) — modular column factory
-- [`useTokenGridColumns.ts`](../client/src/composables/useTokenGridColumns.ts) — reactive wrapper
-- [`TokenTableComponent.vue`](../client/src/components/TokenTableComponent.vue) — pass tokenType; `:key="tokenType"`
-- [`token-grid-columns.test.ts`](../client/src/utils/dtcg/__tests__/token-grid-columns.test.ts) — regressions
-- [`docs/dtcg-migration-handoff.md`](../docs/dtcg-migration-handoff.md) — this handoff
+- `server/src/utils/dtcg/exporters/android/rem.js` — emit `Npx`/`Ndp` strings
+- `server/src/utils/dtcg/exporters/dimensionMapping.js` — Swift point numbers + remBasePx
+- `server/src/utils/dtcg/exporters/durationMapping.js` — Swift seconds
+- `server/src/utils/dtcg/exporters/cubicBezierMapping.js` — Swift quoted literals
+- `server/src/utils/dtcg/exporters/fontFamilyMapping.js` — Swift quoted literals
+- `server/src/utils/dtcg/exporters/preparePlatform.js` — Swift dim options + unserialized guard
+- `server/src/utils/sd/makeCssConfig.js` / `makeTailwindConfig.js` / `makeSwiftConfig.js` / `makeAndroidConfig.js`
+- `server/src/utils/dtcg/__tests__/export-serialization.test.js` — E2E SD regressions
+- `server/src/utils/dtcg/__tests__/export-split.test.js` — Android string expectations
+- `docs/dtcg-migration-handoff.md`
 
 ### Decisions
-1. One shared table component; columns vary by factory — no per-type table duplication.
-2. Type-specific value shapes stay in the shared Value column (formatted via registry), not extra unit columns.
-3. Color-only columns gated on registry id `"color"` (route `/tokens/color`).
+1. Canonical JSON unchanged — structured objects + aliases preserved.
+2. Platform exports may resolve aliases (SD) and serialize per target.
+3. Android/Swift rem conversion still requires explicit `remBasePx` (never assume 16).
+4. No silent `JSON.stringify` of DTCG objects into CSS.
 
 ### Limitations (remaining)
 1. Branches remain stacked; **not merged to `main`**.
 2. Figma plugin / `--purge` / composites unchanged.
-
----
-
-## Prior fix — Dimension visibility
-
-`extractGroupPath` only strips Tokens Studio type suffixes when a parent collection segment remains, so DTCG-native `spacing.md` keeps `groupPath: ["spacing"]`.
+3. Android duration/easing land as `<string>` resources (not typed animators).
 
 ---
 
@@ -93,28 +86,27 @@ Spec references:
 cd client && npm run test:unit -- --run src/utils/dtcg/__tests__/
 # Result: 21 files, 170 tests passed
 
-cd client && npm run type-check
-# Result: pass
-
-cd client && npm run lint
+cd client && npm run type-check && npm run lint
 # Result: pass
 
 cd server && npm run test:unit
-# Result: 42 tests passed
+# Result: 57 tests passed (includes Style Dictionary E2E)
 
 cd server && npm run lint
 # Result: pass
 ```
 
+Inspected generated CSS / Tailwind / Swift / Android for all seven types — no `[object Object]`.
+
 ---
 
 ## Exact next task
 
-**Basic-type migration + group-tree filter + Dimension visibility + type-aware columns complete.** Optional follow-ups (not started):
+Optional follow-ups (not started):
 
-1. Merge the stacked Stage 6–18 (+ UI fixes) PRs to `main` in order.
-2. Figma plugin multi-type sync (intentionally deferred).
-3. `--purge` / destructive migration tooling (intentionally deferred).
-4. Composite types (`transition`, etc.) if/when product scope expands.
+1. Merge stacked PRs to `main` in order.
+2. Figma plugin multi-type sync (deferred).
+3. `--purge` / destructive migration tooling (deferred).
+4. Richer Android typed resources for duration/motion if product requires it.
 
 Do **not** start Figma plugin refactor or `--purge` unless explicitly requested.
