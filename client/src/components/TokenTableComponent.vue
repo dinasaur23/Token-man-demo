@@ -141,6 +141,7 @@
         :columnDefs="columnDefs"
         :defaultColDef="defaultColDef"
         :rowData="filteredRows"
+        :getRowId="getRowId"
         rowSelection.mode="multiRow"
         style="height: 70vh"
         class="mr-5 mt-9"
@@ -295,7 +296,7 @@
 
 <script setup lang="ts">
 import { ref, watch, toRef, computed } from 'vue'
-import type { GridApi, GridReadyEvent } from 'ag-grid-community'
+import type { GetRowIdParams, GridApi, GridReadyEvent } from 'ag-grid-community'
 import { AgGridVue } from 'ag-grid-vue3'
 import { themeQuartz } from 'ag-grid-community'
 import TokenExportDialog from './TokenExportDialog.vue'
@@ -303,6 +304,8 @@ import { useTokenGridColumns } from '@/composables/useTokenGridColumns'
 import { useTokenTableComponent } from '@/composables/useTokenTableComponent'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import { getTokenTypeDefinition, type TokenTypeId } from '@/utils/dtcg/token-types'
+import { buildStableTokenRowId } from '@/utils/dtcg/row-ordering'
+import type { TableRow } from '@/utils/dtcg/token-table-types'
 
 const props = withDefaults(
   defineProps<{
@@ -383,6 +386,11 @@ const tokenTypeLabel = computed(
 )
 
 const gridApi = ref<GridApi | null>(null)
+
+function getRowId(params: GetRowIdParams<TableRow>): string {
+  const row = params.data
+  return buildStableTokenRowId(row?.sourceFile, row?.path ?? '')
+}
 
 function handleGridReady(e: GridReadyEvent) {
   gridApi.value = e.api

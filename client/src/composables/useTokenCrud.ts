@@ -13,6 +13,11 @@ import {
   removeAliasReferencesInDocs,
   countAliasReferencesInDocs,
 } from '@/utils/dtcg/json-path-helpers'
+import {
+  collectSourceTokenPaths,
+  insertPathAfterInRowOrder,
+  insertSiblingKeyAfter,
+} from '@/utils/dtcg/row-ordering'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
 import { parseColorFromEditor, parseCubicBezierFromEditor, parseDimensionFromEditor, parseDurationFromEditor, parseFontFamilyFromEditor, parseFontWeightFromEditor, parseNumberFromEditor } from '@/utils/dtcg/token-types'
@@ -325,20 +330,36 @@ function ensureRowOrder(store: WorkspaceStore): string[] {
   return store.rowOrder
 }
 
-function seedRowOrderForGroupIfMissing(
+/**
+ * Insert `newPath` directly below `afterPath` in persisted rowOrder.
+ * Reconciles against source-document path order when the reference path is
+ * missing so the new row cannot jump to the top of the table.
+ */
+function insertBelowInRowOrder(
   store: WorkspaceStore,
-  groupPath: string[],
-  parent: JsonRecord,
-) {
-  const order = ensureRowOrder(store)
-  const prefix = groupPath.length ? groupPath.join('.') + '.' : ''
+  docs: Record<string, JsonValue>,
+  afterPath: string | null | undefined,
+  newPath: string,
+): void {
+  const authoritative = collectSourceTokenPaths(docs)
+  // Include mode-added paths already tracked in rowOrder / modeAddedRows so
+  // reconcile keeps them relative to source tokens.
+  for (const arr of Object.values(store.modeAddedRows ?? {})) {
+    if (!Array.isArray(arr)) continue
+    for (const item of arr) {
+      if (item && typeof item === 'object' && typeof (item as { path?: unknown }).path === 'string') {
+        const p = (item as { path: string }).path
+        if (!authoritative.includes(p)) authoritative.push(p)
+      }
+    }
+  }
 
-  const siblingPaths = Object.keys(parent).map((k) => prefix + k)
-
-  const hasAny = siblingPaths.some((p) => order.includes(p))
-  if (hasAny) return
-
-  order.push(...siblingPaths)
+  store.rowOrder = insertPathAfterInRowOrder(
+    ensureRowOrder(store),
+    afterPath,
+    newPath,
+    authoritative,
+  )
 }
 
 function isResolverDocument(value: JsonValue): value is JsonRecord {
@@ -947,10 +968,7 @@ export function useTokenCrud({
           }
         }
 
-        const order = ensureRowOrder(workspaceStore)
-        const idx = order.indexOf(row.path)
-        const insertIndex = idx >= 0 ? idx + 1 : order.length
-        order.splice(insertIndex, 0, newPath)
+        insertBelowInRowOrder(workspaceStore, uploadedDocs.value, row.path, newPath)
 
         await workspaceStore.saveToServer()
         await persistUploadedDocsAndReload()
@@ -993,7 +1011,14 @@ export function useTokenCrud({
         raw: row.type === 'color' ? row.hex || '#000000' : value,
       }
 
-      const nextRows = [...existingAdded, newRow]
+      // Keep mode-added array order aligned with "below source" intent.
+      const sourceIdx = existingAdded.findIndex((r) => r.path === row.path)
+      const nextRows = [...existingAdded]
+      if (sourceIdx >= 0) {
+        nextRows.splice(sourceIdx + 1, 0, newRow)
+      } else {
+        nextRows.push(newRow)
+      }
       writeModeAddedRows(workspaceStore, mode, groupKey, nextRows)
 
       const fromKey = `${mode}::${row.path}`
@@ -1005,10 +1030,7 @@ export function useTokenCrud({
         }
       }
 
-      const order = ensureRowOrder(workspaceStore)
-      const idx = order.indexOf(row.path)
-      const insertIndex = idx >= 0 ? idx + 1 : order.length
-      order.splice(insertIndex, 0, newPath)
+      insertBelowInRowOrder(workspaceStore, uploadedDocs.value, row.path, newPath)
 
       await workspaceStore.saveToServer()
       await persistUploadedDocsAndReload()
@@ -1027,7 +1049,8 @@ export function useTokenCrud({
       newToken = { $type: row.type, $value: row.isAlias ? original : parseRowValueForDtcg(row) }
     }
 
-    parent[newKey] = newToken
+    // First incorrect ordering point: source sibling key order (authoritative).
+    insertSiblingKeyAfter(parent, oldKey, newKey, newToken)
 
     const newPathSegments = [...segments.slice(0, -1), newKey]
     const newPath = newPathSegments.join('.')
@@ -1051,10 +1074,7 @@ export function useTokenCrud({
       await workspaceStore.saveToServer()
     }
 
-    const order = ensureRowOrder(workspaceStore)
-    const idx = order.indexOf(row.path)
-    const insertIndex = idx >= 0 ? idx + 1 : order.length
-    order.splice(insertIndex, 0, newPath)
+    insertBelowInRowOrder(workspaceStore, uploadedDocs.value, row.path, newPath)
 
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
@@ -1094,10 +1114,7 @@ export function useTokenCrud({
         nextRows.splice(hit.index + 1, 0, newRow)
         writeModeAddedRows(workspaceStore, mode, hit.groupKey, nextRows)
 
-        const order = ensureRowOrder(workspaceStore)
-        const idx = order.indexOf(row.path)
-        const insertIndex = idx >= 0 ? idx + 1 : order.length
-        order.splice(insertIndex, 0, newPath)
+        insertBelowInRowOrder(workspaceStore, uploadedDocs.value, row.path, newPath)
 
         await workspaceStore.saveToServer()
         await persistUploadedDocsAndReload()
@@ -1145,19 +1162,21 @@ export function useTokenCrud({
         raw: row.type === 'color' ? defaultHex : newValue,
       }
 
-      writeModeAddedRows(workspaceStore, mode, groupKey, [...existingAdded, newRow])
+      const sourceIdx = existingAdded.findIndex((r) => r.path === row.path)
+      const nextRows = [...existingAdded]
+      if (sourceIdx >= 0) {
+        nextRows.splice(sourceIdx + 1, 0, newRow)
+      } else {
+        nextRows.push(newRow)
+      }
+      writeModeAddedRows(workspaceStore, mode, groupKey, nextRows)
 
-      const order = ensureRowOrder(workspaceStore)
-      const idx = order.indexOf(row.path)
-      const insertIndex = idx >= 0 ? idx + 1 : order.length
-      order.splice(insertIndex, 0, newPath)
+      insertBelowInRowOrder(workspaceStore, uploadedDocs.value, row.path, newPath)
 
       await workspaceStore.saveToServer()
       await persistUploadedDocsAndReload()
       return
     }
-
-    seedRowOrderForGroupIfMissing(workspaceStore, groupPath, parent)
 
     const baseName = row.name || 'new-token'
     const newKey = createDuplicateKey(parent, baseName)
@@ -1187,14 +1206,12 @@ export function useTokenCrud({
       }
     }
 
-    parent[newKey] = newToken
+    // First incorrect ordering point: source sibling key order (authoritative).
+    insertSiblingKeyAfter(parent, clickedKey, newKey, newToken)
 
     const newPath = [...groupPath, newKey].join('.')
-    const order = ensureRowOrder(workspaceStore)
     const clickedPath = [...groupPath, clickedKey].join('.')
-    const idx = order.indexOf(clickedPath)
-    const insertIndex = idx >= 0 ? idx + 1 : order.length
-    order.splice(insertIndex, 0, newPath)
+    insertBelowInRowOrder(workspaceStore, uploadedDocs.value, clickedPath, newPath)
 
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
