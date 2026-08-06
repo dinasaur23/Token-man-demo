@@ -28,6 +28,12 @@ import {
 import type { GroupNode, TableRow } from '@/utils/dtcg/token-table-types'
 import { normalizeHexColorsInSourceDocument } from '@/utils/dtcg/color-conversion'
 import { serializeSourceDocumentsForPersistence } from '@/utils/dtcg/source-document'
+import {
+  buildPathToSourceFileMap,
+  ensureRowOrderContainsSourcePaths,
+  modeAddedSourceFile,
+  WORKSPACE_FILE_FALLBACK,
+} from '@/utils/dtcg/row-ordering'
 import { useTokenCrud } from './useTokenCrud'
 import type { FigmaModifierOptions } from '@/stores/TokenWorkspace'
 import { expandNameOverrides } from '@/utils/dtcg/expandNameOverrides'
@@ -767,15 +773,21 @@ export function useTokenWorkspaceTable() {
     const tokens = collectTokensWithPath(normalizedRoot)
     const figmaOrderMap = collectFigmaOrderMap(convertedDoc)
 
+    const pathToFile = buildPathToSourceFileMap(uploadedDocs.value)
+    const authoritativeSourcePaths = tokens.map((t) => t.path)
+
     if (figmaOrderMap.size > 0 && workspaceStore.rowOrder.length === 0) {
       workspaceStore.rowOrder = Array.from(figmaOrderMap.entries())
         .sort((a, b) => a[1] - b[1])
         .map(([path]) => path)
     }
 
-    if (workspaceStore.rowOrder.length === 0) {
-      workspaceStore.rowOrder = tokens.map((t) => t.path)
-    }
+    // Keep rowOrder complete across rebuilds without reshuffling existing entries.
+    // Empty orders fall back to authoritative source DFS order.
+    workspaceStore.rowOrder = ensureRowOrderContainsSourcePaths(
+      workspaceStore.rowOrder,
+      authoritativeSourcePaths,
+    )
 
     const orderedTokens = sortTokensByRowOrder(tokens, workspaceStore.rowOrder)
     const map: Record<string, TokenEntry> = {}
@@ -931,6 +943,7 @@ export function useTokenWorkspaceTable() {
           group: groupLabel,
           groupPath,
           path: t.path,
+          sourceFile: pathToFile.get(t.path) ?? WORKSPACE_FILE_FALLBACK,
           type: t.type,
           isAlias: !!aliasPathDisplayFinal,
           aliasPath: aliasPathDisplayFinal ?? '',
@@ -1017,6 +1030,7 @@ export function useTokenWorkspaceTable() {
           group: groupLabel,
           groupPath,
           path,
+          sourceFile: modeAddedSourceFile(effectiveMode),
           type: a.type,
           isAlias: !!aliasPath,
           aliasPath: aliasPath ?? '',
