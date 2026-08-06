@@ -137,6 +137,7 @@
 
     <v-col cols="12" md="9">
       <ag-grid-vue
+        :key="tokenType"
         :theme="gridTheme"
         :columnDefs="columnDefs"
         :defaultColDef="defaultColDef"
@@ -403,11 +404,13 @@ watch(activeGroupId, () => {
   api.refreshCells({ columns: ['name'], force: true })
 })
 
-// Color hex/picker columns stay behind the color column factory for Stage 11.
+// Columns rebuild from the modular factory when tokenType changes.
+// Hex / Color preview are included only for `$type: "color"`.
 const { columnDefs, defaultColDef } = useTokenGridColumns(
   onActionButtonClick,
   updateTokenValueAny,
   activeGroupId,
+  tokenType,
 )
 
 const ws = useTokenWorkspaceStore()
