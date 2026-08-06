@@ -116,12 +116,22 @@ export function extractGroupPath(path: string): string[] {
 
   const tsSegments = tokenSetPart.split('/')
 
+  /**
+   * Tokens Studio / multi-file collection paths may end with a type-ish suffix
+   * after a slash, e.g. `MyCollection/spacing.md` or `Brand/colors.brand.primary`.
+   * Strip that suffix only when a parent collection segment remains.
+   *
+   * Do NOT strip when the suffix is the sole first segment (DTCG-native roots
+   * like `spacing.md` / `colors.brand.primary`). Stripping those emptied
+   * `groupPath`, which dropped Dimension (and flat Color) tokens from the
+   * group tree and type-filtered table.
+   */
   const GENERIC_SUFFIXES = ['color', 'colors', 'typography', 'type', 'spacing']
 
   let collectionSegments = [...tsSegments]
   const last = collectionSegments[collectionSegments.length - 1]
 
-  if (GENERIC_SUFFIXES.includes(last)) {
+  if (GENERIC_SUFFIXES.includes(last) && collectionSegments.length > 1) {
     collectionSegments = collectionSegments.slice(0, -1)
   }
 
