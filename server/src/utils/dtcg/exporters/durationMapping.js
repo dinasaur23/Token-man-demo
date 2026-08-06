@@ -2,7 +2,8 @@
  * Per-platform duration mapping for Style Dictionary prep.
  *
  * Canonical JSON keeps `{ value, unit }` objects.
- * CSS / Tailwind / Swift / Android emit `200ms` / `0.3s` strings.
+ * CSS / Tailwind / Android emit `200ms` / `0.3s` strings.
+ * Swift emits TimeInterval seconds as JSON numbers (150ms → 0.15).
  */
 
 import { createExportIssue } from './exportResult.js'
@@ -34,9 +35,70 @@ export function mapDurationValueForTailwind(value, path) {
   return mapDurationValueToCssString(value, path, 'tailwind')
 }
 
-/** @returns {{ value: unknown, warnings: import('./exportResult.js').ExportIssue[], errors: import('./exportResult.js').ExportIssue[] }} */
+/**
+ * Swift: emit seconds as a finite number (TimeInterval-compatible).
+ * @returns {{ value: unknown, warnings: import('./exportResult.js').ExportIssue[], errors: import('./exportResult.js').ExportIssue[] }}
+ */
 export function mapDurationValueForSwift(value, path) {
-  return mapDurationValueToCssString(value, path, 'swift')
+  const warnings = []
+  const errors = []
+
+  if (isCurlyBraceAlias(value)) {
+    return { value, warnings, errors }
+  }
+
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return { value, warnings, errors }
+  }
+
+  if (typeof value === 'string') {
+    const match = value.trim().match(/^(-?(?:\d+|\d*\.\d+))\s*(ms|s)$/i)
+    if (match) {
+      const numeric = Number(match[1])
+      const unit = match[2].toLowerCase()
+      return {
+        value: unit === 'ms' ? numeric / 1000 : numeric,
+        warnings,
+        errors,
+      }
+    }
+    errors.push(
+      createExportIssue({
+        path,
+        code: 'EXPORT_UNSUPPORTED_DURATION',
+        message: `swift export cannot map duration string at "${path}".`,
+        severity: 'error',
+      }),
+    )
+    return { value, warnings, errors }
+  }
+
+  if (!isDurationValue(value)) {
+    errors.push(
+      createExportIssue({
+        path,
+        code: 'EXPORT_UNSUPPORTED_DURATION',
+        message: `swift export expects { value, unit } at "${path}".`,
+        severity: 'error',
+      }),
+    )
+    return { value, warnings, errors }
+  }
+
+  if (!Number.isFinite(value.value)) {
+    errors.push(
+      createExportIssue({
+        path,
+        code: 'EXPORT_UNSUPPORTED_DURATION',
+        message: `swift export: duration value must be a finite number at "${path}".`,
+        severity: 'error',
+      }),
+    )
+    return { value, warnings, errors }
+  }
+
+  const seconds = value.unit === 'ms' ? value.value / 1000 : value.value
+  return { value: seconds, warnings, errors }
 }
 
 /** @returns {{ value: unknown, warnings: import('./exportResult.js').ExportIssue[], errors: import('./exportResult.js').ExportIssue[] }} */

@@ -47,9 +47,9 @@ import {
   mapNumberValueForSwift,
   mapNumberValueForTailwind,
 } from './numberMapping.js'
-import { createExportResult } from './exportResult.js'
+import { createExportResult, createExportIssue } from './exportResult.js'
 import { mapDimensionValueForAndroid } from './android/rem.js'
-import { cloneJson, walkTokenLeaves } from './walkTokens.js'
+import { cloneJson, isCurlyBraceAlias, walkTokenLeaves } from './walkTokens.js'
 
 /**
  * @param {'css' | 'tailwind' | 'swift' | 'android'} platform
@@ -114,6 +114,13 @@ export function preparePlatformExport(platform, resolvedDocument, options = {}) 
         if (mapped.errors.length === 0) {
           node.$value = mapped.value
         }
+      } else if (platform === 'swift') {
+        const mapped = mapDimensionValueForSwift(value, path, options)
+        warnings.push(...mapped.warnings)
+        errors.push(...mapped.errors)
+        if (mapped.errors.length === 0) {
+          node.$value = mapped.value
+        }
       } else {
         const mapper = dimensionMapperFor(platform)
         const mapped = mapper(value, path)
@@ -170,6 +177,25 @@ export function preparePlatformExport(platform, resolvedDocument, options = {}) 
     }
   })
 
+  // Defense: any remaining non-alias object/array $value would become
+  // "[object Object]" / bad coercion in Style Dictionary formatters.
+  if (errors.length === 0) {
+    walkTokenLeaves(document, (node, path) => {
+      const v = node.$value
+      if (isCurlyBraceAlias(v)) return
+      if (v !== null && typeof v === 'object') {
+        errors.push(
+          createExportIssue({
+            path,
+            code: 'EXPORT_UNSERIALIZED_VALUE',
+            message: `${platform} export left a structured $value at "${path}" that would coerce to an invalid platform literal. Serialize it in the per-type mapper.`,
+            severity: 'error',
+          }),
+        )
+      }
+    })
+  }
+
   const ok = errors.length === 0
   return createExportResult({
     ok,
@@ -198,8 +224,6 @@ function dimensionMapperFor(platform) {
   switch (platform) {
     case 'tailwind':
       return mapDimensionValueForTailwind
-    case 'swift':
-      return mapDimensionValueForSwift
     case 'css':
     default:
       return mapDimensionValueForCss

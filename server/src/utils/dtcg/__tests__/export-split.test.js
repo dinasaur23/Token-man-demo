@@ -206,10 +206,10 @@ describe('Stage 12: Android rem handling', () => {
   it('converts rem→dp when remBasePx is explicit and emits a lossy warning', () => {
     const result = prepareAndroidExport(sourceDoc, { remBasePx: 16 })
     assert.equal(result.ok, true)
-    assert.deepEqual(result.document.spacing.md.$value, { value: 16, unit: 'dp' })
+    assert.equal(result.document.spacing.md.$value, '16dp')
     assert.ok(result.warnings.some((w) => w.code === 'EXPORT_LOSSY_REM'))
-    // px dimensions unchanged
-    assert.deepEqual(result.document.spacing.sm.$value, { value: 8, unit: 'px' })
+    // px dimensions become Android resource strings (not objects)
+    assert.equal(result.document.spacing.sm.$value, '8px')
   })
 
   it('mapDimensionValueForAndroid rejects non-positive remBasePx', () => {
@@ -298,6 +298,12 @@ describe('Stage 15: duration export', () => {
     const android = preparePlatformExport('android', doc)
     assert.equal(android.ok, true)
     assert.equal(android.document.motion.fast.$value, '200ms')
+
+    const swift = preparePlatformExport('swift', doc)
+    assert.equal(swift.ok, true)
+    assert.equal(swift.document.motion.fast.$value, 0.2)
+    assert.equal(swift.document.motion.medium.$value, 0.3)
+    assert.equal(swift.document.motion.alias.$value, '{motion.fast}')
   })
 
   it('errors on unsupported duration units instead of silently converting', () => {

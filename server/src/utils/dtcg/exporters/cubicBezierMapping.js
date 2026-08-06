@@ -91,7 +91,17 @@ export function mapCubicBezierValueForTailwind(value, path) {
   return mapCubicBezierValueForPlatform(value, path, 'tailwind')
 }
 export function mapCubicBezierValueForSwift(value, path) {
-  return mapCubicBezierValueForPlatform(value, path, 'swift')
+  const mapped = mapCubicBezierValueForPlatform(value, path, 'swift')
+  if (mapped.errors.length > 0 || isCurlyBraceAlias(mapped.value)) {
+    return mapped
+  }
+  // ios-swift/class.swift does not auto-quote arbitrary strings; embed a Swift
+  // string literal so the generated source remains valid.
+  if (typeof mapped.value === 'string' && !mapped.value.startsWith('"')) {
+    const escaped = mapped.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    return { ...mapped, value: `"${escaped}"` }
+  }
+  return mapped
 }
 export function mapCubicBezierValueForAndroid(value, path) {
   return mapCubicBezierValueForPlatform(value, path, 'android')

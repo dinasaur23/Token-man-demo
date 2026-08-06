@@ -79,7 +79,15 @@ export function mapFontFamilyValueForTailwind(value, path) {
   return mapFontFamilyValueForPlatform(value, path, 'tailwind')
 }
 export function mapFontFamilyValueForSwift(value, path) {
-  return mapFontFamilyValueForPlatform(value, path, 'swift')
+  const mapped = mapFontFamilyValueForPlatform(value, path, 'swift')
+  if (mapped.errors.length > 0 || isCurlyBraceAlias(mapped.value)) {
+    return mapped
+  }
+  if (typeof mapped.value === 'string' && !mapped.value.startsWith('"')) {
+    const escaped = mapped.value.replace(/\\/g, '\\\\').replace(/"/g, '\\"')
+    return { ...mapped, value: `"${escaped}"` }
+  }
+  return mapped
 }
 export function mapFontFamilyValueForAndroid(value, path) {
   return mapFontFamilyValueForPlatform(value, path, 'android')
