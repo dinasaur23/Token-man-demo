@@ -5,7 +5,7 @@ export function makeCssConfig(jsonFilePath, buildBase) {
     source: [jsonFilePath],
     platforms: {
       css: {
-        transformGroup: "css",
+        transformGroup: "token-manager/css",
         buildPath: path.join(buildBase, "css/"),
         files: [
           {

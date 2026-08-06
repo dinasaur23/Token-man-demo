@@ -8,7 +8,10 @@ import {
   exportCanonicalJson,
   preparePlatformExport,
 } from "../utils/dtcg/exporters/index.js";
-import { createSdConfig } from "../utils/sd/index.js";
+import {
+  assertNoRawObjectExportValues,
+  createSdConfig,
+} from "../utils/sd/index.js";
 import {
   pruneDeletedTokens,
   buildCleanOverrides,
@@ -1400,6 +1403,46 @@ export async function exportTokens(req, res) {
 
       await sd.buildAllPlatforms();
 
+      {
+        const platform = await sd.getPlatform(platformKey);
+        const outputFilePaths = collectionsWithoutModes
+          .map((col) =>
+            path.join(
+              platformConfig.buildPath,
+              col,
+              "default",
+              originalDestination,
+            ),
+          )
+          .filter((p) => fs.existsSync(p));
+        const guard = assertNoRawObjectExportValues({
+          format,
+          allTokens: platform?.dictionary?.allTokens || [],
+          outputFilePaths,
+          sdOptions: { usesDtcg: sd.usesDtcg !== false },
+        });
+        if (!guard.ok) {
+          exportErrors.push(...guard.errors);
+          throw Object.assign(
+            new Error(
+              guard.errors.map((e) => e.message).join("; ") ||
+                "Export guard failed: raw object token values",
+            ),
+            {
+              exportReport: JSON.stringify(
+                { ok: false, warnings: exportWarnings, errors: exportErrors },
+                null,
+                2,
+              ),
+              exportErrors,
+              exportWarnings,
+              status: 400,
+            },
+          );
+        }
+        exportWarnings.push(...guard.warnings);
+      }
+
       for (const col of collectionsWithoutModes) {
         const builtPath = path.join(
           platformConfig.buildPath,
@@ -1615,6 +1658,39 @@ export async function exportTokens(req, res) {
       );
 
       await sd.buildAllPlatforms();
+
+      {
+        const platform = await sd.getPlatform(destPlatformKey);
+        const outputFilePaths = platformConfig.files
+          .map((f) => path.join(platformConfig.buildPath, f.destination))
+          .filter((p) => fs.existsSync(p));
+        const guard = assertNoRawObjectExportValues({
+          format,
+          allTokens: platform?.dictionary?.allTokens || [],
+          outputFilePaths,
+          sdOptions: { usesDtcg: sd.usesDtcg !== false },
+        });
+        if (!guard.ok) {
+          exportErrors.push(...guard.errors);
+          throw Object.assign(
+            new Error(
+              guard.errors.map((e) => e.message).join("; ") ||
+                "Export guard failed: raw object token values",
+            ),
+            {
+              exportReport: JSON.stringify(
+                { ok: false, warnings: exportWarnings, errors: exportErrors },
+                null,
+                2,
+              ),
+              exportErrors,
+              exportWarnings,
+              status: 400,
+            },
+          );
+        }
+        exportWarnings.push(...guard.warnings);
+      }
 
       for (const col of allowedCollections) {
         const colVariantFolder = makeVariantFolderForCollection(

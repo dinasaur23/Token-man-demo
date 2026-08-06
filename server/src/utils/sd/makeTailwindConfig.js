@@ -5,7 +5,7 @@ export function makeTailwindConfig(jsonFilePath, buildBase) {
     source: [jsonFilePath],
     platforms: {
       tailwind: {
-        transformGroup: "js",
+        transformGroup: "token-manager/tailwind",
         buildPath: path.join(buildBase, "tailwind/"),
         files: [
           {

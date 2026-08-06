@@ -5,7 +5,9 @@ export function makeSwiftConfig(jsonFilePath, buildBase) {
     source: [jsonFilePath],
     platforms: {
       ios: {
-        transformGroup: "ios-swift",
+        transformGroup: "token-manager/ios-swift",
+        // SD historical default for rem→pt/CGFloat; override via platform when remBasePx is productized.
+        basePxFontSize: 16,
         buildPath: path.join(buildBase, "ios/"),
         files: [
           {
