@@ -1,7 +1,7 @@
 # DTCG Multi-Type Migration Handoff
 
 Branch: `cursor/token-row-ordering-087b` (from `main` @ `840332a`)  
-Row-ordering fix PR: _(opened from this branch)_  
+Row-ordering fix PR: https://github.com/dinasaur23/Token-man-demo/pull/21  
 Merged platform serialization: https://github.com/dinasaur23/Token-man-demo/pull/20 (`840332a`)  
 Optional open: https://github.com/dinasaur23/Token-man-demo/pull/18 (Hex/Color columns — do not touch here)  
 Do **not** merge: https://github.com/dinasaur23/Token-man-demo/pull/19 (superseded by #20)  
