@@ -1,7 +1,7 @@
 # DTCG Multi-Type Migration Handoff
 
 Branch: `cursor/token-table-columns-cab3` (continues from `cursor/dimension-visibility-cab3`)  
-Token-table columns PR: *(this branch)*  
+Token-table columns PR: https://github.com/dinasaur23/Token-man-demo/pull/18  
 Dimension visibility fix PR: https://github.com/dinasaur23/Token-man-demo/pull/17  
 Post-migration UI PR: https://github.com/dinasaur23/Token-man-demo/pull/16  
 Stage 18 PR: https://github.com/dinasaur23/Token-man-demo/pull/15  
