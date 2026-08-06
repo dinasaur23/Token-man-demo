@@ -1,6 +1,7 @@
 # DTCG Multi-Type Migration Handoff
 
-Branch: `cursor/dimension-visibility-cab3` (continues from `cursor/dtcg-filter-group-tree-7ae8`)  
+Branch: `cursor/token-table-columns-cab3` (continues from `cursor/dimension-visibility-cab3`)  
+Token-table columns PR: *(this branch)*  
 Dimension visibility fix PR: https://github.com/dinasaur23/Token-man-demo/pull/17  
 Post-migration UI PR: https://github.com/dinasaur23/Token-man-demo/pull/16  
 Stage 18 PR: https://github.com/dinasaur23/Token-man-demo/pull/15  
@@ -17,7 +18,7 @@ Stage 8 PR: https://github.com/dinasaur23/Token-man-demo/pull/5
 Stage 7 PR: https://github.com/dinasaur23/Token-man-demo/pull/4  
 Stage 6 PR: https://github.com/dinasaur23/Token-man-demo/pull/3  
 Prior PR (Stages 1–5): https://github.com/dinasaur23/Token-man-demo/pull/2  
-Last completed stage: **Stage 18 — cubicBezier type** + **group-tree type filter** + **Dimension visibility fix**  
+Last completed stage: **Stage 18 + group-tree filter + Dimension visibility + type-aware columns**  
 Date: 2026-08-06
 
 Spec references:
@@ -41,42 +42,48 @@ Spec references:
 | 12. Export split | Done | Canonical source JSON vs per-platform exporters; remBasePx; structured issues |
 | 13–18 | Done | All seven basic types registered (dimension → cubicBezier) |
 | UI: group-tree type filter | Done | Tree shows only groups with selected-type tokens; empty state |
-| UI: Dimension visibility | **Done** | Fix empty Dimension tree/rows caused by `extractGroupPath` stripping |
+| UI: Dimension visibility | Done | Fix empty Dimension tree/rows caused by `extractGroupPath` stripping |
+| UI: type-aware grid columns | **Done** | Hex/Color columns only on Color pages; modular column factory |
 
 **All seven application-supported basic DTCG types are registered.**
 
 ---
 
-## Dimension visibility fix
+## Type-aware token-table columns
 
 ### Root cause
-`extractGroupPath` treated names like `spacing` / `colors` as Tokens Studio **type suffixes** and stripped them even when they were the **sole** DTCG top-level group segment.
-
-For common Dimension docs such as:
-
-```json
-{ "spacing": { "$type": "dimension", "md": { "$value": { "value": 8, "unit": "px" } } } }
-```
-
-path `spacing.md` became `groupPath: []`. `buildGroupTree` skips empty paths, so `/tokens/dimension` showed **no groups and no rows** even though import validation and row typing succeeded. Other types typically use non-suffix group names (or deeper nesting), so they still appeared.
+`useTokenGridColumns` always built a static column set that included **Hex** and **Color** (preview picker). Non-color pages (`/tokens/dimension`, `/tokens/cubicBezier`, …) still rendered those Color-specific columns (empty cells).
 
 ### Fix
-Only strip `GENERIC_SUFFIXES` when a parent collection segment remains (slash paths like `MyCollection/spacing.md`). DTCG-native roots such as `spacing.md` / `colors.brand.primary` keep their first segment.
+- Pure factory [`token-grid-columns.ts`](../client/src/utils/dtcg/token-grid-columns.ts) builds columns from the active `tokenType`.
+- Shared columns for every type: Name, Value, Alias path, Actions.
+- Hex + Color preview only when `tokenType === "color"`.
+- Value editing still uses registry parse/format per row type (dimension `16px`/`1rem`, duration, fontFamily, fontWeight, cubicBezier, number).
+- `useTokenGridColumns` takes a reactive `tokenType` and returns `computed` columnDefs.
+- `TokenTableComponent` passes `tokenType` and keys the grid on type so route switches remount columns immediately.
+- Color behavior unchanged on `/tokens/color`.
 
 ### Changed files
-- [`grouping.ts`](../client/src/utils/dtcg/grouping.ts) — suffix strip requires `collectionSegments.length > 1`
-- [`dimension-visibility.test.ts`](../client/src/utils/dtcg/__tests__/dimension-visibility.test.ts) — full-pipeline regressions
+- [`token-grid-columns.ts`](../client/src/utils/dtcg/token-grid-columns.ts) — modular column factory
+- [`useTokenGridColumns.ts`](../client/src/composables/useTokenGridColumns.ts) — reactive wrapper
+- [`TokenTableComponent.vue`](../client/src/components/TokenTableComponent.vue) — pass tokenType; `:key="tokenType"`
+- [`token-grid-columns.test.ts`](../client/src/utils/dtcg/__tests__/token-grid-columns.test.ts) — regressions
 - [`docs/dtcg-migration-handoff.md`](../docs/dtcg-migration-handoff.md) — this handoff
 
 ### Decisions
-1. Classification remains effective `type === "dimension"` (registry id / route param); label `"Dimension"` is display-only.
-2. Source documents are never mutated; filtering stays view-only.
-3. Slash-path Tokens Studio collection/type-suffix behavior is preserved.
+1. One shared table component; columns vary by factory — no per-type table duplication.
+2. Type-specific value shapes stay in the shared Value column (formatted via registry), not extra unit columns.
+3. Color-only columns gated on registry id `"color"` (route `/tokens/color`).
 
-### Limitations (unchanged)
-1. Hex/Color grid columns still appear on non-color pages.
-2. Branches remain stacked; **not merged to `main`**.
-3. Figma plugin / `--purge` / composites unchanged.
+### Limitations (remaining)
+1. Branches remain stacked; **not merged to `main`**.
+2. Figma plugin / `--purge` / composites unchanged.
+
+---
+
+## Prior fix — Dimension visibility
+
+`extractGroupPath` only strips Tokens Studio type suffixes when a parent collection segment remains, so DTCG-native `spacing.md` keeps `groupPath: ["spacing"]`.
 
 ---
 
@@ -84,7 +91,7 @@ Only strip `GENERIC_SUFFIXES` when a parent collection segment remains (slash pa
 
 ```bash
 cd client && npm run test:unit -- --run src/utils/dtcg/__tests__/
-# Result: 20 files, 165 tests passed
+# Result: 21 files, 170 tests passed
 
 cd client && npm run type-check
 # Result: pass
@@ -103,12 +110,11 @@ cd server && npm run lint
 
 ## Exact next task
 
-**Basic-type migration + group-tree filter + Dimension visibility complete.** Optional follow-ups (not started):
+**Basic-type migration + group-tree filter + Dimension visibility + type-aware columns complete.** Optional follow-ups (not started):
 
-1. Merge the stacked Stage 6–18 (+ UI filter + Dimension visibility) PRs to `main` in order.
-2. Hide Hex/Color columns on non-color type pages.
-3. Figma plugin multi-type sync (intentionally deferred).
-4. `--purge` / destructive migration tooling (intentionally deferred).
-5. Composite types (`transition`, etc.) if/when product scope expands.
+1. Merge the stacked Stage 6–18 (+ UI fixes) PRs to `main` in order.
+2. Figma plugin multi-type sync (intentionally deferred).
+3. `--purge` / destructive migration tooling (intentionally deferred).
+4. Composite types (`transition`, etc.) if/when product scope expands.
 
 Do **not** start Figma plugin refactor or `--purge` unless explicitly requested.
