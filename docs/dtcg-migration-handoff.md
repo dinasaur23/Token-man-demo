@@ -1,11 +1,11 @@
 # DTCG Multi-Type Migration Handoff
 
-Branch: `cursor/token-row-ordering-087b` (from `main` @ `840332a`)  
-Row-ordering fix PR: https://github.com/dinasaur23/Token-man-demo/pull/21  
+Branch: `cursor/token-table-columns-cab3` (from `main` @ `ffad34a`)  
+Token-table columns PR: https://github.com/dinasaur23/Token-man-demo/pull/18  
+Row-ordering fix PR: https://github.com/dinasaur23/Token-man-demo/pull/21 (merged)  
 Merged platform serialization: https://github.com/dinasaur23/Token-man-demo/pull/20 (`840332a`)  
-Optional open: https://github.com/dinasaur23/Token-man-demo/pull/18 (Hex/Color columns — do not touch here)  
 Do **not** merge: https://github.com/dinasaur23/Token-man-demo/pull/19 (superseded by #20)  
-Last completed stage: **Token row-ordering fix (add/duplicate insert-below)**  
+Last completed stage: **Type-aware token-table columns (Hex/Color only on Color pages)**  
 Date: 2026-08-06
 
 Spec references:
@@ -20,11 +20,20 @@ Spec references:
 | --- | --- | --- |
 | 1–18 + UI | Done | Merged to `main` via PR #20 |
 | Platform export runtime | Done | `token-manager/*` transforms + guard-before-ZIP |
-| **Row ordering** | **Done** | Add/duplicate insert below source; stable `getRowId`; source sibling order authoritative |
+| Row ordering | Done | Add/duplicate insert below source; stable `getRowId`; source sibling order authoritative |
+| **Type-aware columns** | **Done** | Hex/Color columns only on Color pages; modular column factory |
 
 ---
 
-## Token row-ordering bug (fixed on this branch)
+## Platform export runtime (merged via PR #20)
+
+Production export path uses `preparePlatformExport` + `token-manager/<platform>` Style Dictionary transforms (5.5.0), final-file `[object Object]` guard, and ZIP only after successful build. Canonical JSON preserves structured values and aliases; platform exports stringify per target.
+
+See PR #20 / merge `840332a` for full runtime path details.
+
+---
+
+## Token row-ordering bug (fixed via PR #21)
 
 ### Symptom
 After repeated **Add row below** / **Duplicate row**, the new token sometimes appeared at the **top** of the AG Grid table instead of directly below the selected/source row (all token types).
@@ -42,22 +51,48 @@ After repeated **Add row below** / **Duplicate row**, the new token sometimes ap
 - Fallback when there is **no** selected/reference row: **append** (documented; same as historical complete-list append).
 
 ### Files
-- `client/src/utils/dtcg/row-ordering.ts` (new)
-- `client/src/utils/dtcg/__tests__/row-ordering.test.ts` (11+ regression cases)
+- `client/src/utils/dtcg/row-ordering.ts`
+- `client/src/utils/dtcg/__tests__/row-ordering.test.ts`
 - `client/src/composables/useTokenCrud.ts`
 - `client/src/composables/useTokenWorkspaceTable.ts`
-- `client/src/components/TokenTableComponent.vue`
+- `client/src/components/TokenTableComponent.vue` (`getRowId` retained alongside type-aware columns)
 - `client/src/utils/dtcg/token-table-types.ts` (`sourceFile` on `TableRow`)
+
+---
+
+## Type-aware token-table columns (this branch)
+
+### Root cause
+`useTokenGridColumns` always built a static column set that included **Hex** and **Color** (preview picker). Non-color pages (`/tokens/dimension`, `/tokens/cubicBezier`, …) still rendered those Color-specific columns (empty cells).
+
+### Fix
+- Pure factory [`token-grid-columns.ts`](../client/src/utils/dtcg/token-grid-columns.ts) builds columns from the active `tokenType`.
+- Shared columns for every type: Name, Value, Alias path, Actions.
+- Hex + Color preview only when `tokenType === "color"`.
+- Value editing still uses registry parse/format per row type (dimension `16px`/`1rem`, duration, fontFamily, fontWeight, cubicBezier, number).
+- `useTokenGridColumns` takes a reactive `tokenType` and returns `computed` columnDefs.
+- `TokenTableComponent` passes `tokenType`, keys the grid on type (`:key="tokenType"`), and **retains** `:getRowId="getRowId"` from PR #21.
+- Color behavior unchanged on `/tokens/color`.
+
+### Changed files
+- [`token-grid-columns.ts`](../client/src/utils/dtcg/token-grid-columns.ts) — modular column factory
+- [`useTokenGridColumns.ts`](../client/src/composables/useTokenGridColumns.ts) — reactive wrapper
+- [`TokenTableComponent.vue`](../client/src/components/TokenTableComponent.vue) — pass tokenType; `:key="tokenType"`; keep `getRowId`
+- [`token-grid-columns.test.ts`](../client/src/utils/dtcg/__tests__/token-grid-columns.test.ts) — regressions
+
+### Decisions
+1. One shared table component; columns vary by factory — no per-type table duplication.
+2. Type-specific value shapes stay in the shared Value column (formatted via registry), not extra unit columns.
+3. Color-only columns gated on registry id `"color"` (route `/tokens/color`).
 
 ---
 
 ## Remaining limitations
 
-1. Hex/Color columns on non-color UI pages (PR #18 still open).
-2. SCSS adapters ready; not a ZIP format in the dialog yet.
-3. Swift rem uses `basePxFontSize` default 16.
-4. Prep + `fontFamily/css` can double-quote some family lists (cosmetic).
-5. Redeploy production after merge so Vercel serves this fix.
+1. SCSS adapters ready; not a ZIP format in the dialog yet.
+2. Swift rem uses `basePxFontSize` default 16.
+3. Prep + `fontFamily/css` can double-quote some family lists (cosmetic).
+4. Figma plugin / `--purge` / composites unchanged.
 
 ---
 
@@ -65,7 +100,7 @@ After repeated **Add row below** / **Duplicate row**, the new token sometimes ap
 
 ```bash
 cd client && npm run test:unit -- --run src/utils/dtcg/__tests__/
-# 21 files, 178 tests passed (includes row-ordering)
+# 22 files, 183 tests passed (includes row-ordering + token-grid-columns)
 
 cd client && npm run type-check && npm run lint
 # pass
@@ -77,13 +112,12 @@ cd server && npm run lint
 # pass
 ```
 
-Manual UI (local): signup → upload `tokens.json` → Color table → duplicate / add-below ×5+ on middle rows; switch Number→Color; new rows always directly below source, never at top.
+Manual UI: Color page shows Hex + Color preview; Dimension/Number/Duration/Font Family/Font Weight/Cubic Bézier hide them; route switch remounts columns; duplicate/add-below still inserts below source row.
 
 ---
 
 ## Exact next task
 
-1. Merge this row-ordering PR to `main` and redeploy frontend (`token-mananger-frontend`) + backend (`token-manager`) if needed.
-2. Optional: rebase/merge PR #18 (type-aware columns) separately.
-3. Close PR #19 without merging.
-4. Do **not** start Figma/`--purge` unless requested.
+1. Merge this PR to `main` and redeploy frontend (`token-mananger-frontend`).
+2. Close PR #19 without merging.
+3. Do **not** start Figma/`--purge` unless requested.
