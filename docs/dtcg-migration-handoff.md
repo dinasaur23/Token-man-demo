@@ -1,33 +1,11 @@
 # DTCG Multi-Type Migration Handoff
 
-<<<<<<< HEAD
 Branch: `cursor/token-table-columns-cab3` (from `main` @ `ffad34a`)  
 Token-table columns PR: https://github.com/dinasaur23/Token-man-demo/pull/18  
 Row-ordering fix PR: https://github.com/dinasaur23/Token-man-demo/pull/21 (merged)  
 Merged platform serialization: https://github.com/dinasaur23/Token-man-demo/pull/20 (`840332a`)  
 Do **not** merge: https://github.com/dinasaur23/Token-man-demo/pull/19 (superseded by #20)  
 Last completed stage: **Type-aware token-table columns (Hex/Color only on Color pages)**  
-=======
-Branch: `cursor/token-table-columns-cab3` (continues from `cursor/dimension-visibility-cab3`)  
-Token-table columns PR: https://github.com/dinasaur23/Token-man-demo/pull/18  
-Dimension visibility fix PR: https://github.com/dinasaur23/Token-man-demo/pull/17  
-Post-migration UI PR: https://github.com/dinasaur23/Token-man-demo/pull/16  
-Stage 18 PR: https://github.com/dinasaur23/Token-man-demo/pull/15  
-Stage 17 PR: https://github.com/dinasaur23/Token-man-demo/pull/14  
-Stage 16 PR: https://github.com/dinasaur23/Token-man-demo/pull/13  
-Stage 15 PR: https://github.com/dinasaur23/Token-man-demo/pull/12  
-Stage 14 PR: https://github.com/dinasaur23/Token-man-demo/pull/11  
-Stage 13 PR: https://github.com/dinasaur23/Token-man-demo/pull/10  
-Stage 12 PR: https://github.com/dinasaur23/Token-man-demo/pull/9  
-Stage 11 PR: https://github.com/dinasaur23/Token-man-demo/pull/8  
-Stage 10 PR: https://github.com/dinasaur23/Token-man-demo/pull/7  
-Stage 9 PR: https://github.com/dinasaur23/Token-man-demo/pull/6  
-Stage 8 PR: https://github.com/dinasaur23/Token-man-demo/pull/5  
-Stage 7 PR: https://github.com/dinasaur23/Token-man-demo/pull/4  
-Stage 6 PR: https://github.com/dinasaur23/Token-man-demo/pull/3  
-Prior PR (Stages 1–5): https://github.com/dinasaur23/Token-man-demo/pull/2  
-Last completed stage: **Stage 18 + group-tree filter + Dimension visibility + type-aware columns**  
->>>>>>> 9a95a55 (Document type-aware columns PR link.)
 Date: 2026-08-06
 
 Spec references:
