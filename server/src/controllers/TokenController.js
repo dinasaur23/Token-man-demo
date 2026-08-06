@@ -2,15 +2,14 @@ import TokenWorkspace from "../models/TokenWorkspace.js";
 import fs from "fs";
 import os from "os";
 import path from "path";
-import StyleDictionary from "style-dictionary";
 import { applyOverridesToTokens } from "../utils/dtcg/applyOverrides.js";
 import {
   exportCanonicalJson,
   preparePlatformExport,
 } from "../utils/dtcg/exporters/index.js";
 import {
-  assertNoRawObjectExportValues,
   createSdConfig,
+  runStyleDictionaryExport,
 } from "../utils/sd/index.js";
 import {
   pruneDeletedTokens,
@@ -1222,23 +1221,28 @@ export async function exportTokens(req, res) {
     const dsSuffix = designSystemId ? `-${designSystemId}` : "";
     const zipName = `tokens${dsSuffix}.${format}.zip`;
 
-    res.setHeader("Content-Type", "application/zip");
-    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
-
-    const archive = archiver("zip", { zlib: { level: 9 } });
-    archive.on("error", (err) => {
-      console.error("ZIP error", err);
-      throw err;
-    });
-    archive.pipe(res);
-
+    // Build all ZIP entries first. Never start streaming a ZIP until Style
+    // Dictionary + the object-fallthrough guard have succeeded, so the UI
+    // receives a JSON 400 instead of an invalid download.
     const tmpDir = os.tmpdir();
     const buildBaseRoot = path.join(
       tmpDir,
       `export-${userId}${dsSuffix}-${Date.now()}`,
     );
+    fs.mkdirSync(buildBaseRoot, { recursive: true });
 
+    /** @type {{ kind: 'file', absPath: string, name: string } | { kind: 'string', content: string, name: string }[]} */
+    const pendingZipEntries = [];
     const exported = new Set();
+
+    /** Destination filename from the format's SD template (tokens.css, etc.). */
+    function platformDestinationFile() {
+      const probe = createSdConfig(format, path.join(buildBaseRoot, "_probe.json"), path.join(buildBaseRoot, "_probe-build"));
+      const platformKey = Object.keys(probe.platforms)[0];
+      return probe.platforms[platformKey].files?.[0]?.destination || "tokens.out";
+    }
+    const originalDestination =
+      format === "json" ? "tokens.dtcg.json" : platformDestinationFile();
     if (format === "json" && collectionsWithoutModes.length > 0) {
       const mergedTokens = resolveUploadedDocuments(docs, {});
       pruneDeletedTokens(mergedTokens, deletedPathsFixed);
@@ -1283,7 +1287,11 @@ export async function exportTokens(req, res) {
           continue;
         }
         const entryPath = path.posix.join(col, "default", "tokens.dtcg.json");
-        archive.append(canonical.json, { name: entryPath });
+        pendingZipEntries.push({
+          kind: "string",
+          content: canonical.json,
+          name: entryPath,
+        });
       }
     }
 
@@ -1337,17 +1345,12 @@ export async function exportTokens(req, res) {
       exportWarnings.push(...preparedNoMode.warnings);
       if (!preparedNoMode.ok) {
         exportErrors.push(...preparedNoMode.errors);
-        const report = JSON.stringify(
-          { ok: false, warnings: exportWarnings, errors: exportErrors },
-          null,
-          2,
-        );
         throw Object.assign(
           new Error(
             preparedNoMode.errors.map((e) => e.message).join("; ") ||
               "Platform export failed",
           ),
-          { exportReport: report, exportErrors, exportWarnings, status: 400 },
+          { exportErrors, exportWarnings, status: 400 },
         );
       }
       const platformTokensNoMode = preparedNoMode.document;
@@ -1360,28 +1363,6 @@ export async function exportTokens(req, res) {
         "utf8",
       );
 
-      const buildBase = path.join(buildBaseRoot, `build-nomode`);
-      const sdConfig = createSdConfig(format, jsonFilePath, buildBase);
-      const platformKey = Object.keys(sdConfig.platforms)[0];
-      const platformConfig = sdConfig.platforms[platformKey];
-
-      const fileTemplateNoMode = platformConfig.files?.[0];
-      if (!fileTemplateNoMode)
-        throw new Error("SD config has no files[0] template (nomode).");
-
-      const originalDestination = fileTemplateNoMode.destination;
-      if (!originalDestination)
-        throw new Error("SD config has no destination (nomode).");
-
-      platformConfig.files = collectionsWithoutModes.map((col) => ({
-        ...fileTemplateNoMode,
-        destination: path.posix.join(col, "default", originalDestination),
-        filter: (token) => Array.isArray(token.path) && token.path[0] === col,
-      }));
-
-      fs.mkdirSync(platformConfig.buildPath, { recursive: true });
-
-      const sd = new StyleDictionary(sdConfig);
       const missing = findMissingReferences(platformTokensNoMode);
       if (missing.length) {
         console.error("Missing token references (showing up to 30):");
@@ -1394,69 +1375,42 @@ export async function exportTokens(req, res) {
           `Reference Error: ${missing.length} token references could not be found.`,
         );
       }
-      console.log(
-        "[exportTokens] sample rewritten ref:",
-        JSON.stringify(platformTokensNoMode).includes("{brand.")
-          ? "STILL HAS {brand.}"
-          : "OK",
-      );
 
-      await sd.buildAllPlatforms();
-
-      {
-        const platform = await sd.getPlatform(platformKey);
-        const outputFilePaths = collectionsWithoutModes
-          .map((col) =>
-            path.join(
-              platformConfig.buildPath,
-              col,
-              "default",
-              originalDestination,
-            ),
-          )
-          .filter((p) => fs.existsSync(p));
-        const guard = assertNoRawObjectExportValues({
-          format,
-          allTokens: platform?.dictionary?.allTokens || [],
-          outputFilePaths,
-          sdOptions: { usesDtcg: sd.usesDtcg !== false },
-        });
-        if (!guard.ok) {
-          exportErrors.push(...guard.errors);
-          throw Object.assign(
-            new Error(
-              guard.errors.map((e) => e.message).join("; ") ||
-                "Export guard failed: raw object token values",
-            ),
-            {
-              exportReport: JSON.stringify(
-                { ok: false, warnings: exportWarnings, errors: exportErrors },
-                null,
-                2,
-              ),
-              exportErrors,
-              exportWarnings,
-              status: 400,
-            },
-          );
-        }
-        exportWarnings.push(...guard.warnings);
+      const buildBase = path.join(buildBaseRoot, `build-nomode`);
+      const sdResult = await runStyleDictionaryExport({
+        format,
+        jsonFilePath,
+        buildBase,
+        files: collectionsWithoutModes.map((col) => ({
+          destination: path.posix.join(col, "default", originalDestination),
+          filter: (token) => Array.isArray(token.path) && token.path[0] === col,
+        })),
+      });
+      exportWarnings.push(...sdResult.warnings);
+      if (!sdResult.ok) {
+        exportErrors.push(...sdResult.errors);
+        throw Object.assign(
+          new Error(
+            sdResult.errors.map((e) => e.message).join("; ") ||
+              "Export guard failed: raw object token values",
+          ),
+          { exportErrors, exportWarnings, status: 400 },
+        );
+      }
+      if (process.env.DEBUG_EXPORT === "1") {
+        console.log("[exportTokens] nomode SD diagnostics", sdResult.diagnostics);
       }
 
       for (const col of collectionsWithoutModes) {
-        const builtPath = path.join(
-          platformConfig.buildPath,
-          col,
-          "default",
-          originalDestination,
+        const destRel = path.posix.join(col, "default", originalDestination);
+        const abs = (sdResult.outputFilePaths || []).find((p) =>
+          p.replace(/\\/g, "/").endsWith(destRel),
         );
-        if (!fs.existsSync(builtPath)) continue;
-
-        archive.file(builtPath, {
-          name: path.posix.join(col, "default", originalDestination),
-        });
+        if (!abs || !fs.existsSync(abs)) continue;
+        pendingZipEntries.push({ kind: "file", absPath: abs, name: destRel });
       }
     }
+
 
     for (const combo of combos) {
       const variantFolder = makeVariantFolder(combo);
@@ -1538,7 +1492,11 @@ export async function exportTokens(req, res) {
             continue;
           }
           const entryPath = path.posix.join(col, vf, "tokens.dtcg.json");
-          archive.append(canonical.json, { name: entryPath });
+          pendingZipEntries.push({
+            kind: "string",
+            content: canonical.json,
+            name: entryPath,
+          });
         }
         continue;
       }
@@ -1577,30 +1535,12 @@ export async function exportTokens(req, res) {
       );
 
       const buildBase = path.join(buildBaseRoot, `build-${variantFolder}`);
-      const sdConfig = createSdConfig(format, jsonFilePath, buildBase);
-      if (!sdConfig) throw new Error(`Unsupported export format: ${format}`);
-
-      const destPlatformKey = Object.keys(sdConfig.platforms)[0];
-      const platformConfig = sdConfig.platforms[destPlatformKey];
-
-      platformConfig.buildPath = buildBase;
-
-      const fileTemplate = platformConfig.files?.[0];
-      if (!fileTemplate) {
-        throw new Error("Style Dictionary config has no files[0] template.");
-      }
-
-      const originalDestination = fileTemplate.destination;
-      if (!originalDestination) {
-        throw new Error("Style Dictionary config has no destination file.");
-      }
 
       const allowedCollections = collectionsWithModes.filter((col) =>
         isComboAllowedForCollection(combo, col, allowedModesByCollection),
       );
 
-      platformConfig.files = [];
-
+      const sdFiles = [];
       for (const col of allowedCollections) {
         const colVariantFolder = makeVariantFolderForCollection(
           combo,
@@ -1612,32 +1552,19 @@ export async function exportTokens(req, res) {
         if (exported.has(dedupeKey)) continue;
         exported.add(dedupeKey);
 
-        const dest = path.posix.join(
-          col,
-          colVariantFolder,
-          originalDestination,
-        );
-
-        platformConfig.files.push({
-          ...fileTemplate,
-          destination: dest,
+        sdFiles.push({
+          destination: path.posix.join(
+            col,
+            colVariantFolder,
+            originalDestination,
+          ),
           filter: (token) => Array.isArray(token.path) && token.path[0] === col,
         });
       }
-      if (platformConfig.files.length === 0) {
+      if (sdFiles.length === 0) {
         continue;
       }
 
-      fs.mkdirSync(platformConfig.buildPath, { recursive: true });
-      for (const f of platformConfig.files) {
-        const destDir = path.join(
-          platformConfig.buildPath,
-          ...String(f.destination).split("/"),
-        );
-        fs.mkdirSync(path.dirname(destDir), { recursive: true });
-      }
-
-      const sd = new StyleDictionary(sdConfig);
       const missing = findMissingReferences(mergedTokens);
       if (missing.length) {
         console.error("Missing token references (showing up to 30):");
@@ -1650,81 +1577,92 @@ export async function exportTokens(req, res) {
           `Reference Error: ${missing.length} token references could not be found.`,
         );
       }
-      console.log(
-        "[exportTokens] sample rewritten ref:",
-        JSON.stringify(mergedTokens).includes("{brand.")
-          ? "STILL HAS {brand.}"
-          : "OK",
-      );
 
-      await sd.buildAllPlatforms();
-
-      {
-        const platform = await sd.getPlatform(destPlatformKey);
-        const outputFilePaths = platformConfig.files
-          .map((f) => path.join(platformConfig.buildPath, f.destination))
-          .filter((p) => fs.existsSync(p));
-        const guard = assertNoRawObjectExportValues({
-          format,
-          allTokens: platform?.dictionary?.allTokens || [],
-          outputFilePaths,
-          sdOptions: { usesDtcg: sd.usesDtcg !== false },
-        });
-        if (!guard.ok) {
-          exportErrors.push(...guard.errors);
-          throw Object.assign(
-            new Error(
-              guard.errors.map((e) => e.message).join("; ") ||
-                "Export guard failed: raw object token values",
-            ),
-            {
-              exportReport: JSON.stringify(
-                { ok: false, warnings: exportWarnings, errors: exportErrors },
-                null,
-                2,
-              ),
-              exportErrors,
-              exportWarnings,
-              status: 400,
-            },
-          );
-        }
-        exportWarnings.push(...guard.warnings);
+      const sdResult = await runStyleDictionaryExport({
+        format,
+        jsonFilePath,
+        buildBase,
+        files: sdFiles,
+      });
+      exportWarnings.push(...sdResult.warnings);
+      if (!sdResult.ok) {
+        exportErrors.push(...sdResult.errors);
+        throw Object.assign(
+          new Error(
+            sdResult.errors.map((e) => e.message).join("; ") ||
+              "Export guard failed: raw object token values",
+          ),
+          { exportErrors, exportWarnings, status: 400 },
+        );
+      }
+      if (process.env.DEBUG_EXPORT === "1") {
+        console.log(
+          "[exportTokens] variant SD diagnostics",
+          variantFolder,
+          sdResult.diagnostics,
+        );
       }
 
-      for (const col of allowedCollections) {
-        const colVariantFolder = makeVariantFolderForCollection(
-          combo,
-          col,
-          allowedModesByCollection,
+      for (const fileSpec of sdFiles) {
+        const destRel = fileSpec.destination;
+        const abs = (sdResult.outputFilePaths || []).find((p) =>
+          p.replace(/\\/g, "/").endsWith(destRel),
         );
-
-        const builtPath = path.join(
-          platformConfig.buildPath,
-          col,
-          colVariantFolder,
-          originalDestination,
-        );
-        if (!fs.existsSync(builtPath)) continue;
-
-        const zipEntry = path.posix.join(
-          col,
-          colVariantFolder,
-          originalDestination,
-        );
-        archive.file(builtPath, { name: zipEntry });
+        if (!abs || !fs.existsSync(abs)) continue;
+        pendingZipEntries.push({ kind: "file", absPath: abs, name: destRel });
       }
     }
 
-    if (exportWarnings.length > 0 || exportErrors.length > 0) {
-      archive.append(
-        JSON.stringify(
-          { ok: exportErrors.length === 0, warnings: exportWarnings, errors: exportErrors },
+
+    if (exportErrors.length > 0) {
+      return res.status(400).json({
+        ok: false,
+        stage: "exportGuard",
+        message: exportErrors.map((e) => e.message).join("; "),
+        errors: exportErrors,
+        warnings: exportWarnings,
+      });
+    }
+
+    if (pendingZipEntries.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        stage: "exportEmpty",
+        message: "No exportable token files were produced.",
+        errors: [],
+        warnings: exportWarnings,
+      });
+    }
+
+    if (exportWarnings.length > 0) {
+      pendingZipEntries.push({
+        kind: "string",
+        content: JSON.stringify(
+          { ok: true, warnings: exportWarnings, errors: [] },
           null,
           2,
         ),
-        { name: "export-report.json" },
-      );
+        name: "export-report.json",
+      });
+    }
+
+    // Only now start the ZIP download — builds and guards have passed.
+    res.setHeader("Content-Type", "application/zip");
+    res.setHeader("Content-Disposition", `attachment; filename="${zipName}"`);
+
+    const archive = archiver("zip", { zlib: { level: 9 } });
+    archive.on("error", (err) => {
+      console.error("ZIP error", err);
+      throw err;
+    });
+    archive.pipe(res);
+
+    for (const entry of pendingZipEntries) {
+      if (entry.kind === "file") {
+        archive.file(entry.absPath, { name: entry.name });
+      } else {
+        archive.append(entry.content, { name: entry.name });
+      }
     }
 
     await archive.finalize();

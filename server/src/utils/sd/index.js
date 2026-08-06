@@ -4,8 +4,11 @@ import { makeTailwindConfig } from "./makeTailwindConfig.js";
 import { makeSwiftConfig } from "./makeSwiftConfig.js";
 import { makeAndroidConfig } from "./makeAndroidConfig.js";
 import { withDtcgSdAdapters } from "./dtcgTransforms.js";
+import { ensureDtcgTransformsRegistered } from "./registerDtcgTransforms.js";
 
 export function createSdConfig(format, jsonFilePath, buildBase) {
+  ensureDtcgTransformsRegistered();
+
   let config;
   switch (format) {
     case "css":
@@ -47,3 +50,5 @@ export function createSdConfig(format, jsonFilePath, buildBase) {
 export { withDtcgSdAdapters } from "./dtcgTransforms.js";
 export { assertNoRawObjectExportValues } from "./exportGuard.js";
 export { buildPlatformWithDtcgGuards } from "./buildPlatformWithDtcgGuards.js";
+export { runStyleDictionaryExport } from "./runStyleDictionaryExport.js";
+export { ensureDtcgTransformsRegistered } from "./registerDtcgTransforms.js";

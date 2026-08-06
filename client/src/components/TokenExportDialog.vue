@@ -5,6 +5,15 @@
     <v-card>
       <v-card-title>Export tokens</v-card-title>
       <v-card-text>
+        <v-alert
+          v-if="exportError"
+          type="error"
+          variant="tonal"
+          class="mb-4"
+          density="compact"
+        >
+          {{ exportError }}
+        </v-alert>
         <div
           v-for="fmt in formats"
           :key="fmt.value"
@@ -69,6 +78,7 @@ const dsStore = useDesignSystemStore()
 
 const dialog = ref(false)
 const loading = ref(false)
+const exportError = ref<string | null>(null)
 /** Explicit Android rem→dp base; never assumed by the exporter. */
 const remBasePx = ref<number | null>(null)
 
@@ -91,6 +101,7 @@ const androidRemInvalid = computed(() => {
 })
 
 function openDialog() {
+  exportError.value = null
   dialog.value = true
 }
 
@@ -99,7 +110,7 @@ async function downloadOne(format: ExportFormat) {
 
   if (!designSystemId) {
     console.error('[Export] No design system selected, aborting export')
-    return
+    throw new Error('No design system selected')
   }
 
   console.log('[Export] downloading', format, 'for DS', designSystemId)
@@ -120,7 +131,27 @@ async function downloadOne(format: ExportFormat) {
     params,
     responseType: 'blob',
     withCredentials: true,
+    validateStatus: () => true,
   })
+
+  if (res.status >= 400) {
+    let message = `Export failed (${res.status})`
+    try {
+      const text = await (res.data as Blob).text()
+      const parsed = JSON.parse(text) as {
+        message?: string
+        errors?: Array<{ message?: string }>
+      }
+      message =
+        parsed.message ||
+        parsed.errors?.map((e) => e.message).filter(Boolean).join('; ') ||
+        text ||
+        message
+    } catch {
+      /* keep default message */
+    }
+    throw new Error(message)
+  }
 
   const blob = new Blob([res.data], {
     type: res.headers['content-type'] || 'application/octet-stream',
@@ -147,6 +178,7 @@ async function downloadOne(format: ExportFormat) {
 async function exportNow() {
   if (selectedFormats.value.length === 0) return
   loading.value = true
+  exportError.value = null
 
   try {
     for (const fmt of selectedFormats.value) {
@@ -154,17 +186,10 @@ async function exportNow() {
     }
     dialog.value = false
   } catch (err: unknown) {
-    if (axios.isAxiosError(err) && err.response) {
-      try {
-        const blob = err.response.data as Blob
-        const text = await blob.text()
-        console.error('Export failed. Backend says:', text)
-      } catch (readErr) {
-        console.error('Export failed, could not read error blob', readErr)
-      }
-    } else {
-      console.error('Export failed (no response)', err)
-    }
+    const message =
+      err instanceof Error ? err.message : 'Export failed (unknown error)'
+    exportError.value = message
+    console.error('Export failed:', message, err)
   } finally {
     loading.value = false
   }
