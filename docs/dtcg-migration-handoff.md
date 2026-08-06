@@ -1,7 +1,7 @@
 # DTCG Multi-Type Migration Handoff
 
 Branch: `cursor/dtcg-platform-serialization-eb90` (continues from `cursor/dimension-visibility-cab3`)  
-Platform serialization PR: _(this PR)_  
+Platform serialization PR: https://github.com/dinasaur23/Token-man-demo/pull/20  
 Dimension visibility fix PR: https://github.com/dinasaur23/Token-man-demo/pull/17  
 Post-migration UI PR: https://github.com/dinasaur23/Token-man-demo/pull/16  
 Stage 18 PR: https://github.com/dinasaur23/Token-man-demo/pull/15  
