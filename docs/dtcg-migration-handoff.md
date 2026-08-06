@@ -1,7 +1,7 @@
 # DTCG Multi-Type Migration Handoff
 
 Branch: `cursor/dimension-visibility-cab3` (continues from `cursor/dtcg-filter-group-tree-7ae8`)  
-Dimension visibility fix PR: *(this branch)*  
+Dimension visibility fix PR: https://github.com/dinasaur23/Token-man-demo/pull/17  
 Post-migration UI PR: https://github.com/dinasaur23/Token-man-demo/pull/16  
 Stage 18 PR: https://github.com/dinasaur23/Token-man-demo/pull/15  
 Stage 17 PR: https://github.com/dinasaur23/Token-man-demo/pull/14  
