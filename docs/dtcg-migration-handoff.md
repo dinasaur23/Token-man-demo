@@ -18,7 +18,7 @@ Stage 8 PR: https://github.com/dinasaur23/Token-man-demo/pull/5
 Stage 7 PR: https://github.com/dinasaur23/Token-man-demo/pull/4  
 Stage 6 PR: https://github.com/dinasaur23/Token-man-demo/pull/3  
 Prior PR (Stages 1–5): https://github.com/dinasaur23/Token-man-demo/pull/2  
-Last completed stage: **Platform-export DTCG serialization** (Style Dictionary adapters + export guard)  
+Last completed stage: **Platform-export runtime path hardened** (`exportTokens` + guard-before-ZIP)  
 Date: 2026-08-06
 
 Spec references:
@@ -31,96 +31,73 @@ Spec references:
 
 | Stage | Status | Summary |
 | --- | --- | --- |
-| 1–5 | Done | Characterization, manifest, source/resolved, color registry, reference resolver |
-| 6. Effective-type | Done | Explicit / alias / inherited; `MISSING_TYPE`; `ALIAS_TYPE_MISMATCH` |
-| 7. Structural validation | Done | `TOKEN_AND_GROUP_CONFLICT`; `$extends` reject; taxonomy helpers |
-| 8. Error-taxonomy removal | Done | Live allowlists drop `string`/`boolean`; import gate; report-only script |
-| 9. Round-trip preservation | Done | Metadata/extensions/aliases on source writes; source-only persist |
-| 10. Color compliance | Done | colorSpace/ranges/`none`/alpha/6-digit hex; hex-string → source normalize |
-| 11. Generic UI + Color nav | Done | `/tokens/:tokenType`; registry nav; Color-only shell; typed create |
-| 12. Export split | Done | Canonical source JSON vs per-platform exporters; remBasePx; structured issues |
-| 13–18 | Done | All seven basic types registered (dimension → cubicBezier) |
-| UI: group-tree type filter | Done | Tree shows only groups with selected-type tokens; empty state |
-| UI: Dimension visibility | Done | Fix empty Dimension tree/rows caused by `extractGroupPath` stripping |
-| **Platform-export serialization** | **Done** | SD adapters for all 7 basics + object-fallthrough export guard |
-
-**All seven application-supported basic DTCG types are registered and platform-serialized.**
+| 1–18 + UI | Done | Basic types, export split, group filter, Dimension visibility |
+| Platform SD adapters | Done | `token-manager/*` transforms + SD 5.5.0 |
+| **Runtime export path** | **Done** | Real `exportTokens` uses adapters; ZIP only after guard; UI shows errors |
 
 ---
 
-## Platform-export serialization fix
+## True runtime root cause (Export Tokens button)
 
-### Installed Style Dictionary version
+### Path the UI actually calls
 
-- **Before:** `5.1.1` (`package.json` `^5.1.1`)
-- **After:** **`5.5.0`** (exact lockfile install)
+1. **Frontend** [`TokenExportDialog.vue`](../client/src/components/TokenExportDialog.vue)  
+   `GET ${VITE_API_URL}/api/tokens/export/:designSystemId?format=css|tailwind|swift|android|json&bundle=1`
+2. **Route** [`TokenRoutes.js`](../server/src/routes/TokenRoutes.js) → `exportTokens`
+3. **Controller** [`TokenController.exportTokens`](../server/src/controllers/TokenController.js)
 
-### Upgrade proposal and migration risks (applied)
+### What the **deployed / `main`** app still runs (bug)
 
-Upgraded `5.1.1` → `5.5.0` because **5.4.0+** adds native DTCG 2025.10 **dimension object** handling in built-in size transforms.
-
-Risks accepted / mitigated:
-
-1. **ios `size/remToPt` unit fix (5.4.0):** previously emitted `f` instead of `pt`; we **omit** rem size transforms from `token-manager/ios-swift` and own rem→`CGFloat` via `basePxFontSize`.
-2. **Android/Swift rem scaling:** built-in `size/remToDp` / `size/swift/remToCGFloat` treat the numeric part as rem and multiply by 16 even for `px`/`dp` objects — **unsafe for DTCG**. Custom groups omit those transforms.
-3. **Duration still broken natively on 5.5.0** (`time/seconds` matches `$type === "time"`, not `"duration"`). Custom `dtcg/*/duration` transforms are required.
-4. Prep layer (`preparePlatformExport`) remains defense-in-depth; SD adapters also handle **raw** DTCG input.
-
-### Native-support matrix (Style Dictionary **5.5.0**)
-
-| DTCG type | Native CSS transform group | Reliable for DTCG 2025.10 objects? | Our adapter |
-| --- | --- | --- | --- |
-| color | `color/css` | Partial (hex / Color() strings; DTCG objects often need hex extract) | `dtcg/*/color` |
-| dimension | `size/rem` | **Yes** since 5.4.0 for `{value,unit}` | `dtcg/*/dimension` (kept) |
-| duration | `time/seconds` | **No** — filter is `time`, not `duration` → `[object Object]` | `dtcg/*/duration` (**required**) |
-| fontFamily | `fontFamily/css` | Yes for string/array | `dtcg/*/fontFamily` |
-| fontWeight | _(none)_ | Pass-through primitives only | `dtcg/*/fontWeight` |
-| number | _(none)_ | Pass-through finite numbers | `dtcg/*/number` |
-| cubicBezier | `cubicBezier/css` | Yes for `[x1,y1,x2,y2]` arrays | `dtcg/*/cubicBezier` |
-
-SCSS: same CSS-compatible serializers (`token-manager/scss`). Not yet a ZIP export format in `TokenController`, but config + adapters are wired.
-
-### Root cause
-
-DTCG object-valued tokens reached Style Dictionary and were stringified with `String(value)` → **`[object Object]`**.
-
-Trace (Dimension `spacing.sm = { value: 8, unit: "px" }`, Duration `motion.duration.fast = { value: 150, unit: "ms" }`):
-
-1. **Source** — canonical DTCG JSON keeps structured `$value` objects / alias strings.
-2. **Resolved view / prep** — `preparePlatformExport` can stringify, but Android still leaves some dimension objects for SD; raw paths skip prep.
-3. **Style Dictionary input** — `usesDtcg: true`; group `$type` delegated onto leaves.
-4. **Transforms (5.1.1 / stock css group):**
-   - `size/rem`: `` `${object}`.match(/[^0-9.-]+$/) `` matches `"[object Object]"` and **returns the object unchanged**.
-   - `time/seconds`: filter is `$type === "time"` — **duration never matches**.
-   - `cubicBezier/css`: arrays → `cubic-bezier(...)` (explains why easing looked fine).
-5. **`dictionary.allTokens` / CSS format** — remaining objects become `[object Object]`.
-
-### Custom transforms / groups added
-
-| Transform group | Used by | Notes |
+| Step | Code on `main` | Effect |
 | --- | --- | --- |
-| `token-manager/css` | CSS ZIP export | DTCG serializers first, then safe built-ins |
-| `token-manager/scss` | ready / tests | Same serializers as CSS |
-| `token-manager/tailwind` | Tailwind ZIP | JS module + DTCG serializers; keeps `size/rem`/`color/hex` after |
-| `token-manager/android` | Android ZIP | **Omits** `size/remToDp` / `size/remToSp` |
-| `token-manager/ios-swift` | Swift ZIP | **Omits** `size/swift/remToCGFloat`; `basePxFontSize: 16` default |
+| Prep | `normalizeDtcgForCss` | **Colors only** (hex extract). Dimension/duration objects unchanged. |
+| SD config | `createSdConfig` → `transformGroup: "css"` | Built-in group only |
+| SD version | `5.1.1` | Dimension objects → `[object Object]`; `time/seconds` matches `time` not `duration` |
+| Guard | none | Invalid ZIP still downloads |
+| ZIP timing | headers + `archive.pipe(res)` **before** SD build | Failures cannot return clean JSON to the UI |
 
-Files:
+Proven reproduction of the `main` path (normalize + built-in `css` group) still yields:
 
-- `server/src/utils/sd/dtcgValueSerializers.js` — pure serializers (no `JSON.stringify` CSS fallback)
-- `server/src/utils/sd/dtcgTransforms.js` — SD hooks + transform groups
-- `server/src/utils/sd/exportGuard.js` — fails build on raw object values / `[object Object]` in output
-- `server/src/utils/sd/buildPlatformWithDtcgGuards.js` — build + guard helper
-- `TokenController` — runs export guard after each `buildAllPlatforms()`
+```css
+--motion-duration-fast: [object Object];
+```
+
+(With SD 5.5.0 alone, dimension may serialize natively, but **duration remains broken** without custom transforms.)
+
+### What this branch runs (fix)
+
+| Step | Code | Effect |
+| --- | --- | --- |
+| Prep | `preparePlatformExport(format, …)` | Stringifies all seven basic types (platform policy) |
+| SD config | `transformGroup: "token-manager/<platform>"` | Custom serializers first |
+| Registration | `ensureDtcgTransformsRegistered()` on StyleDictionary class + config hooks | Transforms exist before build |
+| Build | `runStyleDictionaryExport` | Shared runner used by controller |
+| Guard | scans **final generated files** for `[object Object]` / raw objects | Hard fail |
+| ZIP | **Only after** all builds + guard succeed | UI gets JSON 400 on failure |
+| UI | parses JSON error blob → `v-alert` | Clear message, no silent bad download |
+
+Diagnostics (when `DEBUG_EXPORT=1`): exporter name, `transformGroup`, registered `dtcg/*` transform names, token path/type/value before→after.
+
+### Installed Style Dictionary
+
+**5.5.0** (lockfile). Native dimension objects since 5.4.0; **duration still unsupported natively**.
+
+### Native-support matrix (5.5.0) — unchanged
+
+| Type | Native reliable? | Adapter |
+| --- | --- | --- |
+| dimension | Yes (5.4+) | `dtcg/*/dimension` kept |
+| duration | **No** (`time` ≠ `duration`) | `dtcg/*/duration` required |
+| cubicBezier / fontFamily | Yes | kept |
+| color / number / fontWeight | Partial / pass-through | kept |
 
 ### Remaining limitations
 
-1. Hex/Color grid columns still appear on non-color UI pages.
-2. Branches remain stacked; **not merged to `main`**.
-3. Figma plugin / `--purge` / composites unchanged.
-4. Swift rem→`CGFloat` still uses platform `basePxFontSize` (default 16) — productize explicit `remBasePx` like Android when ready.
-5. Android maps `px`→`dp` 1:1 in the SD adapter; rem still requires prep `remBasePx`.
-6. SCSS is adapter-ready but not exposed as a first-class export format in the ZIP API yet.
+1. Stacked branches not merged to `main` — **production still serves the old `normalizeDtcgForCss` + `css` group path** until merge/deploy.
+2. Hex/Color columns on non-color UI pages.
+3. SCSS adapters ready; not a ZIP format in the dialog yet.
+4. Swift rem uses `basePxFontSize` default 16.
+5. Prep + `fontFamily/css` can double-quote some family lists (cosmetic).
 
 ---
 
@@ -128,31 +105,24 @@ Files:
 
 ```bash
 cd client && npm run test:unit -- --run src/utils/dtcg/__tests__/
-# Result: 20 files, 165 tests passed
+# 20 files, 165 tests passed
 
-cd client && npm run type-check
-# Result: pass
-
-cd client && npm run lint
-# Result: pass
+cd client && npm run type-check && npm run lint
+# pass
 
 cd server && npm run test:unit
-# Result: 54 tests passed (includes platform-export-serialization)
+# 60 tests passed (includes exportTokens.integration.test.js)
 
 cd server && npm run lint
-# Result: pass
+# pass
 ```
+
+Integration coverage calls the **real** `exportTokens` controller (mocked `TokenWorkspace.findOne` only): CSS seven types, JSON canonical structure, token-manager groups, JSON 400 without ZIP on prep failure, final-file guard, tailwind/swift/android.
 
 ---
 
 ## Exact next task
 
-Platform-export object-fallthrough is fixed. Optional follow-ups:
-
-1. Merge the stacked Stage 6–18 (+ UI + Dimension visibility + this serialization) PRs to `main` in order.
-2. Hide Hex/Color columns on non-color type pages.
-3. Expose SCSS as a ZIP export format using `token-manager/scss`.
-4. Productize Swift `remBasePx` (stop relying on SD default 16).
-5. Figma plugin multi-type sync / `--purge` / composites (deferred).
-
-Do **not** start Figma plugin refactor or `--purge` unless explicitly requested.
+1. Merge stacked PRs through this branch to `main` and redeploy so production leaves `normalizeDtcgForCss` + built-in `css`.
+2. Optional: hide Hex/Color columns; SCSS ZIP format; Swift remBasePx productization.
+3. Do **not** start Figma/`--purge` unless requested.
