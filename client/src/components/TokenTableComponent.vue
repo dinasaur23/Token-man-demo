@@ -12,8 +12,11 @@
       />
     </v-col>
 
-    <v-col cols="4" class="d-flex align-center">
-      <TokenExportDialog />
+    <v-col cols="4" class="d-flex align-center" style="gap: 12px">
+      <v-btn color="white" variant="flat" class="mb-5" @click="openNewTokenSetDialog">
+        New token set
+      </v-btn>
+      <TokenExportDialog :can-export="hasAnyTokens" />
     </v-col>
 
     <div v-if="visibleModifiers.length && groupHasModes">
@@ -26,7 +29,7 @@
               : mod.values
           "
           :model-value="uiSelectedModifiers[mod.name]"
-          @update:model-value="(value) => onModifierChange(mod.name, value)"
+          @update:model-value="(value: string | null) => onModifierChange(mod.name, value)"
           variant="outlined"
           density="compact"
           style="min-width: 25vw"
@@ -50,17 +53,29 @@
         <div class="font-weight-medium mb-1">No {{ tokenTypeLabel }} tokens</div>
         <div>
           This workspace has no tokens of type
-          <code>{{ tokenType }}</code>. Switch token type in the navigation, or import a
-          document that includes {{ tokenTypeLabel }} tokens.
+          <code>{{ tokenType }}</code>. Select a group and use
+          <strong>New token</strong>, or switch token type in the navigation.
         </div>
       </v-alert>
     </v-col>
   </v-row>
 
-  <v-row v-show="rowsOfSelectedType.length" class="mt-4 ml-4">
+  <v-row v-if="showWorkspaceEmptyHint" class="mt-4 ml-4 mr-4">
+    <v-col cols="12">
+      <v-alert type="info" variant="tonal">
+        <div class="font-weight-medium mb-1">Empty token set</div>
+        <div>
+          Use <strong>New group</strong> to create a group, select it, then
+          <strong>New token</strong> to add your first token.
+        </div>
+      </v-alert>
+    </v-col>
+  </v-row>
+
+  <v-row v-show="hasWorkspaceFiles" class="mt-4 ml-4">
     <v-col cols="12" md="3">
       <div style="overflow-y: auto">
-        <div class="mb-2">
+        <div class="mb-2 d-flex align-center flex-wrap" data-testid="group-toolbar">
           <v-btn
             size="small"
             variant="text"
@@ -75,6 +90,24 @@
             <v-icon start>mdi-folder-plus</v-icon>
             New group
           </v-btn>
+
+          <v-spacer />
+
+          <v-tooltip :disabled="canAddToken" text="Select a group first">
+            <template #activator="{ props: tooltipProps }">
+              <span v-bind="tooltipProps" data-testid="new-token-action">
+                <v-btn
+                  size="small"
+                  variant="text"
+                  :disabled="!canAddToken"
+                  @click="onNewTokenClick"
+                >
+                  <v-icon start>mdi-plus-circle-outline</v-icon>
+                  New token
+                </v-btn>
+              </span>
+            </template>
+          </v-tooltip>
         </div>
 
         <v-treeview
@@ -148,6 +181,7 @@
         class="mr-5 mt-9"
         @grid-ready="handleGridReady"
         @model-updated="onModelUpdated"
+        @selection-changed="onGridSelectionChanged"
       />
     </v-col>
   </v-row>
@@ -186,6 +220,41 @@
       </v-list-item>
     </v-list>
   </v-menu>
+  <v-dialog v-model="showNewTokenSetDialog" max-width="420">
+    <v-card>
+      <v-card-title class="text-subtitle-1">New token set</v-card-title>
+      <v-card-text>
+        <v-text-field
+          v-model="newTokenSetName"
+          label="Token set name"
+          density="comfortable"
+          hint="Saved as a .json file in your workspace"
+          persistent-hint
+        />
+        <v-alert
+          v-if="newTokenSetError"
+          type="error"
+          variant="tonal"
+          class="mt-3"
+          density="compact"
+        >
+          {{ newTokenSetError }}
+        </v-alert>
+      </v-card-text>
+      <v-card-actions>
+        <v-spacer />
+        <v-btn variant="text" @click="showNewTokenSetDialog = false">Cancel</v-btn>
+        <v-btn
+          color="primary"
+          variant="flat"
+          :disabled="!newTokenSetName.trim().length"
+          @click="confirmNewTokenSet"
+        >
+          Create
+        </v-btn>
+      </v-card-actions>
+    </v-card>
+  </v-dialog>
   <v-dialog v-model="addGroupDialog" max-width="420">
     <v-card>
       <v-card-title class="text-subtitle-1">Add group</v-card-title>
@@ -326,11 +395,13 @@ const {
   errorMessage,
   activeNodeIds,
   activeGroupId,
+  hasWorkspaceFiles,
+  hasAnyTokens,
   uiSelectedModifiers,
   groupTreeItems,
   filteredRows,
-  rowsOfSelectedType,
   showTypeEmptyState,
+  showWorkspaceEmptyHint,
   groupScopedModifierName,
   modeOptionsForActiveGroup,
   visibleModifiers,
@@ -340,6 +411,7 @@ const {
 
   onGridReady,
   onModelUpdated,
+  onGridSelectionChanged,
 
   addGroupDialog,
   newGroupName,
@@ -352,6 +424,15 @@ const {
   confirmAddGroup,
   onAddChildGroup,
   onDeleteGroup,
+
+  canAddToken,
+  onNewTokenClick,
+
+  showNewTokenSetDialog,
+  newTokenSetName,
+  newTokenSetError,
+  openNewTokenSetDialog,
+  confirmNewTokenSet,
 
   addTokenDialog,
   newTokenName,

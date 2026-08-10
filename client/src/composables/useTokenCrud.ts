@@ -7,6 +7,7 @@ import {
   deleteAtPathIfExists,
   createDuplicateKey,
   findGroupContainer,
+  getAtPath,
   isJsonRecord,
   type JsonRecord,
   updateAliasReferencesInDocs,
@@ -33,6 +34,8 @@ interface CrudDeps {
   workspaceStore: WorkspaceStore
   persistUploadedDocsAndReload: () => Promise<void>
   getEffectiveModeForPath: (tokenPath: string) => string
+  /** Active workspace source file for new groups/tokens (falls back to first file). */
+  getActiveSourceFileName: () => string | null
 }
 
 interface ResolverModifierLike {
@@ -362,6 +365,28 @@ function insertBelowInRowOrder(
   )
 }
 
+function createTokenLeaf(tokenType: TokenType): JsonValue {
+  const typeDef = requireTokenTypeDefinition(tokenType)
+  return {
+    $type: tokenType,
+    $value: typeDef.createDefaultValue() as JsonValue,
+  }
+}
+
+/** Direct-child token paths under `groupPath` in source sibling order. */
+function directChildTokenPathsInGroup(
+  docs: Record<string, JsonValue>,
+  groupPath: string[],
+): string[] {
+  const prefix = groupPath.length > 0 ? `${groupPath.join('.')}.` : ''
+  const paths = collectSourceTokenPaths(docs)
+  return paths.filter((p) => {
+    if (groupPath.length > 0 && !p.startsWith(prefix)) return false
+    const rest = groupPath.length > 0 ? p.slice(prefix.length) : p
+    return rest.length > 0 && !rest.includes('.')
+  })
+}
+
 function isResolverDocument(value: JsonValue): value is JsonRecord {
   return isJsonRecord(value) && Array.isArray((value as JsonRecord).resolutionOrder)
 }
@@ -614,7 +639,14 @@ export function useTokenCrud({
   workspaceStore,
   persistUploadedDocsAndReload,
   getEffectiveModeForPath,
+  getActiveSourceFileName,
 }: CrudDeps) {
+  function resolveSourceFileName(preferred?: string | null): string | null {
+    const active = preferred ?? getActiveSourceFileName()
+    if (active && active in uploadedDocs.value) return active
+    const names = Object.keys(uploadedDocs.value)
+    return names.length > 0 ? names[0]! : null
+  }
   async function updateTokenValueAny(row: TableRow, newValue: JsonValue): Promise<void> {
     const mode = getEffectiveModeForPath(row.path)
     {
@@ -1129,7 +1161,7 @@ export function useTokenCrud({
       return
     }
 
-    const { fileName, doc, token, parent, key: clickedKey } = found
+    const { fileName, token, parent, key: clickedKey } = found
     const groupPath = segments.slice(0, -1)
 
     if (isFigmaSyncedToken(token)) {
@@ -1179,40 +1211,105 @@ export function useTokenCrud({
     }
 
     const baseName = row.name || 'new-token'
-    const newKey = createDuplicateKey(parent, baseName)
+    const clickedPath = [...groupPath, clickedKey].join('.')
+    await insertTokenInGroup({
+      groupPath,
+      tokenType: row.type,
+      insertAfterPath: clickedPath,
+      initialName: baseName,
+      sourceFileName: fileName,
+      figmaOrderAfter: getFigmaOrder(parent[clickedKey]),
+    })
+  }
 
-    const newToken: JsonValue = {
-      $type: row.type,
-      $value:
-        row.type === 'color'
-          ? makeDtcgColorValue('#000000')
-          : (() => {
-              try {
-                return requireTokenTypeDefinition(row.type).createDefaultValue() as JsonValue
-              } catch {
-                return ''
-              }
-            })(),
+  async function insertTokenInGroup(options: {
+    groupPath: string[]
+    tokenType: TokenType
+    insertAfterPath?: string | null
+    initialName?: string
+    sourceFileName?: string | null
+    figmaOrderAfter?: number
+  }): Promise<void> {
+    if (options.groupPath.length === 0) {
+      console.warn('insertTokenInGroup: empty groupPath')
+      return
     }
 
-    const clickedNode = parent[clickedKey]
-    const clickedOrder = getFigmaOrder(clickedNode)
+    const preferredFile = options.sourceFileName ?? resolveSourceFileName()
+    let found = preferredFile
+      ? (() => {
+          const raw = uploadedDocs.value[preferredFile]
+          if (!isJsonRecord(raw)) return null
+          const containerValue = getAtPath(raw as JsonRecord, options.groupPath)
+          if (!containerValue || !isJsonRecord(containerValue)) return null
+          return {
+            fileName: preferredFile,
+            doc: raw as JsonRecord,
+            container: containerValue as JsonRecord,
+          }
+        })()
+      : null
 
-    if (clickedOrder !== undefined) {
+    if (!found) {
+      const alt = findGroupContainer(uploadedDocs.value, options.groupPath)
+      if (!alt) {
+        console.warn(
+          'insertTokenInGroup: group not found',
+          options.groupPath.join('.'),
+        )
+        return
+      }
+      found = alt
+    }
+
+    const { fileName, doc, container } = found
+    const baseName = options.initialName ?? 'new-token'
+    const newToken = createTokenLeaf(options.tokenType)
+
+    if (options.figmaOrderAfter !== undefined) {
       ;(newToken as Record<string, unknown>).$extensions = {
         figma: {
-          order: clickedOrder + 0.01,
+          order: options.figmaOrderAfter + 0.01,
         },
       }
     }
 
-    // First incorrect ordering point: source sibling key order (authoritative).
-    insertSiblingKeyAfter(parent, clickedKey, newKey, newToken)
+    let newPath: string
+    let rowOrderAfter: string | null | undefined = options.insertAfterPath
 
-    const newPath = [...groupPath, newKey].join('.')
-    const clickedPath = [...groupPath, clickedKey].join('.')
-    insertBelowInRowOrder(workspaceStore, uploadedDocs.value, clickedPath, newPath)
+    if (options.insertAfterPath) {
+      const afterSegments = options.insertAfterPath.split('.')
+      const leafKey = afterSegments[afterSegments.length - 1]!
+      const parentPath = afterSegments.slice(0, -1)
 
+      let parentContainer: JsonRecord = doc
+      if (parentPath.length > 0) {
+        const parentValue = getAtPath(doc, parentPath)
+        if (!parentValue || !isJsonRecord(parentValue)) {
+          console.warn('insertTokenInGroup: parent not found for insertAfterPath')
+          return
+        }
+        parentContainer = parentValue as JsonRecord
+      }
+
+      if (!(leafKey in parentContainer)) {
+        console.warn('insertTokenInGroup: reference token not found for insertAfterPath')
+        return
+      }
+
+      const newKey = createDuplicateKey(parentContainer, baseName)
+      insertSiblingKeyAfter(parentContainer, leafKey, newKey, newToken)
+      newPath = [...parentPath, newKey].join('.')
+    } else {
+      const newKey = createDuplicateKey(container, baseName)
+      container[newKey] = newToken
+      newPath = [...options.groupPath, newKey].join('.')
+
+      const siblings = directChildTokenPathsInGroup(uploadedDocs.value, options.groupPath)
+      rowOrderAfter = siblings.length > 0 ? siblings[siblings.length - 1]! : null
+    }
+
+    insertBelowInRowOrder(workspaceStore, uploadedDocs.value, rowOrderAfter, newPath)
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
@@ -1221,35 +1318,71 @@ export function useTokenCrud({
     groupPath: string[],
     initialName = 'new-token',
     tokenType: TokenType = 'color',
+    insertAfterPath?: string | null,
   ): Promise<void> {
-    if (groupPath.length === 0) {
-      console.warn('addTokenToGroup: empty groupPath – not supported')
+    await insertTokenInGroup({
+      groupPath,
+      tokenType,
+      initialName,
+      insertAfterPath,
+    })
+  }
+
+  async function addGroup(
+    parentGroupPath: string[],
+    groupName: string,
+    tokenType: TokenType,
+  ): Promise<void> {
+    const trimmed = groupName.trim()
+    if (!trimmed) {
+      console.warn('addGroup: empty group name')
       return
     }
 
-    const found = findGroupContainer(uploadedDocs.value, groupPath)
-    if (!found) {
-      console.warn('addTokenToGroup: group not found in any uploaded doc', groupPath.join('.'))
+    const fileName = resolveSourceFileName()
+    if (!fileName) {
+      console.warn('addGroup: no uploaded docs')
       return
     }
 
-    const { fileName, doc, container } = found
-    const key = createDuplicateKey(container, initialName)
-    const typeDef = requireTokenTypeDefinition(tokenType)
-
-    const newToken: JsonValue = {
-      $type: tokenType,
-      $value: typeDef.createDefaultValue() as JsonValue,
+    const rawDoc = uploadedDocs.value[fileName]
+    if (!isJsonRecord(rawDoc)) {
+      console.warn('addGroup: active doc is not an object')
+      return
     }
 
-    container[key] = newToken
+    const doc = rawDoc as JsonRecord
+    const groupNode = ensurePath(doc, [...parentGroupPath, trimmed])
+    if (!Object.prototype.hasOwnProperty.call(groupNode, '$type')) {
+      groupNode.$type = tokenType
+    }
+    uploadedDocs.value[fileName] = doc
+    await persistUploadedDocsAndReload()
+  }
 
-    const newPathSegments = [...groupPath, key]
-    const newPath = newPathSegments.join('.')
+  async function deleteGroupFromSource(groupPath: string[]): Promise<void> {
+    if (groupPath.length === 0) return
 
-    const order = ensureRowOrder(workspaceStore)
-    order.push(newPath)
+    const parentPath = groupPath.slice(0, -1)
+    const groupKey = groupPath[groupPath.length - 1]!
 
+    const parentFound =
+      parentPath.length > 0
+        ? findGroupContainer(uploadedDocs.value, parentPath)
+        : (() => {
+            const fileName = resolveSourceFileName()
+            if (!fileName) return null
+            const raw = uploadedDocs.value[fileName]
+            if (!isJsonRecord(raw)) return null
+            return { fileName, doc: raw as JsonRecord, container: raw as JsonRecord }
+          })()
+
+    if (!parentFound) return
+
+    const { fileName, doc, container } = parentFound
+    if (!(groupKey in container)) return
+
+    delete container[groupKey]
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }
@@ -1264,16 +1397,13 @@ export function useTokenCrud({
       return
     }
 
-    const docs = uploadedDocs.value
-    const fileNames = Object.keys(docs)
-
-    if (fileNames.length === 0) {
+    const fileName = resolveSourceFileName()
+    if (!fileName) {
       console.warn('addGroupWithToken: no uploaded docs')
       return
     }
 
-    const fileName = fileNames[0]
-    const rawDoc = docs[fileName]
+    const rawDoc = uploadedDocs.value[fileName]
 
     if (!isJsonRecord(rawDoc)) {
       console.warn('addGroupWithToken: first uploaded doc is not an object')
@@ -1590,7 +1720,10 @@ export function useTokenCrud({
     deleteToken,
     duplicateToken,
     addRowBelowToken,
+    insertTokenInGroup,
     addTokenToGroup,
+    addGroup,
+    deleteGroupFromSource,
     addGroupWithToken,
     addSiblingGroupWithToken,
     setTokenAlias,

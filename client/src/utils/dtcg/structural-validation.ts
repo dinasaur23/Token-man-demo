@@ -29,6 +29,11 @@ export type StructuralValidationResult =
   | { ok: true; errors: [] }
   | { ok: false; errors: TokenValidationError[] }
 
+export type StructuralValidationOptions = {
+  /** Workspace drafts may contain zero token leaves; import validation must not set this. */
+  allowEmptyDraft?: boolean
+}
+
 function pathString(segments: string[]): string {
   return segments.join('.')
 }
@@ -50,7 +55,10 @@ function isTokenLeaf(node: JsonObject): boolean {
  * Callers that need a single failure for import should treat `ok: false` as
  * fail-closed for the entire file.
  */
-export function validateDocumentStructure(doc: Json): StructuralValidationResult {
+export function validateDocumentStructure(
+  doc: Json,
+  options: StructuralValidationOptions = {},
+): StructuralValidationResult {
   const errors: TokenValidationError[] = []
   let tokenCount = 0
 
@@ -113,7 +121,7 @@ export function validateDocumentStructure(doc: Json): StructuralValidationResult
 
   visit(doc, [])
 
-  if (tokenCount === 0) {
+  if (tokenCount === 0 && !options.allowEmptyDraft) {
     errors.push({
       path: '(root)',
       code: 'EMPTY_DOCUMENT',

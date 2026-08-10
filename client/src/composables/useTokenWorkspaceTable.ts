@@ -29,6 +29,11 @@ import type { GroupNode, TableRow } from '@/utils/dtcg/token-table-types'
 import { normalizeHexColorsInSourceDocument } from '@/utils/dtcg/color-conversion'
 import { serializeSourceDocumentsForPersistence } from '@/utils/dtcg/source-document'
 import {
+  createEmptyTokenSetDocument,
+  normalizeTokenSetFileName,
+  tokenSetFileNameConflict,
+} from '@/utils/dtcg/workspace-file-names'
+import {
   buildPathToSourceFileMap,
   ensureRowOrderContainsSourcePaths,
   modeAddedSourceFile,
@@ -260,10 +265,14 @@ export function useTokenWorkspaceTable() {
   const activeNodeIds = ref<string[]>([])
   // Authoritative DTCG source documents (persisted). Never replace with a resolved/derived tree.
   const uploadedDocs = ref<Record<string, JsonValue>>({})
+  /** Target file for new groups/tokens; defaults to first workspace file when unset. */
+  const activeSourceFileName = ref<string | null>(null)
   const detectedModifiers = ref<DetectedModifier[]>([])
   const selectedModifiers = ref<Record<string, string>>({})
   const selectedScopedModifiersByGroup = ref<Record<string, string>>({})
   const workspaceStore = useTokenWorkspaceStore()
+  const hasWorkspaceFiles = computed(() => workspaceStore.files.length > 0)
+  const hasAnyTokens = computed(() => rows.value.length > 0)
   const groupScopedModifierName = ref<string | null>(null)
   const groupScopedModeOptions = ref<Record<string, string[]>>({})
 
@@ -371,17 +380,6 @@ export function useTokenWorkspaceTable() {
     const overrides = workspaceStore.groupNameOverrides ?? {}
     return applyGroupNameOverrides(base, overrides)
   })
-
-  watch(
-    groupTreeItems,
-    (items) => {
-      if (!items.length) return
-      if (activeNodeIds.value.length === 0) {
-        activeNodeIds.value = [items[0].id]
-      }
-    },
-    { immediate: true },
-  )
 
   const activeGroupId = computed<string | null>(() => activeNodeIds.value[0] ?? null)
 
@@ -715,7 +713,7 @@ export function useTokenWorkspaceTable() {
     // Source docs should already be hex-normalized on import/persist. Keep an
     // idempotent pass here so display validation still accepts legacy payloads.
     const convertedDoc = normalizeHexColorsInSourceDocument(doc)
-    const validation = await validateTokensStrict(convertedDoc)
+    const validation = await validateTokensStrict(convertedDoc, { allowEmptyDraft: true })
     //console.log('dtcg validation result:', validation)
 
     if (!validation.ok) {
@@ -1155,6 +1153,7 @@ export function useTokenWorkspaceTable() {
 
     if (!newFiles) {
       uploadedDocs.value = {}
+      activeSourceFileName.value = null
       detectedModifiers.value = []
       selectedModifiers.value = {}
       workspaceStore.files = []
@@ -1184,6 +1183,13 @@ export function useTokenWorkspaceTable() {
         // Documented non-DTCG compat: normalize hex-string color $values into
         // canonical DTCG objects in the authoritative source before persist.
         const normalized = normalizeHexColorsInSourceDocument(json) as JsonValue
+        const importValidation = await validateTokensStrict(normalized)
+        if (!importValidation.ok) {
+          errorMessage.value =
+            `File "${file.name}" is not valid DTCG (${importValidation.kind} errors). ` +
+            `Empty files must be created with New token set, not imported.`
+          return
+        }
         docs[file.name] = normalized
         dtoFiles.push({ name: file.name, content: normalized })
       } catch (err) {
@@ -1195,6 +1201,9 @@ export function useTokenWorkspaceTable() {
 
     uploadedDocs.value = docs
     workspaceStore.files = dtoFiles
+
+    const firstName = Object.keys(docs)[0] ?? null
+    activeSourceFileName.value = firstName
 
     await workspaceStore.saveToServer()
     selectedScopedModifiersByGroup.value = {}
@@ -1217,6 +1226,13 @@ export function useTokenWorkspaceTable() {
       docs[file.name] = normalized
     }
     uploadedDocs.value = docs
+
+    if (
+      !activeSourceFileName.value ||
+      !(activeSourceFileName.value in docs)
+    ) {
+      activeSourceFileName.value = Object.keys(docs)[0] ?? null
+    }
 
     // Persist canonical source when legacy hex-string values were upgraded.
     if (sourceNormalized) {
@@ -1278,6 +1294,31 @@ export function useTokenWorkspaceTable() {
     await resolveAndPopulateFromUploadedDocs()
   }
 
+  async function createTokenSet(rawName: string): Promise<{ ok: true } | { ok: false; error: string }> {
+    const normalized = normalizeTokenSetFileName(rawName)
+    if (!normalized.ok) return normalized
+
+    const fileName = normalized.fileName
+    const existingNames = Object.keys(uploadedDocs.value)
+    const conflict = tokenSetFileNameConflict(fileName, existingNames)
+    if (conflict) return { ok: false, error: conflict }
+
+    const emptyDoc = createEmptyTokenSetDocument()
+    uploadedDocs.value = {
+      ...uploadedDocs.value,
+      [fileName]: emptyDoc,
+    }
+    activeSourceFileName.value = fileName
+    errorMessage.value = null
+    activeNodeIds.value = []
+
+    workspaceStore.files = serializeSourceDocumentsForPersistence(uploadedDocs.value)
+    await workspaceStore.saveToServer()
+    await syncFromWorkspaceStoreFiles()
+
+    return { ok: true }
+  }
+
   async function initFromWorkspaceStore(): Promise<void> {
     await workspaceStore.loadFromServer()
     console.log('figmaModifierOptions:', workspaceStore.figmaModifierOptions)
@@ -1293,6 +1334,10 @@ export function useTokenWorkspaceTable() {
     deleteToken,
     duplicateToken,
     addRowBelowToken,
+    insertTokenInGroup,
+    addTokenToGroup,
+    addGroup,
+    deleteGroupFromSource,
     addGroupWithToken,
     addSiblingGroupWithToken,
     setTokenAlias,
@@ -1305,6 +1350,7 @@ export function useTokenWorkspaceTable() {
       const groupKey = extractGroupPath(tokenPath)?.[0] ?? tokenPath.split('.')[0] ?? ''
       return getEffectiveModeForGroupKey(groupKey)
     },
+    getActiveSourceFileName: () => activeSourceFileName.value,
   })
 
   async function addSiblingGroupForActiveGroup(
@@ -1330,6 +1376,10 @@ export function useTokenWorkspaceTable() {
     errorMessage,
     activeNodeIds,
     activeGroupId,
+    uploadedDocs,
+    hasWorkspaceFiles,
+    hasAnyTokens,
+    activeSourceFileName,
     detectedModifiers,
     selectedModifiers,
     groupTreeItems,
@@ -1342,6 +1392,7 @@ export function useTokenWorkspaceTable() {
 
     onFileChange,
     onModifierChange,
+    createTokenSet,
 
     updateTokenValue,
     updateTokenValueAny,
@@ -1349,6 +1400,10 @@ export function useTokenWorkspaceTable() {
     deleteToken,
     duplicateToken,
     addRowBelowToken,
+    insertTokenInGroup,
+    addTokenToGroup,
+    addGroup,
+    deleteGroupFromSource,
     addGroupWithToken,
     addSiblingGroupForActiveGroup,
     setTokenAlias,
