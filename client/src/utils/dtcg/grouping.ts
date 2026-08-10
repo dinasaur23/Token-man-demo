@@ -73,6 +73,21 @@ export function buildGroupTreeForTokenType(
   return pruneEmptyChildren(buildGroupTree(matching))
 }
 
+/**
+ * Type-filtered tree when matches exist; otherwise full hierarchy so the user
+ * can pick a destination (cross-type groups, empty groups from source).
+ * Pure — never mutates source data.
+ */
+export function buildGroupTreeWithTypeFallback(
+  rows: ReadonlyArray<{ type: string; groupPath: string[] }>,
+  tokenType: string,
+  fallbackTree: GroupNode[],
+): GroupNode[] {
+  const filtered = buildGroupTreeForTokenType(rows, tokenType)
+  if (filtered.length > 0) return filtered
+  return fallbackTree
+}
+
 /** Apply display-name overrides without mutating the input tree. */
 export function applyGroupNameOverrides(
   nodes: GroupNode[],

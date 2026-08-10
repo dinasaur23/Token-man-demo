@@ -1,12 +1,8 @@
 # DTCG Multi-Type Migration Handoff
 
-Branch: `cursor/token-table-columns-cab3` (from `main` @ `ffad34a`)  
-Token-table columns PR: https://github.com/dinasaur23/Token-man-demo/pull/18  
-Row-ordering fix PR: https://github.com/dinasaur23/Token-man-demo/pull/21 (merged)  
-Merged platform serialization: https://github.com/dinasaur23/Token-man-demo/pull/20 (`840332a`)  
-Do **not** merge: https://github.com/dinasaur23/Token-man-demo/pull/19 (superseded by #20)  
-Last completed stage: **Type-aware token-table columns (Hex/Color only on Color pages)**  
-Date: 2026-08-06
+Branch: `cursor/create-token-sets-tokens-27c6` (from `main` @ `330f711`)  
+Last completed stage: **In-app token set + token creation (NEW TOKEN SET / NEW TOKEN)**  
+Date: 2026-08-10
 
 Spec references:
 - Format: https://www.designtokens.org/tr/2025.10/format/
@@ -21,7 +17,38 @@ Spec references:
 | 1–18 + UI | Done | Merged to `main` via PR #20 |
 | Platform export runtime | Done | `token-manager/*` transforms + guard-before-ZIP |
 | Row ordering | Done | Add/duplicate insert below source; stable `getRowId`; source sibling order authoritative |
-| **Type-aware columns** | **Done** | Hex/Color columns only on Color pages; modular column factory |
+| Type-aware columns | Done | Hex/Color columns only on Color pages; modular column factory |
+| **In-app creation** | **Done** | NEW TOKEN SET, NEW TOKEN, empty groups, type-tree fallback |
+
+---
+
+## In-app token set + token creation
+
+### Features
+1. **NEW TOKEN SET** (top toolbar) — creates an empty `{}` source document in the workspace (no file upload). Filename normalization lives in [`workspace-file-names.ts`](../client/src/utils/dtcg/workspace-file-names.ts) (not `source-document.ts`).
+2. **NEW TOKEN** (group toolbar) — inserts a token of the **current route type** into the selected group via shared `insertTokenInGroup` (same path as context-menu **Add row below** when a row is selected; append when not).
+3. **NEW GROUP / Child group** — creates **empty** group containers only (`addGroup`). `addGroupWithToken` remains for convenience elsewhere but is not used by toolbar group buttons.
+4. **Group-tree fallback** — normally type-filtered; when zero groups match the active type, UI shows the full hierarchy (rows + empty source groups) so users can pick a cross-type destination. Reverts to filtered tree once a token of the active type exists.
+5. **Export guard** — Export disabled until the workspace has at least one token leaf.
+6. **Empty draft validation** — import still rejects empty external files (`EMPTY_DOCUMENT`); workspace rebuild uses `validateTokensStrict(doc, { allowEmptyDraft: true })`.
+
+### Architecture decisions
+- No `isImported` / `isManual` flags — manual and imported sets share the same `files[]` / `uploadedDocs` source model.
+- `activeSourceFileName` in `useTokenWorkspaceTable` targets CRUD at the newly created set (no prior active-file concept existed).
+- Resolved view remains derived; only source documents persist.
+- Registry `createDefaultValue()` is authoritative for all seven basic types.
+
+### Changed files
+- [`workspace-file-names.ts`](../client/src/utils/dtcg/workspace-file-names.ts) — filename normalize / empty doc helper
+- [`source-group-tree.ts`](../client/src/utils/dtcg/source-group-tree.ts) — empty group paths from source
+- [`grouping.ts`](../client/src/utils/dtcg/grouping.ts) — `buildGroupTreeWithTypeFallback`
+- [`structural-validation.ts`](../client/src/utils/dtcg/structural-validation.ts) / [`dtcg-validator.ts`](../client/src/utils/dtcg/dtcg-validator.ts) — `allowEmptyDraft` option
+- [`useTokenCrud.ts`](../client/src/composables/useTokenCrud.ts) — `insertTokenInGroup`, `addGroup`, `deleteGroupFromSource`
+- [`useTokenWorkspaceTable.ts`](../client/src/composables/useTokenWorkspaceTable.ts) — `createTokenSet`, import gate, `activeSourceFileName`
+- [`useTokenTableComponent.ts`](../client/src/composables/useTokenTableComponent.ts) — toolbar wiring, tree fallback, grid selection
+- [`TokenTableComponent.vue`](../client/src/components/TokenTableComponent.vue) — UI buttons/dialogs
+- [`TokenExportDialog.vue`](../client/src/components/TokenExportDialog.vue) — `canExport` prop
+- Tests: `create-token-set.test.ts`, `group-tree-type-fallback.test.ts`, `insert-token-in-group.test.ts`
 
 ---
 

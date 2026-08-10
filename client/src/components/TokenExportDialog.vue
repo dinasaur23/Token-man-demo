@@ -1,5 +1,19 @@
 <template>
-  <v-btn color="white" variant="flat" class="mb-5" @click="openDialog"> Export tokens </v-btn>
+  <v-tooltip :disabled="canExport" text="Add at least one token before exporting">
+    <template #activator="{ props: tooltipProps }">
+      <span v-bind="tooltipProps">
+        <v-btn
+          color="white"
+          variant="flat"
+          class="mb-5"
+          :disabled="!canExport"
+          @click="openDialog"
+        >
+          Export tokens
+        </v-btn>
+      </span>
+    </template>
+  </v-tooltip>
 
   <v-dialog v-model="dialog" max-width="500">
     <v-card>
@@ -70,6 +84,15 @@
 import { computed, ref } from 'vue'
 import axios from 'axios'
 import { useDesignSystemStore } from '@/stores/DesignSystem'
+
+const props = withDefaults(
+  defineProps<{
+    canExport?: boolean
+  }>(),
+  { canExport: true },
+)
+
+const canExport = computed(() => props.canExport)
 
 const API_URL = import.meta.env.VITE_API_URL
 type ExportFormat = 'css' | 'tailwind' | 'swift' | 'android' | 'json'

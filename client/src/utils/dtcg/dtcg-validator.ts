@@ -41,10 +41,17 @@ function childKeys(node: JsonObject): string[] {
  * Registered type `$value`s are checked separately via
  * {@link validateRegisteredTypeSubtree} / {@link validateColorSubtree}.
  */
-export function validateDtcgDocument(doc: Json): DtcgStructuralResult {
+export type DtcgValidationOptions = {
+  allowEmptyDraft?: boolean
+}
+
+export function validateDtcgDocument(
+  doc: Json,
+  options: DtcgValidationOptions = {},
+): DtcgStructuralResult {
   const errors: TokenValidationError[] = []
 
-  const structural = validateDocumentStructure(doc)
+  const structural = validateDocumentStructure(doc, options)
   if (!structural.ok) {
     errors.push(...structural.errors)
   }
@@ -200,8 +207,11 @@ function formatStructuralIssue(issue: unknown): string {
   return String(issue)
 }
 
-export async function validateTokensStrict(doc: Json): Promise<CombinedValidationResult> {
-  const structural = validateDtcgDocument(doc)
+export async function validateTokensStrict(
+  doc: Json,
+  options: DtcgValidationOptions = {},
+): Promise<CombinedValidationResult> {
+  const structural = validateDtcgDocument(doc, options)
   if (!structural.ok) {
     return {
       ok: false,

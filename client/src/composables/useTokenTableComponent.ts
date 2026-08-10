@@ -7,10 +7,11 @@ import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import type { TokenTypeId } from '@/utils/dtcg/token-types'
 import {
   applyGroupNameOverrides,
-  buildGroupTreeForTokenType,
+  buildGroupTreeWithTypeFallback,
   collectGroupTreeIds,
   filterRowsByTokenType,
 } from '@/utils/dtcg/grouping'
+import { buildFullGroupTree } from '@/utils/dtcg/source-group-tree'
 
 /**
  * Generic token-table shell composable.
@@ -28,6 +29,9 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     rows,
     errorMessage,
     activeNodeIds,
+    uploadedDocs,
+    hasWorkspaceFiles,
+    hasAnyTokens,
     detectedModifiers,
     selectedModifiers,
     filteredRows,
@@ -39,10 +43,13 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     uiSelectedModifiers,
     clearTokenAlias,
     setTokenAlias,
-    addGroupWithToken,
+    addGroup,
+    deleteGroupFromSource,
+    insertTokenInGroup,
     addRowBelowToken,
     duplicateToken,
     deleteToken,
+    createTokenSet,
     onFileChange,
     onModifierChange,
     updateTokenValueAny,
@@ -54,17 +61,32 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     filterRowsByTokenType(rows.value, tokenTypeRef.value),
   )
 
-  /** True when the imported workspace has no tokens of the selected type. */
+  /** True when the workspace has no tokens of the selected type (but may have other types). */
   const showTypeEmptyState = computed(
-    () => rows.value.length > 0 && rowsOfSelectedType.value.length === 0,
+    () =>
+      hasWorkspaceFiles.value &&
+      rowsOfSelectedType.value.length === 0 &&
+      rows.value.length > 0,
+  )
+
+  const showWorkspaceEmptyHint = computed(
+    () => hasWorkspaceFiles.value && rows.value.length === 0,
+  )
+
+  const fullGroupTree = computed(() =>
+    buildFullGroupTree(rows.value, uploadedDocs.value),
   )
 
   /**
-   * Group tree filtered to the selected type.
-   * Ancestor paths to nested matches are preserved; unrelated groups are hidden.
+   * Group tree filtered to the selected type; falls back to full hierarchy when
+   * no groups contain the active type (cross-type destination selection).
    */
   const groupTreeItems = computed<GroupNode[]>(() => {
-    const base = buildGroupTreeForTokenType(rows.value, tokenTypeRef.value)
+    const base = buildGroupTreeWithTypeFallback(
+      rows.value,
+      tokenTypeRef.value,
+      fullGroupTree.value,
+    )
     const overrides = wsStore.groupNameOverrides ?? {}
     return applyGroupNameOverrides(base, overrides)
   })
@@ -94,6 +116,17 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
 
   const gridApi = ref<GridApi<TableRow> | null>(null)
   const lastScrollPath = ref<string | null>(null)
+  const selectedGridRow = ref<TableRow | null>(null)
+
+  const canAddToken = computed(() => Boolean(activeGroupId.value))
+
+  const showNewTokenSetDialog = ref(false)
+  const newTokenSetName = ref('')
+  const newTokenSetError = ref<string | null>(null)
+
+  watch(activeGroupId, () => {
+    selectedGridRow.value = null
+  })
 
   const addGroupDialog = ref(false)
   const newGroupName = ref('')
@@ -199,10 +232,12 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
       return
     }
 
-    await addGroupWithToken([], name, tokenTypeRef.value)
+    await addGroup([], name)
 
     newSiblingGroupName.value = ''
     showAddSiblingDialog.value = false
+
+    activeNodeIds.value = [name]
   }
 
   function onGridReady(event: GridReadyEvent<TableRow>): void {
@@ -243,9 +278,12 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     }
 
     const parentSegments = parentId.split('.')
-    await addGroupWithToken(parentSegments, name, tokenTypeRef.value)
+    await addGroup(parentSegments, name)
 
     addGroupDialog.value = false
+
+    const newGroupId = [...parentSegments, name].join('.')
+    activeNodeIds.value = [newGroupId]
   }
 
   function onAddChildGroup(item: GroupNode): void {
@@ -265,9 +303,61 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
 
     const groupSegments = groupId.split('.')
 
-    await addGroupWithToken(groupSegments, name, tokenTypeRef.value)
+    await insertTokenInGroup({
+      groupPath: groupSegments,
+      tokenType: tokenTypeRef.value,
+      initialName: name,
+    })
 
     addTokenDialog.value = false
+  }
+
+  function onGridSelectionChanged(): void {
+    const api = gridApi.value
+    if (!api) return
+
+    const activeId = activeGroupId.value
+    const selected = api.getSelectedRows() as TableRow[]
+    const matching = selected.filter((row) => {
+      if (row.type !== tokenTypeRef.value) return false
+      if (!activeId) return false
+      const groupId = row.groupPath.join('.')
+      return groupId === activeId || groupId.startsWith(`${activeId}.`)
+    })
+
+    selectedGridRow.value =
+      matching.length > 0 ? matching[matching.length - 1]! : null
+  }
+
+  async function onNewTokenClick(): Promise<void> {
+    const groupId = activeGroupId.value
+    if (!groupId) return
+
+    const groupPath = groupId.split('.')
+    const afterPath = selectedGridRow.value?.path ?? null
+
+    lastScrollPath.value = afterPath
+    await insertTokenInGroup({
+      groupPath,
+      tokenType: tokenTypeRef.value,
+      insertAfterPath: afterPath,
+    })
+  }
+
+  function openNewTokenSetDialog(): void {
+    newTokenSetName.value = ''
+    newTokenSetError.value = null
+    showNewTokenSetDialog.value = true
+  }
+
+  async function confirmNewTokenSet(): Promise<void> {
+    newTokenSetError.value = null
+    const result = await createTokenSet(newTokenSetName.value)
+    if (!result.ok) {
+      newTokenSetError.value = result.error
+      return
+    }
+    showNewTokenSetDialog.value = false
   }
 
   async function onDeleteGroup(item: GroupNode): Promise<void> {
@@ -284,6 +374,8 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     for (const row of rowsToDelete) {
       await deleteToken(row)
     }
+
+    await deleteGroupFromSource(groupId.split('.'))
 
     if (activeNodeIds.value[0] === groupId) {
       activeNodeIds.value = []
@@ -337,12 +429,15 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     errorMessage,
     activeNodeIds,
     activeGroupId,
+    hasWorkspaceFiles,
+    hasAnyTokens,
     detectedModifiers,
     selectedModifiers,
     groupTreeItems,
     filteredRows: typeFilteredRows,
     rowsOfSelectedType,
     showTypeEmptyState,
+    showWorkspaceEmptyHint,
     groupScopedModifierName,
     modeOptionsForActiveGroup,
     visibleModifiers,
@@ -351,12 +446,23 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
 
     clearTokenAlias,
     setTokenAlias,
-    addGroupWithToken,
+    addGroup,
+    insertTokenInGroup,
     addRowBelowToken,
     duplicateToken,
     deleteToken,
+    createTokenSet,
     onFileChange,
     onModifierChange,
+
+    canAddToken,
+    onNewTokenClick,
+    onGridSelectionChanged,
+    showNewTokenSetDialog,
+    newTokenSetName,
+    newTokenSetError,
+    openNewTokenSetDialog,
+    confirmNewTokenSet,
 
     gridApi,
     lastScrollPath,
