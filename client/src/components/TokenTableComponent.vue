@@ -8,18 +8,19 @@
           Import a DTCG JSON file or create a new token set to get started.
         </div>
       </v-alert>
-      <div class="d-flex align-center flex-wrap" style="gap: 12px">
+      <div class="empty-state-actions d-flex align-center flex-wrap">
         <v-file-input
           accept=".json, application/json"
           label="File input"
           variant="outlined"
           multiple
-          density="compact"
+          density="comfortable"
+          hide-details
           v-model="files"
+          class="empty-state-file-input"
           @update:model-value="onFileChange"
-          style="max-width: 320px"
         />
-        <v-btn color="white" variant="flat" @click="openNewTokenSetDialog">
+        <v-btn color="white" variant="flat" class="empty-state-btn" @click="openNewTokenSetDialog">
           New token set
         </v-btn>
       </div>
@@ -115,7 +116,7 @@
     </v-col>
   </v-row>
 
-  <v-row v-show="hasWorkspaceFiles" class="type-scoped-section px-4 mt-3">
+  <v-row v-show="hasWorkspaceFiles" class="type-scoped-section px-4">
     <v-col cols="12" class="py-0 pb-2" data-testid="type-context-header">
       <h2 class="type-context-heading">{{ tokenTypeLabel }} tokens</h2>
     </v-col>
@@ -564,6 +565,33 @@ const ws = useTokenWorkspaceStore()
 </script>
 
 <style scoped>
+.empty-state-actions {
+  gap: 12px;
+  width: 100%;
+  align-items: center;
+}
+
+.empty-state-file-input {
+  flex: 0 1 320px;
+  max-width: 320px;
+  min-width: 200px;
+}
+
+.empty-state-file-input :deep(.v-input) {
+  margin-top: 0;
+  margin-bottom: 0;
+}
+
+.empty-state-file-input :deep(.v-input__details) {
+  display: none;
+}
+
+.empty-state-btn {
+  margin: 0;
+  align-self: center;
+  flex-shrink: 0;
+}
+
 .global-toolbar {
   gap: 12px;
   width: 100%;
@@ -594,6 +622,10 @@ const ws = useTokenWorkspaceStore()
 
 .global-toolbar-export :deep(.v-btn) {
   margin-bottom: 0 !important;
+}
+
+.type-scoped-section {
+  margin-top: 28px;
 }
 
 .type-context-heading {

@@ -61,6 +61,7 @@ uploadedDocs → activeSourceFileName → single-doc resolve → type filter →
 ### UI polish (layout-only follow-up)
 - Global toolbar uses a single flex row with vertically centered active-token-set chip/select, buttons, and export.
 - Type heading uses consistent 22px / weight-500 typography; group toolbar spans full content width so **New token** stays far right on desktop.
+- Empty-state file input and **New token set** share one aligned flex row; type heading has ~28px top spacing below the global toolbar.
 
 ---
 
