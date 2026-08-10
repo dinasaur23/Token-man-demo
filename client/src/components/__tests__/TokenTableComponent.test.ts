@@ -156,8 +156,9 @@ describe('TokenTableComponent toolbar', () => {
     const wrapper = mount(TokenTableComponent, { global: { stubs: globalStubs } })
     const header = wrapper.find('[data-testid="type-context-header"]')
     expect(header.exists()).toBe(true)
-    expect(header.text()).toContain('Token set: MyBrand.json')
     expect(header.text()).toContain('Color tokens')
+    expect(wrapper.find('[data-testid="active-token-set"]').text()).toContain('Active token set')
+    expect(wrapper.find('[data-testid="active-token-set"]').text()).toContain('MyBrand.json')
   })
 
   it('preserves active token set when token type changes', async () => {
@@ -194,6 +195,7 @@ describe('TokenTableComponent toolbar', () => {
 
     const toolbar = wrapper.find('[data-testid="group-toolbar"]')
     expect(toolbar.exists()).toBe(true)
+    expect(toolbar.classes()).toContain('w-100')
     expect(toolbar.find('[data-testid="toolbar-spacer"]').exists()).toBe(true)
     expect(toolbar.text()).toContain('Child group')
     expect(toolbar.text()).toContain('New group')

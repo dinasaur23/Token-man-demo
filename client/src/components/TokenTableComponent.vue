@@ -27,48 +27,58 @@
   </v-row>
 
   <!-- Global toolbar: active token set + global actions -->
-  <v-row v-if="hasWorkspaceFiles" class="mt-3" data-testid="global-toolbar">
-    <v-col cols="12" class="d-flex align-center flex-wrap" style="gap: 12px">
-      <div class="d-flex align-center" style="gap: 8px; min-width: 220px" data-testid="active-token-set">
-        <span class="text-body-2 text-medium-emphasis">Active token set:</span>
-        <v-select
-          v-if="hasMultipleTokenSets"
-          :model-value="activeSourceFileName"
-          :items="tokenSetFileNames"
-          density="compact"
-          variant="outlined"
-          hide-details
-          style="min-width: 180px"
-          @update:model-value="onActiveTokenSetChange"
-        />
-        <v-chip v-else variant="tonal" size="small">
-          {{ activeTokenSetDisplayName ?? 'No token set selected' }}
-        </v-chip>
-      </div>
+  <v-row v-if="hasWorkspaceFiles" class="mt-3 px-4" data-testid="global-toolbar">
+    <v-col cols="12" class="py-0">
+      <div class="global-toolbar d-flex align-center flex-wrap">
+        <div class="active-token-set-control d-flex align-center" data-testid="active-token-set">
+          <span class="active-token-set-label text-medium-emphasis">Active token set</span>
+          <v-select
+            v-if="hasMultipleTokenSets"
+            :model-value="activeSourceFileName"
+            :items="tokenSetFileNames"
+            density="comfortable"
+            variant="outlined"
+            hide-details
+            class="active-token-set-select"
+            @update:model-value="onActiveTokenSetChange"
+          />
+          <v-chip v-else variant="tonal" class="active-token-set-chip">
+            {{ activeTokenSetDisplayName ?? 'No token set selected' }}
+          </v-chip>
+        </div>
 
-      <v-btn color="white" variant="flat" @click="openNewTokenSetDialog">
-        New token set
-      </v-btn>
-      <TokenExportDialog :can-export="hasAnyTokens" />
+        <v-btn color="white" variant="flat" class="global-toolbar-btn" @click="openNewTokenSetDialog">
+          New token set
+        </v-btn>
+
+        <div class="global-toolbar-export">
+          <TokenExportDialog :can-export="hasAnyTokens" />
+        </div>
+      </div>
     </v-col>
 
-    <div v-if="visibleModifiers.length && groupHasModes" class="d-flex flex-wrap">
-      <v-col v-for="mod in visibleModifiers" :key="mod.name">
-        <v-select
-          :label="mod.name"
-          :items="
-            groupScopedModifierName === mod.name && modeOptionsForActiveGroup.length
-              ? modeOptionsForActiveGroup
-              : mod.values
-          "
-          :model-value="uiSelectedModifiers[mod.name]"
-          @update:model-value="(value: string | null) => onModifierChange(mod.name, value)"
-          variant="outlined"
-          density="compact"
-          style="min-width: 25vw"
-        />
-      </v-col>
-    </div>
+    <v-col
+      v-if="visibleModifiers.length && groupHasModes"
+      cols="12"
+      class="d-flex flex-wrap pt-2 pb-0"
+    >
+      <v-select
+        v-for="mod in visibleModifiers"
+        :key="mod.name"
+        :label="mod.name"
+        :items="
+          groupScopedModifierName === mod.name && modeOptionsForActiveGroup.length
+            ? modeOptionsForActiveGroup
+            : mod.values
+        "
+        :model-value="uiSelectedModifiers[mod.name]"
+        class="mr-4 mb-2"
+        @update:model-value="(value: string | null) => onModifierChange(mod.name, value)"
+        variant="outlined"
+        density="compact"
+        style="min-width: 25vw"
+      />
+    </v-col>
   </v-row>
 
   <v-row v-if="errorMessage" class="mt-2">
@@ -105,19 +115,14 @@
     </v-col>
   </v-row>
 
-  <v-row v-show="hasWorkspaceFiles" class="mt-2 ml-4 mr-4">
-    <v-col cols="12" data-testid="type-context-header">
-      <div v-if="activeTokenSetDisplayName" class="text-caption text-medium-emphasis mb-1">
-        Token set: {{ activeTokenSetDisplayName }}
-      </div>
-      <div class="text-h6 font-weight-medium mb-2">{{ tokenTypeLabel }} tokens</div>
+  <v-row v-show="hasWorkspaceFiles" class="type-scoped-section px-4 mt-3">
+    <v-col cols="12" class="py-0 pb-2" data-testid="type-context-header">
+      <h2 class="type-context-heading">{{ tokenTypeLabel }} tokens</h2>
     </v-col>
-  </v-row>
 
-  <v-row v-show="hasWorkspaceFiles" class="mt-2 ml-4">
-    <v-col cols="12" md="3">
-      <div style="overflow-y: auto">
-        <div class="mb-2 d-flex align-center flex-wrap" data-testid="group-toolbar">
+    <v-col cols="12" class="py-0 pb-2">
+      <div class="group-toolbar d-flex align-center w-100" data-testid="group-toolbar">
+        <div class="d-flex align-center flex-wrap group-toolbar-left">
           <v-btn
             size="small"
             variant="text"
@@ -132,26 +137,30 @@
             <v-icon start>mdi-folder-plus</v-icon>
             New group
           </v-btn>
-
-          <v-spacer />
-
-          <v-tooltip :disabled="canAddToken" text="Select a group first">
-            <template #activator="{ props: tooltipProps }">
-              <span v-bind="tooltipProps" data-testid="new-token-action">
-                <v-btn
-                  size="small"
-                  variant="text"
-                  :disabled="!canAddToken"
-                  @click="onNewTokenClick"
-                >
-                  <v-icon start>mdi-plus-circle-outline</v-icon>
-                  New token
-                </v-btn>
-              </span>
-            </template>
-          </v-tooltip>
         </div>
 
+        <v-spacer />
+
+        <v-tooltip :disabled="canAddToken" text="Select a group first">
+          <template #activator="{ props: tooltipProps }">
+            <span v-bind="tooltipProps" class="group-toolbar-right" data-testid="new-token-action">
+              <v-btn
+                size="small"
+                variant="text"
+                :disabled="!canAddToken"
+                @click="onNewTokenClick"
+              >
+                <v-icon start>mdi-plus-circle-outline</v-icon>
+                New token
+              </v-btn>
+            </span>
+          </template>
+        </v-tooltip>
+      </div>
+    </v-col>
+
+    <v-col cols="12" md="3" class="pt-0">
+      <div style="overflow-y: auto">
         <v-treeview
           v-model:activated="activeNodeIds"
           :items="groupTreeItems"
@@ -210,7 +219,7 @@
       </div>
     </v-col>
 
-    <v-col cols="12" md="9">
+    <v-col cols="12" md="9" class="pt-0">
       <ag-grid-vue
         :key="tokenType"
         :theme="gridTheme"
@@ -220,7 +229,7 @@
         :getRowId="getRowId"
         rowSelection.mode="multiRow"
         style="height: 70vh"
-        class="mr-5 mt-9"
+        class="mr-5"
         @grid-ready="handleGridReady"
         @model-updated="onModelUpdated"
         @selection-changed="onGridSelectionChanged"
@@ -555,6 +564,59 @@ const ws = useTokenWorkspaceStore()
 </script>
 
 <style scoped>
+.global-toolbar {
+  gap: 12px;
+  width: 100%;
+}
+
+.active-token-set-control {
+  gap: 10px;
+  flex: 0 1 auto;
+  min-width: 0;
+}
+
+.active-token-set-label {
+  font-size: 1rem;
+  line-height: 1.5;
+  white-space: nowrap;
+}
+
+.active-token-set-chip {
+  font-size: 1rem;
+  padding-inline: 14px;
+  min-height: 36px;
+}
+
+.active-token-set-select {
+  min-width: 180px;
+  max-width: 280px;
+}
+
+.global-toolbar-export :deep(.v-btn) {
+  margin-bottom: 0 !important;
+}
+
+.type-context-heading {
+  font-size: 1.375rem;
+  font-weight: 500;
+  letter-spacing: normal;
+  line-height: 1.3;
+  margin: 0;
+}
+
+.group-toolbar {
+  gap: 8px;
+  width: 100%;
+}
+
+.group-toolbar-left {
+  gap: 4px;
+}
+
+.group-toolbar-right {
+  flex-shrink: 0;
+}
+
 .actions-cell {
   overflow: visible !important;
 }

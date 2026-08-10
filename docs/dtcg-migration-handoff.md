@@ -58,6 +58,10 @@ uploadedDocs → activeSourceFileName → single-doc resolve → type filter →
 - Import replaces entire workspace (unchanged).
 - Resolver JSON workspaces with multi-file `$ref` may need dedicated per-file handling in a future task.
 
+### UI polish (layout-only follow-up)
+- Global toolbar uses a single flex row with vertically centered active-token-set chip/select, buttons, and export.
+- Type heading uses consistent 22px / weight-500 typography; group toolbar spans full content width so **New token** stays far right on desktop.
+
 ---
 
 ## Type-scoped empty groups (this fix)
