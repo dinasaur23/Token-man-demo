@@ -65,6 +65,28 @@ export function findDocContainingPath(
   return null
 }
 
+/** Prefer the active token-set file when the same path exists in multiple source documents. */
+export function findDocContainingPathPreferActive(
+  docs: Record<string, JsonValue>,
+  segments: string[],
+  preferredFileName: string | null,
+): DocPathResult | null {
+  if (preferredFileName && preferredFileName in docs) {
+    const rawDoc = docs[preferredFileName]
+    if (isJsonRecord(rawDoc)) {
+      const doc: JsonRecord = rawDoc
+      const info = getParentAndKey(doc, segments)
+      if (info) {
+        const { parent, key } = info
+        if (key in parent) {
+          return { fileName: preferredFileName, doc, token: parent[key], parent, key }
+        }
+      }
+    }
+  }
+  return findDocContainingPath(docs, segments)
+}
+
 export interface GroupContainerResult {
   fileName: string
   doc: JsonRecord

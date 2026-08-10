@@ -53,6 +53,25 @@ interface ModeAddedRow {
   raw?: JsonValue
 }
 
+function sourceDocumentTokensRoot(raw: JsonValue): JsonValue | null {
+  if (typeof raw !== 'object' || raw === null || Array.isArray(raw)) return null
+  const obj = raw as Record<string, unknown>
+  if ('tokens' in obj && typeof obj.tokens === 'object' && obj.tokens !== null) {
+    return obj.tokens as JsonValue
+  }
+  return raw
+}
+
+/** Count token leaves across all workspace source documents (export guard). */
+function countTokenLeavesInDocs(docs: Record<string, JsonValue>): number {
+  let count = 0
+  for (const raw of Object.values(docs)) {
+    const root = sourceDocumentTokensRoot(raw)
+    if (root) count += collectTokensWithPath(root).length
+  }
+  return count
+}
+
 function buildOverrideRules(overrides: Record<string, string>) {
   return Object.entries(overrides)
     .filter(([k, v]) => typeof k === 'string' && typeof v === 'string' && v.trim().length > 0)
@@ -272,7 +291,8 @@ export function useTokenWorkspaceTable() {
   const selectedScopedModifiersByGroup = ref<Record<string, string>>({})
   const workspaceStore = useTokenWorkspaceStore()
   const hasWorkspaceFiles = computed(() => workspaceStore.files.length > 0)
-  const hasAnyTokens = computed(() => rows.value.length > 0)
+  const tokenSetFileNames = computed(() => Object.keys(uploadedDocs.value).sort())
+  const hasAnyTokens = computed(() => countTokenLeavesInDocs(uploadedDocs.value) > 0)
   const groupScopedModifierName = ref<string | null>(null)
   const groupScopedModeOptions = ref<Record<string, string[]>>({})
 
@@ -575,7 +595,7 @@ export function useTokenWorkspaceTable() {
     ],
     () => {
       if (Object.keys(uploadedDocs.value).length > 0) {
-        resolveAndPopulateFromUploadedDocs().catch((err) => {
+        resolveAndPopulateActiveSource().catch((err) => {
           console.error('Watch-triggered table refresh failed:', err)
         })
       }
@@ -691,7 +711,7 @@ export function useTokenWorkspaceTable() {
       performance.measure('CRUD saveToServer', 'crud-save-start', 'crud-save-end')
 
       performance.mark('crud-resolve-start')
-      await resolveAndPopulateFromUploadedDocs()
+      await resolveAndPopulateActiveSource()
       performance.mark('crud-resolve-end')
       performance.measure('CRUD resolve+populate', 'crud-resolve-start', 'crud-resolve-end')
     } finally {
@@ -709,7 +729,10 @@ export function useTokenWorkspaceTable() {
     }
   }
 
-  async function populateTableFromDocument(doc: unknown): Promise<void> {
+  async function populateTableFromDocument(
+    doc: unknown,
+    options?: { sourceFileName?: string },
+  ): Promise<void> {
     // Source docs should already be hex-normalized on import/persist. Keep an
     // idempotent pass here so display validation still accepts legacy payloads.
     const convertedDoc = normalizeHexColorsInSourceDocument(doc)
@@ -771,7 +794,10 @@ export function useTokenWorkspaceTable() {
     const tokens = collectTokensWithPath(normalizedRoot)
     const figmaOrderMap = collectFigmaOrderMap(convertedDoc)
 
-    const pathToFile = buildPathToSourceFileMap(uploadedDocs.value)
+    const pathToFile = options?.sourceFileName
+      ? null
+      : buildPathToSourceFileMap(uploadedDocs.value)
+    const stampSourceFile = options?.sourceFileName ?? null
     const authoritativeSourcePaths = tokens.map((t) => t.path)
 
     if (figmaOrderMap.size > 0 && workspaceStore.rowOrder.length === 0) {
@@ -941,7 +967,7 @@ export function useTokenWorkspaceTable() {
           group: groupLabel,
           groupPath,
           path: t.path,
-          sourceFile: pathToFile.get(t.path) ?? WORKSPACE_FILE_FALLBACK,
+          sourceFile: stampSourceFile ?? pathToFile?.get(t.path) ?? WORKSPACE_FILE_FALLBACK,
           type: t.type,
           isAlias: !!aliasPathDisplayFinal,
           aliasPath: aliasPathDisplayFinal ?? '',
@@ -1064,19 +1090,20 @@ export function useTokenWorkspaceTable() {
     rows.value.splice(0, rows.value.length, ...newRows)
   }
 
-  async function resolveAndPopulateFromUploadedDocs(): Promise<void> {
-    // Derive a resolved view from source. Name-override ref rewriting runs on clones only.
-    // The merged document is ephemeral display/export input and must not be written to files.
+  async function resolveAndPopulateActiveSource(): Promise<void> {
     const docs = uploadedDocs.value
-    if (Object.keys(docs).length === 0) return
+    const activeName = activeSourceFileName.value
+
+    if (!activeName || !(activeName in docs)) {
+      rows.value = []
+      return
+    }
 
     const overrides = workspaceStore.groupNameOverrides ?? {}
-    const normalizedDocs: Record<string, JsonValue> = {}
-    for (const [name, content] of Object.entries(docs)) {
-      const step1 = rewriteRefsInJsonValue(content, overrides, 'toReal')
-
-      normalizedDocs[name] = rewriteRefsByToRealTokenPath(step1)
-    }
+    const raw = docs[activeName]!
+    const step1 = rewriteRefsInJsonValue(raw, overrides, 'toReal')
+    const normalized = rewriteRefsByToRealTokenPath(step1)
+    const activeDocMap: Record<string, JsonValue> = { [activeName]: normalized }
 
     try {
       type ResolverInput = Record<string, string> & {
@@ -1086,20 +1113,27 @@ export function useTokenWorkspaceTable() {
       const input: ResolverInput = { ...uiSelectedModifiers.value }
       input.scopedModifiers = workspaceStore.scopedModifiers ?? {}
 
-      const resolvedDoc = resolveUploadedDocuments(normalizedDocs, input)
+      const resolvedDoc = resolveUploadedDocuments(activeDocMap, input)
 
-      console.log('[Table] resolvedDoc sample:', JSON.stringify(resolvedDoc, null, 2).slice(0, 500))
+      console.log('[Table] active resolvedDoc sample:', JSON.stringify(resolvedDoc, null, 2).slice(0, 500))
 
-      await populateTableFromDocument(resolvedDoc)
+      await populateTableFromDocument(resolvedDoc, { sourceFileName: activeName })
       if (rows.value.length > 0) {
         errorMessage.value = null
       }
     } catch (err) {
-      console.error('Error resolving tokens:', err)
+      console.error('Error resolving active token set:', err)
       errorMessage.value =
         err instanceof Error ? err.message : 'Error resolving tokens with current modifier values.'
       rows.value = []
     }
+  }
+
+  async function setActiveSourceFileName(name: string | null): Promise<void> {
+    if (name !== null && !(name in uploadedDocs.value)) return
+    activeSourceFileName.value = name
+    activeNodeIds.value = []
+    await resolveAndPopulateActiveSource()
   }
 
   function onModifierChange(name: string, value: string | null): void {
@@ -1128,7 +1162,7 @@ export function useTokenWorkspaceTable() {
       workspaceStore.scopedModifiers = nextScoped
 
       void workspaceStore.saveToServer().then(() => {
-        void resolveAndPopulateFromUploadedDocs()
+        void resolveAndPopulateActiveSource()
       })
       return
     }
@@ -1142,7 +1176,7 @@ export function useTokenWorkspaceTable() {
     }
 
     void workspaceStore.saveToServer().then(() => {
-      void resolveAndPopulateFromUploadedDocs()
+      void resolveAndPopulateActiveSource()
     })
   }
 
@@ -1291,7 +1325,7 @@ export function useTokenWorkspaceTable() {
       }
     }
 
-    await resolveAndPopulateFromUploadedDocs()
+    await resolveAndPopulateActiveSource()
   }
 
   async function createTokenSet(rawName: string): Promise<{ ok: true } | { ok: false; error: string }> {
@@ -1380,6 +1414,8 @@ export function useTokenWorkspaceTable() {
     hasWorkspaceFiles,
     hasAnyTokens,
     activeSourceFileName,
+    tokenSetFileNames,
+    setActiveSourceFileName,
     detectedModifiers,
     selectedModifiers,
     groupTreeItems,

@@ -19,6 +19,9 @@
     <v-card>
       <v-card-title>Export tokens</v-card-title>
       <v-card-text>
+        <p class="text-body-2 text-medium-emphasis mb-4">
+          Exports all token sets in this workspace.
+        </p>
         <v-alert
           v-if="exportError"
           type="error"

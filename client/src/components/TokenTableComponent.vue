@@ -1,25 +1,58 @@
 <template>
-  <v-row class="mt-3">
-    <v-col cols="4">
-      <v-file-input
-        accept=".json, application/json"
-        label="File input"
-        variant="outlined"
-        multiple
-        density="compact"
-        v-model="files"
-        @update:model-value="onFileChange"
-      />
+  <!-- Empty state: no token set in workspace -->
+  <v-row v-if="!hasWorkspaceFiles" class="mt-3" data-testid="token-set-empty-state">
+    <v-col cols="12">
+      <v-alert type="info" variant="tonal" class="mb-4">
+        <div class="font-weight-medium mb-1">No token set selected</div>
+        <div>
+          Import a DTCG JSON file or create a new token set to get started.
+        </div>
+      </v-alert>
+      <div class="d-flex align-center flex-wrap" style="gap: 12px">
+        <v-file-input
+          accept=".json, application/json"
+          label="File input"
+          variant="outlined"
+          multiple
+          density="compact"
+          v-model="files"
+          @update:model-value="onFileChange"
+          style="max-width: 320px"
+        />
+        <v-btn color="white" variant="flat" @click="openNewTokenSetDialog">
+          New token set
+        </v-btn>
+      </div>
     </v-col>
+  </v-row>
 
-    <v-col cols="4" class="d-flex align-center" style="gap: 12px">
-      <v-btn color="white" variant="flat" class="mb-5" @click="openNewTokenSetDialog">
+  <!-- Global toolbar: active token set + global actions -->
+  <v-row v-if="hasWorkspaceFiles" class="mt-3" data-testid="global-toolbar">
+    <v-col cols="12" class="d-flex align-center flex-wrap" style="gap: 12px">
+      <div class="d-flex align-center" style="gap: 8px; min-width: 220px" data-testid="active-token-set">
+        <span class="text-body-2 text-medium-emphasis">Active token set:</span>
+        <v-select
+          v-if="hasMultipleTokenSets"
+          :model-value="activeSourceFileName"
+          :items="tokenSetFileNames"
+          density="compact"
+          variant="outlined"
+          hide-details
+          style="min-width: 180px"
+          @update:model-value="onActiveTokenSetChange"
+        />
+        <v-chip v-else variant="tonal" size="small">
+          {{ activeTokenSetDisplayName ?? 'No token set selected' }}
+        </v-chip>
+      </div>
+
+      <v-btn color="white" variant="flat" @click="openNewTokenSetDialog">
         New token set
       </v-btn>
       <TokenExportDialog :can-export="hasAnyTokens" />
     </v-col>
 
-    <div v-if="visibleModifiers.length && groupHasModes">
+    <div v-if="visibleModifiers.length && groupHasModes" class="d-flex flex-wrap">
       <v-col v-for="mod in visibleModifiers" :key="mod.name">
         <v-select
           :label="mod.name"
@@ -72,7 +105,16 @@
     </v-col>
   </v-row>
 
-  <v-row v-show="hasWorkspaceFiles" class="mt-4 ml-4">
+  <v-row v-show="hasWorkspaceFiles" class="mt-2 ml-4 mr-4">
+    <v-col cols="12" data-testid="type-context-header">
+      <div v-if="activeTokenSetDisplayName" class="text-caption text-medium-emphasis mb-1">
+        Token set: {{ activeTokenSetDisplayName }}
+      </div>
+      <div class="text-h6 font-weight-medium mb-2">{{ tokenTypeLabel }} tokens</div>
+    </v-col>
+  </v-row>
+
+  <v-row v-show="hasWorkspaceFiles" class="mt-2 ml-4">
     <v-col cols="12" md="3">
       <div style="overflow-y: auto">
         <div class="mb-2 d-flex align-center flex-wrap" data-testid="group-toolbar">
@@ -222,15 +264,18 @@
   </v-menu>
   <v-dialog v-model="showNewTokenSetDialog" max-width="420">
     <v-card>
-      <v-card-title class="text-subtitle-1">New token set</v-card-title>
+      <v-card-title class="text-subtitle-1">Create token set</v-card-title>
       <v-card-text>
         <v-text-field
           v-model="newTokenSetName"
           label="Token set name"
           density="comfortable"
-          hint="Saved as a .json file in your workspace"
+          hint="This creates a new DTCG JSON source document in your workspace."
           persistent-hint
         />
+        <div v-if="newTokenSetFilePreview" class="text-caption text-medium-emphasis mt-2">
+          File: {{ newTokenSetFilePreview }}
+        </div>
         <v-alert
           v-if="newTokenSetError"
           type="error"
@@ -375,6 +420,7 @@ import { useTokenTableComponent } from '@/composables/useTokenTableComponent'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
 import { getTokenTypeDefinition, type TokenTypeId } from '@/utils/dtcg/token-types'
 import { buildStableTokenRowId } from '@/utils/dtcg/row-ordering'
+import { normalizeTokenSetFileName } from '@/utils/dtcg/workspace-file-names'
 import type { TableRow } from '@/utils/dtcg/token-table-types'
 
 const props = withDefaults(
@@ -397,6 +443,11 @@ const {
   activeGroupId,
   hasWorkspaceFiles,
   hasAnyTokens,
+  activeSourceFileName,
+  tokenSetFileNames,
+  hasMultipleTokenSets,
+  activeTokenSetDisplayName,
+  onActiveTokenSetChange,
   uiSelectedModifiers,
   groupTreeItems,
   filteredRows,
@@ -466,6 +517,11 @@ const {
 const tokenTypeLabel = computed(
   () => getTokenTypeDefinition(tokenType.value)?.label ?? tokenType.value,
 )
+
+const newTokenSetFilePreview = computed(() => {
+  const result = normalizeTokenSetFileName(newTokenSetName.value)
+  return result.ok ? result.fileName : null
+})
 
 const gridApi = ref<GridApi | null>(null)
 

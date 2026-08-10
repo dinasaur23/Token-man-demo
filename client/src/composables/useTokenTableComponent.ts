@@ -29,6 +29,9 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     errorMessage,
     activeNodeIds,
     uploadedDocs,
+    activeSourceFileName,
+    tokenSetFileNames,
+    setActiveSourceFileName,
     hasWorkspaceFiles,
     hasAnyTokens,
     detectedModifiers,
@@ -72,6 +75,17 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     () => hasWorkspaceFiles.value && rows.value.length === 0,
   )
 
+  /** Source documents scoped to the active token set (isolated resolution). */
+  const activeSourceDocs = computed(() => {
+    const name = activeSourceFileName.value
+    if (!name || !(name in uploadedDocs.value)) return {}
+    return { [name]: uploadedDocs.value[name]! }
+  })
+
+  const hasMultipleTokenSets = computed(() => tokenSetFileNames.value.length > 1)
+
+  const activeTokenSetDisplayName = computed(() => activeSourceFileName.value ?? null)
+
   /**
    * Group tree filtered to the selected type; falls back to empty source groups
    * whose group-level `$type` matches the active route type.
@@ -80,7 +94,7 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     const base = buildGroupTreeWithTypeFallback(
       rows.value,
       tokenTypeRef.value,
-      uploadedDocs.value,
+      activeSourceDocs.value,
     )
     const overrides = wsStore.groupNameOverrides ?? {}
     return applyGroupNameOverrides(base, overrides)
@@ -122,6 +136,23 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
   watch(activeGroupId, () => {
     selectedGridRow.value = null
   })
+
+  watch(activeSourceFileName, () => {
+    selectedGridRow.value = null
+    const api = gridApi.value
+    if (api && !api.isDestroyed()) {
+      api.deselectAll()
+    }
+  })
+
+  async function onActiveTokenSetChange(name: string | null): Promise<void> {
+    await setActiveSourceFileName(name)
+    selectedGridRow.value = null
+    const api = gridApi.value
+    if (api && !api.isDestroyed()) {
+      api.deselectAll()
+    }
+  }
 
   const addGroupDialog = ref(false)
   const newGroupName = ref('')
@@ -426,6 +457,11 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     activeGroupId,
     hasWorkspaceFiles,
     hasAnyTokens,
+    activeSourceFileName,
+    tokenSetFileNames,
+    hasMultipleTokenSets,
+    activeTokenSetDisplayName,
+    onActiveTokenSetChange,
     detectedModifiers,
     selectedModifiers,
     groupTreeItems,
