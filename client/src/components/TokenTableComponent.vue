@@ -29,7 +29,7 @@
               : mod.values
           "
           :model-value="uiSelectedModifiers[mod.name]"
-          @update:model-value="(value) => onModifierChange(mod.name, value)"
+          @update:model-value="(value: string | null) => onModifierChange(mod.name, value)"
           variant="outlined"
           density="compact"
           style="min-width: 25vw"
