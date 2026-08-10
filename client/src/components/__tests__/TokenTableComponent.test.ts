@@ -18,6 +18,11 @@ const { mockState } = vi.hoisted(() => {
     activeGroupId: ref<string | null>('primary'),
     hasWorkspaceFiles: ref(true),
     hasAnyTokens: ref(false),
+    activeSourceFileName: ref('MyBrand.json'),
+    tokenSetFileNames: ref(['MyBrand.json']),
+    hasMultipleTokenSets: ref(false),
+    activeTokenSetDisplayName: ref('MyBrand.json'),
+    onActiveTokenSetChange: vi.fn(),
     canAddToken: ref(false),
     uiSelectedModifiers: ref({}),
     groupTreeItems: ref([{ id: 'primary', title: 'primary' }]),
@@ -99,39 +104,98 @@ vi.mock('@/stores/TokenWorkspace', () => ({
 import TokenTableComponent from '../TokenTableComponent.vue'
 
 describe('TokenTableComponent toolbar', () => {
+  const globalStubs = {
+    AgGridVue: true,
+    VFileInput: true,
+    VBtn: { template: '<button><slot /></button>' },
+    VIcon: true,
+    VTooltip: { template: '<div><slot /><slot name="activator" :props="{}" /></div>' },
+    VSpacer: { template: '<span data-testid="toolbar-spacer" />' },
+    VTreeview: true,
+    VRow: { template: '<div><slot /></div>' },
+    VCol: { template: '<div><slot /></div>' },
+    VAlert: true,
+    VDialog: true,
+    VCard: true,
+    VCardTitle: true,
+    VCardText: true,
+    VCardActions: true,
+    VTextField: true,
+    VAutocomplete: true,
+    VChip: { template: '<span><slot /></span>' },
+    VSelect: true,
+  }
+
   beforeEach(() => {
     mockState.canAddToken.value = false
     mockState.hasWorkspaceFiles.value = true
+    mockState.activeSourceFileName.value = 'MyBrand.json'
+    mockState.tokenSetFileNames.value = ['MyBrand.json']
+    mockState.hasMultipleTokenSets.value = false
+    mockState.activeTokenSetDisplayName.value = 'MyBrand.json'
+    mockState.tokenType.value = 'color'
+  })
+
+  it('shows active token set name in global toolbar', () => {
+    const wrapper = mount(TokenTableComponent, { global: { stubs: globalStubs } })
+    const globalToolbar = wrapper.find('[data-testid="global-toolbar"]')
+    expect(globalToolbar.exists()).toBe(true)
+    expect(wrapper.find('[data-testid="active-token-set"]').text()).toContain('MyBrand.json')
+  })
+
+  it('shows empty state when no token set exists', () => {
+    mockState.hasWorkspaceFiles.value = false
+    const wrapper = mount(TokenTableComponent, { global: { stubs: globalStubs } })
+    expect(wrapper.find('[data-testid="token-set-empty-state"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="global-toolbar"]').exists()).toBe(false)
+    const groupToolbar = wrapper.find('[data-testid="group-toolbar"]')
+    expect(groupToolbar.exists() ? groupToolbar.isVisible() : false).toBe(false)
+  })
+
+  it('shows type context header with registry label', () => {
+    const wrapper = mount(TokenTableComponent, { global: { stubs: globalStubs } })
+    const header = wrapper.find('[data-testid="type-context-header"]')
+    expect(header.exists()).toBe(true)
+    expect(header.text()).toContain('Color tokens')
+    expect(wrapper.find('[data-testid="active-token-set"]').text()).toContain('Active token set')
+    expect(wrapper.find('[data-testid="active-token-set"]').text()).toContain('MyBrand.json')
+  })
+
+  it('preserves active token set when token type changes', async () => {
+    mockState.tokenType.value = 'color'
+    const wrapper = mount(TokenTableComponent, {
+      props: { tokenType: 'color' },
+      global: { stubs: globalStubs },
+    })
+    expect(wrapper.find('[data-testid="active-token-set"]').text()).toContain('MyBrand.json')
+    mockState.tokenType.value = 'dimension'
+    await wrapper.setProps({ tokenType: 'dimension' })
+    await wrapper.vm.$nextTick()
+    expect(wrapper.find('[data-testid="active-token-set"]').text()).toContain('MyBrand.json')
+    expect(wrapper.find('[data-testid="type-context-header"]').text()).toContain('Dimension tokens')
+  })
+
+  it('places New token set in global toolbar, not group toolbar', () => {
+    const wrapper = mount(TokenTableComponent, { global: { stubs: globalStubs } })
+    expect(wrapper.find('[data-testid="global-toolbar"]').text()).toContain('New token set')
+    expect(wrapper.find('[data-testid="group-toolbar"]').text()).not.toContain('New token set')
+  })
+
+  it('renders export dialog stub in global toolbar', () => {
+    const wrapper = mount(TokenTableComponent, { global: { stubs: globalStubs } })
+    expect(wrapper.find('[data-testid="export-dialog-stub"]').exists()).toBe(true)
   })
 
   it('renders New token in the right-side action area with a spacer between group buttons', () => {
     const wrapper = mount(TokenTableComponent, {
       global: {
-        stubs: {
-          TokenExportDialog: true,
-          AgGridVue: true,
-          VFileInput: true,
-          VBtn: { template: '<button><slot /></button>' },
-          VIcon: true,
-          VTooltip: { template: '<div><slot /><slot name="activator" :props="{}" /></div>' },
-          VSpacer: { template: '<span data-testid="toolbar-spacer" />' },
-          VTreeview: true,
-          VRow: { template: '<div><slot /></div>' },
-          VCol: { template: '<div><slot /></div>' },
-          VAlert: true,
-          VDialog: true,
-          VCard: true,
-          VCardTitle: true,
-          VCardText: true,
-          VCardActions: true,
-          VTextField: true,
-          VAutocomplete: true,
-        },
+        stubs: globalStubs,
       },
     })
 
     const toolbar = wrapper.find('[data-testid="group-toolbar"]')
     expect(toolbar.exists()).toBe(true)
+    expect(toolbar.classes()).toContain('w-100')
     expect(toolbar.find('[data-testid="toolbar-spacer"]').exists()).toBe(true)
     expect(toolbar.text()).toContain('Child group')
     expect(toolbar.text()).toContain('New group')
@@ -145,27 +209,12 @@ describe('TokenTableComponent toolbar', () => {
     const wrapper = mount(TokenTableComponent, {
       global: {
         stubs: {
-          TokenExportDialog: true,
-          AgGridVue: true,
-          VFileInput: true,
+          ...globalStubs,
           VBtn: {
             props: ['disabled'],
             template: '<button :disabled="disabled"><slot /></button>',
           },
-          VIcon: true,
-          VTooltip: { template: '<div><slot /><slot name="activator" :props="{}" /></div>' },
           VSpacer: true,
-          VTreeview: true,
-          VRow: { template: '<div><slot /></div>' },
-          VCol: { template: '<div><slot /></div>' },
-          VAlert: true,
-          VDialog: true,
-          VCard: true,
-          VCardTitle: true,
-          VCardText: true,
-          VCardActions: true,
-          VTextField: true,
-          VAutocomplete: true,
         },
       },
     })

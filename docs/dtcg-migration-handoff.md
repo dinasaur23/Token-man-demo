@@ -1,7 +1,7 @@
 # DTCG Multi-Type Migration Handoff
 
-Branch: `cursor/create-token-sets-tokens-27c6` (from `main` @ `330f711`)  
-Last completed stage: **Type-scoped empty groups + toolbar layout fix**  
+Branch: `cursor/global-token-set-ux-61d6` (from `main`)  
+Last completed stage: **Global token-set UX + isolated per-document resolution**  
 Date: 2026-08-10
 
 Spec references:
@@ -20,6 +20,48 @@ Spec references:
 | Type-aware columns | Done | Hex/Color columns only on Color pages; modular column factory |
 | **In-app creation** | **Done** | NEW TOKEN SET, NEW TOKEN, empty groups, type-tree fallback |
 | **Type-scoped groups** | **Done** | Group-level `$type` on NEW GROUP; typed-empty fallback only; toolbar layout |
+| **Global token-set UX** | **Done** | Active token-set toolbar/selector; isolated per-document table resolution; path-collision-safe CRUD |
+
+---
+
+## Global token-set UX (this branch)
+
+### Problem
+`New token set` lived in the same toolbar as token-type pages, implying token sets were per-type. Display merged all workspace files via `mergeAllDocs`, so colliding paths across files could not be switched reliably.
+
+### Fix
+- **Global toolbar:** `Active token set: <file>`, `New token set`, `Export tokens` (export still downloads **all** workspace files).
+- **Type-scoped header:** `Token set: <file>` + registry label (`Color tokens`, etc.) above group toolbar.
+- **Empty state:** `No token set selected` with import + new token set when workspace has no files.
+- **Dialog copy:** `Create token set` + DTCG source-document helper + `File: …json` preview.
+- **Isolated resolution:** table/group tree resolve **only** `{ [activeSourceFileName]: doc }` — not post-merge row filtering.
+- **Active-aware CRUD:** `findDocContainingPathPreferActive` for edit/delete/duplicate when paths collide across files.
+- **`hasAnyTokens`:** counts leaves across all `uploadedDocs` (export guard unchanged semantically).
+
+### Data flow
+```
+uploadedDocs → activeSourceFileName → single-doc resolve → type filter → group tree + grid
+```
+
+### Changed files
+- [`useTokenWorkspaceTable.ts`](../client/src/composables/useTokenWorkspaceTable.ts) — `resolveAndPopulateActiveSource`, `setActiveSourceFileName`
+- [`useTokenTableComponent.ts`](../client/src/composables/useTokenTableComponent.ts) — selector wiring, `activeSourceDocs` for tree fallback
+- [`useTokenCrud.ts`](../client/src/composables/useTokenCrud.ts) — prefer-active path lookup
+- [`json-path-helpers.ts`](../client/src/utils/dtcg/json-path-helpers.ts) — `findDocContainingPathPreferActive`
+- [`TokenTableComponent.vue`](../client/src/components/TokenTableComponent.vue) — global toolbar, type header, empty state
+- [`TokenExportDialog.vue`](../client/src/components/TokenExportDialog.vue) — “Exports all token sets in this workspace.”
+- Tests: `active-token-set-resolution.test.ts`, `json-path-prefer-active.test.ts`, `TokenTableComponent.test.ts`
+
+### Limitations
+- Export exports all workspace token sets, not just the active one (UI states this).
+- Cross-file aliases unsupported; single-doc resolve does not pull from other files.
+- Import replaces entire workspace (unchanged).
+- Resolver JSON workspaces with multi-file `$ref` may need dedicated per-file handling in a future task.
+
+### UI polish (layout-only follow-up)
+- Global toolbar uses a single flex row with vertically centered active-token-set chip/select, buttons, and export.
+- Type heading uses consistent 22px / weight-500 typography; group toolbar spans full content width so **New token** stays far right on desktop.
+- Empty-state file input and **New token set** share one aligned flex row; type heading has ~28px top spacing below the global toolbar.
 
 ---
 
@@ -155,15 +197,9 @@ After repeated **Add row below** / **Duplicate row**, the new token sometimes ap
 
 ```bash
 cd client && npm run test:unit -- --run src/utils/dtcg/__tests__/ src/components/__tests__/
-# 26 files, 207 tests passed
+# 28 files, 221 tests passed
 
-cd client && npm run type-check && npm run lint
-# pass (pre-existing implicit-any on modifier handler in TokenTableComponent.vue if strict)
-
-cd server && npm run test:unit
-# 60 tests passed
-
-cd server && npm run lint
+cd client && npm run type-check && npm run lint && npm run build
 # pass
 ```
 
@@ -173,6 +209,5 @@ Manual UI: empty Color group visible on Color only; Dimension page empty until N
 
 ## Exact next task
 
-1. Review and merge PR #22 to `main`; redeploy frontend (`token-mananger-frontend`).
-2. Close PR #19 without merging.
-3. Do **not** start Figma/`--purge` unless requested.
+1. Review and merge PR for global token-set UX to `main`.
+2. Do **not** start Figma/`--purge` unless requested.

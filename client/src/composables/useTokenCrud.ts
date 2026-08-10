@@ -3,7 +3,7 @@ import type { JsonValue } from '@/utils/dtcg/resolver'
 import type { TableRow } from '@/utils/dtcg/token-table-types'
 import {
   deepClone,
-  findDocContainingPath,
+  findDocContainingPathPreferActive,
   deleteAtPathIfExists,
   createDuplicateKey,
   findGroupContainer,
@@ -410,6 +410,7 @@ function pickDocForRowPath(
   docs: Record<string, JsonValue>,
   rowPath: string,
   workspaceStore: WorkspaceStore,
+  preferredFileName: string | null = null,
 ): { fileName: string; doc: JsonRecord } | null {
   const segments = rowPath.split('.')
   const resolverInfo = findResolverDoc(docs)
@@ -441,7 +442,7 @@ function pickDocForRowPath(
       }
     }
   }
-  const found = findDocContainingPath(docs, segments)
+  const found = findDocContainingPathPreferActive(docs, segments, preferredFileName)
   if (!found || !isJsonRecord(found.doc)) return null
 
   return {
@@ -647,6 +648,14 @@ export function useTokenCrud({
     const names = Object.keys(uploadedDocs.value)
     return names.length > 0 ? names[0]! : null
   }
+
+  function findPathInWorkspace(segments: string[]) {
+    return findDocContainingPathPreferActive(
+      uploadedDocs.value,
+      segments,
+      getActiveSourceFileName(),
+    )
+  }
   async function updateTokenValueAny(row: TableRow, newValue: JsonValue): Promise<void> {
     const mode = getEffectiveModeForPath(row.path)
     {
@@ -675,7 +684,7 @@ export function useTokenCrud({
     }
 
     const segments = row.path.split('.')
-    const found = findDocContainingPath(uploadedDocs.value, segments)
+    const found = findPathInWorkspace(segments)
     if (!found) {
       console.warn('updateTokenValueAny: path not found in any uploaded doc', row.path)
       return
@@ -746,7 +755,7 @@ export function useTokenCrud({
     }
 
     const segments = row.path.split('.')
-    const found = findDocContainingPath(uploadedDocs.value, segments)
+    const found = findPathInWorkspace(segments)
     if (!found) {
       console.warn('updateTokenValue: path not found in any uploaded doc', row.path)
       return
@@ -787,7 +796,7 @@ export function useTokenCrud({
     if (!trimmed || trimmed === row.name) return
 
     const segments = row.path.split('.')
-    const found = findDocContainingPath(uploadedDocs.value, segments)
+    const found = findPathInWorkspace(segments)
     if (!found) {
       console.warn('updateTokenName: path not found in any uploaded doc', row.path)
       return
@@ -896,7 +905,7 @@ export function useTokenCrud({
       }
     }
     {
-      const found = findDocContainingPath(uploadedDocs.value, segments)
+      const found = findPathInWorkspace(segments)
       if (found && isFigmaSyncedToken(found.token)) {
         const mode = getEffectiveModeForPath(row.path)
         console.log('[deleteToken figma] mode=', mode, 'path=', row.path)
@@ -1009,7 +1018,7 @@ export function useTokenCrud({
     }
 
     const segments = row.path.split('.')
-    const found = findDocContainingPath(uploadedDocs.value, segments)
+    const found = findPathInWorkspace(segments)
     if (!found) {
       console.warn('duplicateToken: path not found in any uploaded doc', row.path)
       return
@@ -1155,7 +1164,7 @@ export function useTokenCrud({
     }
 
     const segments = row.path.split('.')
-    const found = findDocContainingPath(uploadedDocs.value, segments)
+    const found = findPathInWorkspace(segments)
     if (!found) {
       console.warn('addRowBelowToken: path not found in any uploaded doc', row.path)
       return
@@ -1571,7 +1580,7 @@ export function useTokenCrud({
     }
     {
       const seg = row.path.split('.')
-      const found = findDocContainingPath(uploadedDocs.value, seg)
+      const found = findPathInWorkspace(seg)
 
       if (found && isFigmaSyncedToken(found.token)) {
         const aliasValue =
@@ -1593,7 +1602,7 @@ export function useTokenCrud({
       }
     }
 
-    const picked = pickDocForRowPath(docs, row.path, workspaceStore)
+    const picked = pickDocForRowPath(docs, row.path, workspaceStore, getActiveSourceFileName())
     if (!picked) {
       throw new Error(`Token "${row.path}" was not found in any uploaded document.`)
     }
@@ -1669,7 +1678,7 @@ export function useTokenCrud({
       return
     }
 
-    const picked = pickDocForRowPath(docs, row.path, workspaceStore)
+    const picked = pickDocForRowPath(docs, row.path, workspaceStore, getActiveSourceFileName())
     if (!picked) {
       console.warn('clearTokenAlias: token not found in any uploaded doc', row.path)
       return
