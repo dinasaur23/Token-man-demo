@@ -1328,7 +1328,11 @@ export function useTokenCrud({
     })
   }
 
-  async function addGroup(parentGroupPath: string[], groupName: string): Promise<void> {
+  async function addGroup(
+    parentGroupPath: string[],
+    groupName: string,
+    tokenType: TokenType,
+  ): Promise<void> {
     const trimmed = groupName.trim()
     if (!trimmed) {
       console.warn('addGroup: empty group name')
@@ -1348,7 +1352,10 @@ export function useTokenCrud({
     }
 
     const doc = rawDoc as JsonRecord
-    ensurePath(doc, [...parentGroupPath, trimmed])
+    const groupNode = ensurePath(doc, [...parentGroupPath, trimmed])
+    if (!Object.prototype.hasOwnProperty.call(groupNode, '$type')) {
+      groupNode.$type = tokenType
+    }
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
   }

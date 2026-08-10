@@ -1,7 +1,7 @@
 # DTCG Multi-Type Migration Handoff
 
 Branch: `cursor/create-token-sets-tokens-27c6` (from `main` @ `330f711`)  
-Last completed stage: **In-app token set + token creation (NEW TOKEN SET / NEW TOKEN)**  
+Last completed stage: **Type-scoped empty groups + toolbar layout fix**  
 Date: 2026-08-10
 
 Spec references:
@@ -19,6 +19,34 @@ Spec references:
 | Row ordering | Done | Add/duplicate insert below source; stable `getRowId`; source sibling order authoritative |
 | Type-aware columns | Done | Hex/Color columns only on Color pages; modular column factory |
 | **In-app creation** | **Done** | NEW TOKEN SET, NEW TOKEN, empty groups, type-tree fallback |
+| **Type-scoped groups** | **Done** | Group-level `$type` on NEW GROUP; typed-empty fallback only; toolbar layout |
+
+---
+
+## Type-scoped empty groups (this fix)
+
+### Symptom
+Creating an empty group (e.g. `primary`) on `/tokens/color` also appeared on Dimension, Number, and every other token-type page.
+
+### Root cause
+1. **`addGroup` wrote untyped `{}` containers** — no group-level `$type` in source.
+2. **`buildGroupTreeWithTypeFallback` fell back to `buildFullGroupTree`** — which included **all** empty source groups on every type page when no rows matched the active type.
+3. **Unfiltered workspace auto-select watch** could fight the type-filtered selection watch.
+
+### Fix
+- **`addGroup`** sets DTCG group-level `$type` from the active route token type when creating empty groups (does not overwrite pre-existing `$type` on imported groups).
+- **`buildGroupTreeWithTypeFallback`** now falls back **only** to empty source groups whose effective group `$type` matches the active token type. It does **not** expose groups from other types as cross-type creation destinations.
+- Row-based **`buildGroupTreeForTokenType`** still handles mixed-type imported groups, ancestor preservation, and groups that gain tokens of another type later.
+- Removed unfiltered `groupTreeItems` auto-select watch from `useTokenWorkspaceTable` (selection owned by `useTokenTableComponent`).
+- **Toolbar:** `Child group` + `New group` left; `New token` right (`d-flex` + `v-spacer`).
+
+### Changed files
+- [`grouping.ts`](../client/src/utils/dtcg/grouping.ts) — typed-empty fallback logic
+- [`useTokenCrud.ts`](../client/src/composables/useTokenCrud.ts) — `addGroup(..., tokenType)`
+- [`useTokenTableComponent.ts`](../client/src/composables/useTokenTableComponent.ts) — pass route type; new fallback API
+- [`useTokenWorkspaceTable.ts`](../client/src/composables/useTokenWorkspaceTable.ts) — remove conflicting watch
+- [`TokenTableComponent.vue`](../client/src/components/TokenTableComponent.vue) — toolbar flex layout
+- Tests: [`group-tree-type-fallback.test.ts`](../client/src/utils/dtcg/__tests__/group-tree-type-fallback.test.ts), [`TokenTableComponent.test.ts`](../client/src/components/__tests__/TokenTableComponent.test.ts)
 
 ---
 
@@ -27,8 +55,8 @@ Spec references:
 ### Features
 1. **NEW TOKEN SET** (top toolbar) — creates an empty `{}` source document in the workspace (no file upload). Filename normalization lives in [`workspace-file-names.ts`](../client/src/utils/dtcg/workspace-file-names.ts) (not `source-document.ts`).
 2. **NEW TOKEN** (group toolbar) — inserts a token of the **current route type** into the selected group via shared `insertTokenInGroup` (same path as context-menu **Add row below** when a row is selected; append when not).
-3. **NEW GROUP / Child group** — creates **empty** group containers only (`addGroup`). `addGroupWithToken` remains for convenience elsewhere but is not used by toolbar group buttons.
-4. **Group-tree fallback** — normally type-filtered; when zero groups match the active type, UI shows the full hierarchy (rows + empty source groups) so users can pick a cross-type destination. Reverts to filtered tree once a token of the active type exists.
+3. **NEW GROUP / Child group** — creates **empty** group containers with group-level `$type` set from the active route token type (`addGroup`). `addGroupWithToken` remains for convenience elsewhere but is not used by toolbar group buttons.
+4. **Group-tree fallback** — normally type-filtered via token rows; when zero groups match the active type, UI shows **only empty source groups whose group-level `$type` matches the route** (not groups from other types). Reverts to row-based filtered tree once a token of the active type exists under a group.
 5. **Export guard** — Export disabled until the workspace has at least one token leaf.
 6. **Empty draft validation** — import still rejects empty external files (`EMPTY_DOCUMENT`); workspace rebuild uses `validateTokensStrict(doc, { allowEmptyDraft: true })`.
 
@@ -126,11 +154,11 @@ After repeated **Add row below** / **Duplicate row**, the new token sometimes ap
 ## Test commands and results
 
 ```bash
-cd client && npm run test:unit -- --run src/utils/dtcg/__tests__/
-# 22 files, 183 tests passed (includes row-ordering + token-grid-columns)
+cd client && npm run test:unit -- --run src/utils/dtcg/__tests__/ src/components/__tests__/
+# 26 files, 207 tests passed
 
 cd client && npm run type-check && npm run lint
-# pass
+# pass (pre-existing implicit-any on modifier handler in TokenTableComponent.vue if strict)
 
 cd server && npm run test:unit
 # 60 tests passed
@@ -139,12 +167,12 @@ cd server && npm run lint
 # pass
 ```
 
-Manual UI: Color page shows Hex + Color preview; Dimension/Number/Duration/Font Family/Font Weight/Cubic Bézier hide them; route switch remounts columns; duplicate/add-below still inserts below source row.
+Manual UI: empty Color group visible on Color only; Dimension page empty until NEW GROUP or a dimension token is added; mixed-type imported groups still appear on all relevant pages; toolbar shows New token on the right.
 
 ---
 
 ## Exact next task
 
-1. Merge this PR to `main` and redeploy frontend (`token-mananger-frontend`).
+1. Review and merge PR #22 to `main`; redeploy frontend (`token-mananger-frontend`).
 2. Close PR #19 without merging.
 3. Do **not** start Figma/`--purge` unless requested.

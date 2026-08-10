@@ -75,7 +75,7 @@
   <v-row v-show="hasWorkspaceFiles" class="mt-4 ml-4">
     <v-col cols="12" md="3">
       <div style="overflow-y: auto">
-        <div class="mb-2">
+        <div class="mb-2 d-flex align-center flex-wrap" data-testid="group-toolbar">
           <v-btn
             size="small"
             variant="text"
@@ -91,9 +91,11 @@
             New group
           </v-btn>
 
+          <v-spacer />
+
           <v-tooltip :disabled="canAddToken" text="Select a group first">
             <template #activator="{ props: tooltipProps }">
-              <span v-bind="tooltipProps">
+              <span v-bind="tooltipProps" data-testid="new-token-action">
                 <v-btn
                   size="small"
                   variant="text"

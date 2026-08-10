@@ -381,17 +381,6 @@ export function useTokenWorkspaceTable() {
     return applyGroupNameOverrides(base, overrides)
   })
 
-  watch(
-    groupTreeItems,
-    (items) => {
-      if (!items.length) return
-      if (activeNodeIds.value.length === 0) {
-        activeNodeIds.value = [items[0].id]
-      }
-    },
-    { immediate: true },
-  )
-
   const activeGroupId = computed<string | null>(() => activeNodeIds.value[0] ?? null)
 
   function getScopedGroupKey(): string | null {

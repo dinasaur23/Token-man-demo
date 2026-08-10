@@ -1,5 +1,7 @@
 import type { ColorRow } from './dtcg-parser'
 import type { GroupNode } from './token-table-types'
+import type { JsonValue } from './resolver'
+import { isJsonRecord, type JsonRecord } from './json-path-helpers'
 
 export function pruneEmptyChildren(nodes: GroupNode[]): GroupNode[] {
   return nodes.map((node) => {
@@ -73,19 +75,100 @@ export function buildGroupTreeForTokenType(
   return pruneEmptyChildren(buildGroupTree(matching))
 }
 
+function sourceDocumentRoot(raw: JsonValue): JsonRecord | null {
+  if (!isJsonRecord(raw)) return null
+  if ('tokens' in raw && isJsonRecord(raw.tokens)) {
+    return raw.tokens as JsonRecord
+  }
+  return raw as JsonRecord
+}
+
+function isTokenLeafNode(node: JsonRecord): boolean {
+  return Object.prototype.hasOwnProperty.call(node, '$value')
+}
+
+function childKeys(node: JsonRecord): string[] {
+  return Object.keys(node).filter((key) => !key.startsWith('$'))
+}
+
+function hasTokenLeafInSubtree(node: JsonRecord): boolean {
+  if (isTokenLeafNode(node)) return true
+  for (const key of childKeys(node)) {
+    const child = node[key]
+    if (isJsonRecord(child) && hasTokenLeafInSubtree(child)) return true
+  }
+  return false
+}
+
+function collectEmptyTypedGroupPathsFromSourceRoot(
+  root: JsonRecord,
+  tokenType: string,
+  parentSegments: string[] = [],
+  inheritedType?: string,
+): string[][] {
+  const paths: string[][] = []
+
+  for (const key of childKeys(root)) {
+    const child = root[key]
+    if (!isJsonRecord(child) || isTokenLeafNode(child)) continue
+
+    const localType = typeof child.$type === 'string' ? child.$type : undefined
+    const effectiveType = localType ?? inheritedType
+    const segments = [...parentSegments, key]
+
+    if (!hasTokenLeafInSubtree(child) && effectiveType === tokenType) {
+      paths.push(segments)
+    }
+
+    paths.push(
+      ...collectEmptyTypedGroupPathsFromSourceRoot(child, tokenType, segments, effectiveType),
+    )
+  }
+
+  return paths
+}
+
+function collectEmptyTypedGroupPathsFromSourceDocuments(
+  docs: Record<string, JsonValue>,
+  tokenType: string,
+): string[][] {
+  const all: string[][] = []
+  const seen = new Set<string>()
+
+  for (const raw of Object.values(docs)) {
+    const root = sourceDocumentRoot(raw)
+    if (!root) continue
+    for (const segments of collectEmptyTypedGroupPathsFromSourceRoot(root, tokenType)) {
+      const id = segments.join('.')
+      if (seen.has(id)) continue
+      seen.add(id)
+      all.push(segments)
+    }
+  }
+
+  return all
+}
+
 /**
- * Type-filtered tree when matches exist; otherwise full hierarchy so the user
- * can pick a destination (cross-type groups, empty groups from source).
+ * Type-filtered tree when token rows match; otherwise empty source groups whose
+ * effective group `$type` matches `tokenType` (typed empty workspaces only).
+ * Does not expose groups from other token types as creation destinations.
  * Pure — never mutates source data.
  */
 export function buildGroupTreeWithTypeFallback(
   rows: ReadonlyArray<{ type: string; groupPath: string[] }>,
   tokenType: string,
-  fallbackTree: GroupNode[],
+  docs: Record<string, JsonValue>,
 ): GroupNode[] {
   const filtered = buildGroupTreeForTokenType(rows, tokenType)
   if (filtered.length > 0) return filtered
-  return fallbackTree
+
+  const fallbackRows: GroupPathRow[] = collectEmptyTypedGroupPathsFromSourceDocuments(
+    docs,
+    tokenType,
+  ).map((groupPath) => ({ groupPath }))
+
+  return pruneEmptyChildren(buildGroupTree(fallbackRows))
 }
 
 /** Apply display-name overrides without mutating the input tree. */

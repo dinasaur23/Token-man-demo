@@ -11,7 +11,6 @@ import {
   collectGroupTreeIds,
   filterRowsByTokenType,
 } from '@/utils/dtcg/grouping'
-import { buildFullGroupTree } from '@/utils/dtcg/source-group-tree'
 
 /**
  * Generic token-table shell composable.
@@ -73,19 +72,15 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     () => hasWorkspaceFiles.value && rows.value.length === 0,
   )
 
-  const fullGroupTree = computed(() =>
-    buildFullGroupTree(rows.value, uploadedDocs.value),
-  )
-
   /**
-   * Group tree filtered to the selected type; falls back to full hierarchy when
-   * no groups contain the active type (cross-type destination selection).
+   * Group tree filtered to the selected type; falls back to empty source groups
+   * whose group-level `$type` matches the active route type.
    */
   const groupTreeItems = computed<GroupNode[]>(() => {
     const base = buildGroupTreeWithTypeFallback(
       rows.value,
       tokenTypeRef.value,
-      fullGroupTree.value,
+      uploadedDocs.value,
     )
     const overrides = wsStore.groupNameOverrides ?? {}
     return applyGroupNameOverrides(base, overrides)
@@ -232,7 +227,7 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
       return
     }
 
-    await addGroup([], name)
+    await addGroup([], name, tokenTypeRef.value)
 
     newSiblingGroupName.value = ''
     showAddSiblingDialog.value = false
@@ -278,7 +273,7 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     }
 
     const parentSegments = parentId.split('.')
-    await addGroup(parentSegments, name)
+    await addGroup(parentSegments, name, tokenTypeRef.value)
 
     addGroupDialog.value = false
 
