@@ -20,6 +20,9 @@ import {
   APPLICATION_SUPPORTED_TYPES,
   isApplicationSupportedTokenType,
 } from "../utils/dtcg/allowedTokenTypes.js";
+import {
+  validateFigmaImportTokenTree,
+} from "../../../shared/figma-dtcg-mapping/index.js";
 import archiver from "archiver";
 
 function getTokensRoot(root) {
@@ -751,7 +754,7 @@ export async function syncFigmaTokens(req, res, next) {
         .json({ ok: false, message: "designSystemId is required" });
     }
 
-    const { tokens, modifiers } = req.body || {};
+    const { tokens, modifiers, importReport } = req.body || {};
     if (!tokens || typeof tokens !== "object") {
       return res
         .status(400)
@@ -766,8 +769,30 @@ export async function syncFigmaTokens(req, res, next) {
       });
     }
 
+    const valueValidation = validateFigmaImportTokenTree(tokens);
+    if (!valueValidation.ok) {
+      return res.status(400).json({
+        ok: false,
+        message: `Invalid Figma DTCG value at ${valueValidation.path || "(root)"}: ${valueValidation.message}`,
+      });
+    }
+
     const normalizedModifiers =
       modifiers && typeof modifiers === "object" ? modifiers : {};
+    const normalizedImportReport =
+      importReport && typeof importReport === "object"
+        ? {
+            imported: Array.isArray(importReport.imported)
+              ? importReport.imported
+              : [],
+            skipped: Array.isArray(importReport.skipped)
+              ? importReport.skipped
+              : [],
+            warnings: Array.isArray(importReport.warnings)
+              ? importReport.warnings
+              : [],
+          }
+        : { imported: [], skipped: [], warnings: [] };
 
     let workspace = await TokenWorkspace.findOne({
       user: userId,
@@ -825,6 +850,7 @@ export async function syncFigmaTokens(req, res, next) {
     return res.json({
       ok: true,
       saved: Object.keys(tokens).length,
+      importReport: normalizedImportReport,
     });
   } catch (err) {
     console.error("syncFigmaTokens error", err);
