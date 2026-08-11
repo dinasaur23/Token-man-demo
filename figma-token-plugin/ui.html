@@ -11,6 +11,17 @@
           sans-serif;
         margin: 12px;
         font-size: 12px;
+        color: #1e1e1e;
+      }
+      h1 {
+        font-size: 14px;
+        margin: 0 0 8px;
+        font-weight: 600;
+      }
+      h2 {
+        font-size: 12px;
+        margin: 14px 0 6px;
+        font-weight: 600;
       }
       label {
         display: block;
@@ -25,7 +36,24 @@
       }
       button {
         margin-top: 12px;
-        padding: 6px 10px;
+        padding: 7px 12px;
+        cursor: pointer;
+      }
+      button.primary {
+        background: #18a0fb;
+        color: #fff;
+        border: none;
+        border-radius: 4px;
+        font-weight: 600;
+      }
+      button.secondary {
+        background: #fff;
+        border: 1px solid #ccc;
+        border-radius: 4px;
+      }
+      button:disabled {
+        opacity: 0.55;
+        cursor: default;
       }
       .row {
         display: flex;
@@ -37,7 +65,7 @@
       .hint {
         margin-top: 8px;
         color: #666;
-        line-height: 1.3;
+        line-height: 1.35;
       }
       .hidden {
         display: none;
@@ -51,10 +79,71 @@
         margin-top: 8px;
         color: #1b7f3a;
       }
+      .meta {
+        margin: 0 0 10px;
+        color: #555;
+        line-height: 1.4;
+      }
+      .list {
+        margin: 0;
+        padding-left: 1.1rem;
+        line-height: 1.45;
+      }
+      .list.plain {
+        list-style: none;
+        padding-left: 0;
+      }
+      .list.plain li::before {
+        content: '✓ ';
+        color: #1b7f3a;
+      }
+      .list.skip {
+        list-style: none;
+        padding-left: 0;
+      }
+      .list.skip li::before {
+        content: '– ';
+        color: #888;
+      }
+      .actions {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        margin-top: 10px;
+      }
+      .actions button {
+        margin-top: 0;
+      }
+      .panel {
+        margin-top: 4px;
+      }
+      .details {
+        margin-top: 10px;
+        padding: 8px;
+        background: #f5f5f5;
+        border-radius: 4px;
+        max-height: 220px;
+        overflow: auto;
+        white-space: pre-wrap;
+        font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+        font-size: 11px;
+        line-height: 1.4;
+      }
+      .summary-line {
+        margin: 4px 0;
+        line-height: 1.4;
+      }
     </style>
   </head>
   <body>
-    <div>
+    <!-- Settings view -->
+    <div id="settingsView" class="panel hidden">
+      <h1>Token Manager settings</h1>
+      <p class="meta">
+        Connect this Figma file to a design system, then run
+        <strong>Sync Figma Variables</strong> from the plugin menu.
+      </p>
+
       <label>
         API URL
         <input
@@ -90,14 +179,80 @@
           </select>
         </label>
 
-        <button id="save">Save settings</button>
+        <button id="save" class="primary">Save settings</button>
 
         <div id="saveStatus" class="ok hidden"></div>
         <div id="dsError" class="error hidden"></div>
       </div>
+
+      <h2>Supported from Figma</h2>
+      <ul class="list plain">
+        <li>Color</li>
+        <li>Dimension (imported as px)</li>
+        <li>Number</li>
+        <li>Font Family</li>
+        <li>Font Weight</li>
+        <li>Duration (Timing → seconds)</li>
+        <li>Cubic Bézier (custom cubic-bezier easing)</li>
+      </ul>
+      <h2>Not auto-mapped</h2>
+      <ul class="list skip">
+        <li>Boolean / other strings</li>
+        <li>Spring easing and easing presets without control points</li>
+      </ul>
+    </div>
+
+    <!-- Sync view -->
+    <div id="syncView" class="panel hidden">
+      <h1>Token Manager</h1>
+      <p class="meta" id="syncTargetMeta">Design system: —</p>
+
+      <h2>Sync Figma Variables</h2>
+      <p class="hint">
+        Sync local variables from this file into Token Manager.
+      </p>
+
+      <h2>Supported</h2>
+      <ul class="list plain">
+        <li>
+          Color, Dimension, Number, Font Family, Font Weight, Duration, Cubic
+          Bézier (custom)
+        </li>
+      </ul>
+      <h2>Not auto-mapped</h2>
+      <ul class="list skip">
+        <li>Boolean / other strings; spring &amp; preset easing without points</li>
+      </ul>
+
+      <div class="actions">
+        <button id="syncBtn" class="primary">Sync variables</button>
+        <button id="openSettingsBtn" class="secondary">Settings</button>
+      </div>
+      <div id="syncStatus" class="hint"></div>
+      <div id="syncError" class="error hidden"></div>
+    </div>
+
+    <!-- Result view -->
+    <div id="resultView" class="panel hidden">
+      <h1>Figma import complete</h1>
+      <p class="meta" id="resultHeadline"></p>
+
+      <div id="resultImported" class="summary-line"></div>
+      <div id="resultSkipped" class="summary-line"></div>
+      <div id="resultWarnings" class="summary-line"></div>
+
+      <div class="actions">
+        <button id="toggleDetailsBtn" class="secondary">View details</button>
+        <button id="closeResultBtn" class="primary">Close</button>
+      </div>
+      <div id="resultDetails" class="details hidden"></div>
     </div>
 
     <script>
+      const settingsView = document.getElementById("settingsView");
+      const syncView = document.getElementById("syncView");
+      const resultView = document.getElementById("resultView");
+
       const dsSection = document.getElementById("dsSection");
       const apiInput = document.getElementById("apiUrl");
       const dsSelect = document.getElementById("designSystemSelect");
@@ -111,9 +266,25 @@
       const saveStatus = document.getElementById("saveStatus");
       const dsError = document.getElementById("dsError");
 
+      const syncBtn = document.getElementById("syncBtn");
+      const openSettingsBtn = document.getElementById("openSettingsBtn");
+      const syncStatus = document.getElementById("syncStatus");
+      const syncError = document.getElementById("syncError");
+      const syncTargetMeta = document.getElementById("syncTargetMeta");
+
+      const resultHeadline = document.getElementById("resultHeadline");
+      const resultImported = document.getElementById("resultImported");
+      const resultSkipped = document.getElementById("resultSkipped");
+      const resultWarnings = document.getElementById("resultWarnings");
+      const resultDetails = document.getElementById("resultDetails");
+      const toggleDetailsBtn = document.getElementById("toggleDetailsBtn");
+      const closeResultBtn = document.getElementById("closeResultBtn");
+
       let currentApiUrl = "";
       let initialDesignSystemId = "";
       let hasJwt = false;
+      let designSystemName = "";
+      let lastSummaryText = "";
 
       function setHidden(el, hidden) {
         if (!el) return;
@@ -123,6 +294,12 @@
       function setText(el, text) {
         if (!el) return;
         el.textContent = text || "";
+      }
+
+      function showView(name) {
+        setHidden(settingsView, name !== "settings");
+        setHidden(syncView, name !== "sync");
+        setHidden(resultView, name !== "result");
       }
 
       function normalizeApiUrl(url) {
@@ -151,6 +328,93 @@
         const url = base + path;
         const res = await fetch(url, opts);
         return res;
+      }
+
+      function formatCounts(counts) {
+        const order = [
+          ["color", "Color"],
+          ["dimension", "Dimension"],
+          ["number", "Number"],
+          ["fontFamily", "Font Family"],
+          ["fontWeight", "Font Weight"],
+          ["duration", "Duration"],
+          ["cubicBezier", "Cubic Bézier"],
+        ];
+        const parts = [];
+        for (const [key, label] of order) {
+          if (counts && counts[key]) parts.push(counts[key] + " " + label);
+        }
+        return parts.length ? parts.join(", ") : "none";
+      }
+
+      function renderResult(report) {
+        const imported = (report && report.imported) || [];
+        const skipped = (report && report.skipped) || [];
+        const warnings = (report && report.warnings) || [];
+        const counts = {};
+        for (const item of imported) {
+          const t = item.dtcgType || "unknown";
+          counts[t] = (counts[t] || 0) + 1;
+        }
+
+        setText(
+          resultHeadline,
+          imported.length +
+            " variables imported" +
+            (skipped.length ? ", " + skipped.length + " skipped" : ""),
+        );
+        setText(resultImported, "Imported: " + formatCounts(counts));
+        setText(
+          resultSkipped,
+          skipped.length
+            ? "Skipped: " + skipped.length + " variable(s)"
+            : "Skipped: none",
+        );
+        setText(
+          resultWarnings,
+          warnings.length
+            ? "Notes: " +
+                warnings
+                  .map(function (w) {
+                    return w.message || w.code;
+                  })
+                  .join(" · ")
+            : "Notes: none",
+        );
+
+        const lines = [];
+        lines.push("Imported");
+        for (const item of imported) {
+          lines.push(
+            "- " +
+              (item.path || item.name || item.id) +
+              " (" +
+              (item.dtcgType || "?") +
+              ")",
+          );
+        }
+        lines.push("");
+        lines.push("Skipped");
+        if (!skipped.length) lines.push("- none");
+        for (const s of skipped) {
+          lines.push(
+            "- " +
+              (s.path || s.name || s.id) +
+              ": " +
+              (s.detail || s.reason || "skipped"),
+          );
+        }
+        lines.push("");
+        lines.push("Warnings");
+        if (!warnings.length) lines.push("- none");
+        for (const w of warnings) {
+          lines.push("- " + (w.message || w.code));
+        }
+        lastSummaryText = lines.join("\n");
+        setText(resultDetails, lastSummaryText);
+        setHidden(resultDetails, true);
+        setText(toggleDetailsBtn, "View details");
+        showView("result");
       }
 
       async function doLogin() {
@@ -280,8 +544,10 @@
 
       window.onmessage = (event) => {
         const msg = event.data.pluginMessage;
+        if (!msg) return;
 
-        if (msg && msg.type === "init-settings") {
+        if (msg.type === "init-settings") {
+          showView("settings");
           currentApiUrl = msg.apiUrl || "";
           apiInput.value = msg.apiUrl || "";
           initialDesignSystemId = msg.designSystemId || "";
@@ -299,7 +565,37 @@
           return;
         }
 
-        if (msg && msg.type === "design-systems") {
+        if (msg.type === "init-sync") {
+          designSystemName = msg.designSystemName || msg.designSystemId || "—";
+          setText(syncTargetMeta, "Design system: " + designSystemName);
+          setText(syncStatus, msg.ready ? "" : "Configure settings before syncing.");
+          syncBtn.disabled = !msg.ready;
+          setHidden(syncError, true);
+          showView("sync");
+          return;
+        }
+
+        if (msg.type === "sync-started") {
+          syncBtn.disabled = true;
+          setText(syncStatus, "Syncing variables…");
+          setHidden(syncError, true);
+          return;
+        }
+
+        if (msg.type === "sync-result") {
+          syncBtn.disabled = false;
+          if (!msg.ok) {
+            setHidden(syncError, false);
+            setText(syncError, msg.message || "Sync failed.");
+            setText(syncStatus, "Sync failed.");
+            showView("sync");
+            return;
+          }
+          renderResult(msg.importReport || {});
+          return;
+        }
+
+        if (msg.type === "design-systems") {
           clearSelect(dsSelect);
 
           const items = Array.isArray(msg.items) ? msg.items : [];
@@ -323,12 +619,13 @@
           return;
         }
 
-        if (msg && msg.type === "design-systems-error") {
+        if (msg.type === "design-systems-error") {
           setHidden(dsError, false);
           setText(dsError, msg.message || "Failed to load design systems.");
           return;
         }
       };
+
       apiInput.addEventListener("input", () => {
         currentApiUrl = normalizeApiUrl(apiInput.value);
       });
@@ -360,6 +657,24 @@
 
         setHidden(saveStatus, false);
         setText(saveStatus, "Saved ✓");
+      };
+
+      syncBtn.onclick = () => {
+        parent.postMessage({ pluginMessage: { type: "run-sync" } }, "*");
+      };
+
+      openSettingsBtn.onclick = () => {
+        parent.postMessage({ pluginMessage: { type: "open-settings" } }, "*");
+      };
+
+      toggleDetailsBtn.onclick = () => {
+        const hidden = resultDetails.classList.contains("hidden");
+        setHidden(resultDetails, !hidden);
+        setText(toggleDetailsBtn, hidden ? "Hide details" : "View details");
+      };
+
+      closeResultBtn.onclick = () => {
+        parent.postMessage({ pluginMessage: { type: "close-plugin" } }, "*");
       };
     </script>
   </body>

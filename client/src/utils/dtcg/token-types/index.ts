@@ -83,3 +83,5 @@ export {
   isCubicBezierArray,
   type CubicBezierValue,
 } from './cubicBezier'
+
+export { formatDisplayNumber } from '../formatDisplayNumber'

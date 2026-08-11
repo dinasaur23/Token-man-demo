@@ -89,6 +89,13 @@ vi.mock('../TokenExportDialog.vue', () => ({
   default: { template: '<div data-testid="export-dialog-stub" />' },
 }))
 
+vi.mock('../FigmaImportHelpDialog.vue', () => ({
+  default: {
+    template:
+      '<button data-testid="import-from-figma-btn">Import from Figma</button>',
+  },
+}))
+
 vi.mock('@/composables/useTokenTableComponent', () => ({
   useTokenTableComponent: () => mockState,
 }))
@@ -147,9 +154,21 @@ describe('TokenTableComponent toolbar', () => {
     mockState.hasWorkspaceFiles.value = false
     const wrapper = mount(TokenTableComponent, { global: { stubs: globalStubs } })
     expect(wrapper.find('[data-testid="token-set-empty-state"]').exists()).toBe(true)
+    expect(wrapper.find('[data-testid="token-set-empty-state"]').text()).toContain(
+      'Figma',
+    )
+    expect(wrapper.find('[data-testid="import-from-figma-btn"]').exists()).toBe(true)
     expect(wrapper.find('[data-testid="global-toolbar"]').exists()).toBe(false)
     const groupToolbar = wrapper.find('[data-testid="group-toolbar"]')
     expect(groupToolbar.exists() ? groupToolbar.isVisible() : false).toBe(false)
+  })
+
+  it('keeps Import from Figma in the global toolbar with New token set and Export', () => {
+    const wrapper = mount(TokenTableComponent, { global: { stubs: globalStubs } })
+    const toolbar = wrapper.find('[data-testid="global-toolbar"]')
+    expect(toolbar.text()).toContain('New token set')
+    expect(toolbar.find('[data-testid="import-from-figma-btn"]').exists()).toBe(true)
+    expect(toolbar.find('[data-testid="export-dialog-stub"]').exists()).toBe(true)
   })
 
   it('shows type context header with registry label', () => {

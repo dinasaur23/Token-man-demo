@@ -1,63 +1,22 @@
-const STORAGE_KEYS = {
-  apiUrl: "tm_apiUrl",
-  fileConfig: "tm_fileConfig",
-  jwt: "tm_jwt",
-};
+/**
+ * Figma Variables → DTCG basic-type mapping (source of truth).
+ *
+ * Importer policy: Figma dimensional FLOAT variables are normalized to DTCG
+ * `{ value, unit: "px" }` because Figma does not carry DTCG dimension units.
+ *
+ * Motion (Plugin API Update 133+):
+ * - TIMING → duration with unit "s" (Figma stores seconds)
+ * - EASING → cubicBezier only when easingFunctionCubicBezier {x1,y1,x2,y2}
+ *   is present (CUSTOM_CUBIC_BEZIER). Named presets / springs / HOLD without
+ *   explicit control points are skipped — never invent bezier points.
+ *
+ * Intentionally unsupported: BOOLEAN; STRING without FONT_FAMILY;
+ * EASING without explicit cubic-bezier control points.
+ *
+ * Embedded into figma-token-plugin via scripts/embed-figma-dtcg-mapping.js.
+ * Do not edit the generated section in the plugin by hand.
+ */
 
-const LOCAL_API_URL = "http://localhost:8081";
-const PRODUCTION_API_URL = "https://token-manager-ecru.vercel.app";
-const DEFAULT_API_URL = PRODUCTION_API_URL;
-
-function getCurrentFileKey() {
-  let key = figma.root.getPluginData("tm_fileKey");
-  if (typeof key === "string" && key.length > 0) {
-    return key;
-  }
-  key =
-    "file-" +
-    Date.now().toString(36) +
-    "-" +
-    Math.random().toString(36).slice(2, 8);
-
-  figma.root.setPluginData("tm_fileKey", key);
-  console.log("[TokenManager] Generated new fileKey for this file:", key);
-  return key;
-}
-
-async function getSettingsForCurrentFile() {
-  const fileKey = getCurrentFileKey();
-
-  const [apiUrl, fileConfig, globalJwt] = await Promise.all([
-    figma.clientStorage.getAsync(STORAGE_KEYS.apiUrl),
-    figma.clientStorage.getAsync(STORAGE_KEYS.fileConfig),
-    figma.clientStorage.getAsync(STORAGE_KEYS.jwt),
-  ]);
-
-  const config =
-    fileConfig && typeof fileConfig === "object" ? fileConfig[fileKey] : null;
-
-  const designSystemId = config ? config.designSystemId : null;
-  const jwt = globalJwt || (config ? config.jwt : null);
-
-  console.log("TokenManager settings for file (getSettingsForCurrentFile)", {
-    fileKey,
-    apiUrl,
-    designSystemId,
-    hasJwt: !!jwt,
-    rawFileConfig: fileConfig,
-  });
-
-  return {
-    apiUrl: (apiUrl || DEFAULT_API_URL).replace(/\/$/, ""),
-    designSystemId,
-    jwt,
-  };
-}
-
-/* === BEGIN GENERATED shared/figma-dtcg-mapping === */
-// Generated from shared/figma-dtcg-mapping/index.js (sha256:8d495d0722f90cc3)
-// Run: node scripts/embed-figma-dtcg-mapping.js
-var FigmaDtcgMapping = (function () {
 /** @typedef {'COLOR'|'FLOAT'|'STRING'|'BOOLEAN'|'TIMING'|'EASING'|string} FigmaResolvedType */
 /** @typedef {string} FigmaVariableScope */
 
@@ -65,7 +24,7 @@ var FigmaDtcgMapping = (function () {
  * Full Figma VariableScope set (Plugin API).
  * @see https://developers.figma.com/docs/plugins/api/VariableScope/
  */
-const FIGMA_VARIABLE_SCOPES = Object.freeze([
+export const FIGMA_VARIABLE_SCOPES = Object.freeze([
   'ALL_SCOPES',
   'TEXT_CONTENT',
   'CORNER_RADIUS',
@@ -91,7 +50,7 @@ const FIGMA_VARIABLE_SCOPES = Object.freeze([
 ])
 
 /** FLOAT scopes that map to DTCG dimension (px). */
-const DIMENSIONAL_SCOPES = Object.freeze([
+export const DIMENSIONAL_SCOPES = Object.freeze([
   'WIDTH_HEIGHT',
   'GAP',
   'CORNER_RADIUS',
@@ -104,10 +63,10 @@ const DIMENSIONAL_SCOPES = Object.freeze([
   'EFFECT_FLOAT',
 ])
 
-const DIMENSIONAL_SCOPE_SET = new Set(DIMENSIONAL_SCOPES)
+export const DIMENSIONAL_SCOPE_SET = new Set(DIMENSIONAL_SCOPES)
 
 /** DTCG types this importer may emit (subset of applicationSupportedTypes). */
-const FIGMA_IMPORTABLE_DTCG_TYPES = Object.freeze([
+export const FIGMA_IMPORTABLE_DTCG_TYPES = Object.freeze([
   'color',
   'dimension',
   'number',
@@ -117,7 +76,7 @@ const FIGMA_IMPORTABLE_DTCG_TYPES = Object.freeze([
   'cubicBezier',
 ])
 
-const SKIP_REASON = Object.freeze({
+export const SKIP_REASON = Object.freeze({
   UNSUPPORTED_FIGMA_MAPPING: 'UNSUPPORTED_FIGMA_MAPPING',
   INVALID_VALUE: 'INVALID_VALUE',
   UNRESOLVED_ALIAS: 'UNRESOLVED_ALIAS',
@@ -125,7 +84,7 @@ const SKIP_REASON = Object.freeze({
   NO_VALUE: 'NO_VALUE',
 })
 
-const WARNING_CODE = Object.freeze({
+export const WARNING_CODE = Object.freeze({
   DIMENSION_NORMALIZED_TO_PX: 'DIMENSION_NORMALIZED_TO_PX',
   MULTI_MODE_COLLECTION: 'MULTI_MODE_COLLECTION',
   CLIENT_MODE_SWITCH_LIMITATION: 'CLIENT_MODE_SWITCH_LIMITATION',
@@ -161,7 +120,7 @@ function hasDimensionalScope(scopes) {
  *
  * @param {{ resolvedType?: string, scopes?: string[], name?: string }} variable
  */
-function classifyFigmaVariable(variable) {
+export function classifyFigmaVariable(variable) {
   const resolvedType = variable && variable.resolvedType
   const scopes = variable && variable.scopes
 
@@ -269,7 +228,7 @@ function colorToHex6(color) {
  * Preserves alpha as a separate field. Hex is always 6-digit #RRGGBB
  * (application canonical hex policy).
  */
-function figmaColorToDtcg(color) {
+export function figmaColorToDtcg(color) {
   if (!color || typeof color !== 'object') {
     return {
       ok: false,
@@ -310,7 +269,7 @@ function figmaColorToDtcg(color) {
  * Validate a DTCG leaf `$value` for Figma-importable types (strict shapes).
  * Aliases (`{path}`) are accepted for all types.
  */
-function validateFigmaImportDtcgValue(dtcgType, value) {
+export function validateFigmaImportDtcgValue(dtcgType, value) {
   if (typeof value === 'string' && ALIAS_PATTERN.test(value)) {
     return { ok: true }
   }
@@ -450,7 +409,7 @@ function validateFigmaImportDtcgValue(dtcgType, value) {
  * @param {unknown} raw
  * @param {{ dtcgType?: string }=} classification
  */
-function convertFigmaValueToDtcg(variable, raw, classification) {
+export function convertFigmaValueToDtcg(variable, raw, classification) {
   const classified = classification || classifyFigmaVariable(variable)
   if (classified.status !== 'supported' || !classified.dtcgType) {
     return {
@@ -552,7 +511,7 @@ function convertFigmaValueToDtcg(variable, raw, classification) {
  *
  * @param {unknown} raw
  */
-function figmaTimingToDtcg(raw) {
+export function figmaTimingToDtcg(raw) {
   if (typeof raw !== 'number' || !Number.isFinite(raw)) {
     return {
       ok: false,
@@ -578,7 +537,7 @@ function figmaTimingToDtcg(raw) {
  *
  * @param {unknown} raw
  */
-function figmaEasingToDtcg(raw) {
+export function figmaEasingToDtcg(raw) {
   if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
     return {
       ok: false,
@@ -719,7 +678,7 @@ function pushImported(report, entry) {
 /**
  * Summarize import report for UI / notify.
  */
-function formatImportReportSummary(report) {
+export function formatImportReportSummary(report) {
   const counts = {}
   for (const item of report.imported || []) {
     const t = item.dtcgType || 'unknown'
@@ -777,7 +736,7 @@ function formatImportReportSummary(report) {
 /**
  * Count imported tokens by DTCG type.
  */
-function countImportedByType(report) {
+export function countImportedByType(report) {
   const counts = {}
   for (const item of report.imported || []) {
     const t = item.dtcgType || 'unknown'
@@ -793,7 +752,7 @@ function countImportedByType(report) {
  * @param {Array<{ id: string, name?: string, modes?: Array<{ modeId: string, name?: string }>, variableIds?: string[] }>} collections
  * @param {Array<{ id: string, name: string, resolvedType: string, scopes?: string[], valuesByMode?: Record<string, unknown>, variableCollectionId?: string, value?: unknown }>} variables
  */
-function figmaVariablesToDtcgDocument(collections, variables) {
+export function figmaVariablesToDtcgDocument(collections, variables) {
   const cols = Array.isArray(collections) ? collections : []
   const vars = Array.isArray(variables) ? variables : []
   const report = emptyReport()
@@ -1144,7 +1103,7 @@ function figmaVariablesToDtcgDocument(collections, variables) {
  * Walk a DTCG tree and validate every leaf for Figma-importable types.
  * Rejects string/boolean emitted by a bad mapper.
  */
-function validateFigmaImportTokenTree(node, path = '') {
+export function validateFigmaImportTokenTree(node, path = '') {
   if (!node || typeof node !== 'object' || Array.isArray(node)) {
     return { ok: true }
   }
@@ -1183,372 +1142,4 @@ function validateFigmaImportTokenTree(node, path = '') {
     if (!result.ok) return result
   }
   return { ok: true }
-}
-
-  return {
-    FIGMA_VARIABLE_SCOPES: FIGMA_VARIABLE_SCOPES,
-    DIMENSIONAL_SCOPES: DIMENSIONAL_SCOPES,
-    DIMENSIONAL_SCOPE_SET: DIMENSIONAL_SCOPE_SET,
-    FIGMA_IMPORTABLE_DTCG_TYPES: FIGMA_IMPORTABLE_DTCG_TYPES,
-    SKIP_REASON: SKIP_REASON,
-    WARNING_CODE: WARNING_CODE,
-    classifyFigmaVariable: classifyFigmaVariable,
-    figmaColorToDtcg: figmaColorToDtcg,
-    validateFigmaImportDtcgValue: validateFigmaImportDtcgValue,
-    convertFigmaValueToDtcg: convertFigmaValueToDtcg,
-    formatImportReportSummary: formatImportReportSummary,
-    countImportedByType: countImportedByType,
-    figmaVariablesToDtcgDocument: figmaVariablesToDtcgDocument,
-    validateFigmaImportTokenTree: validateFigmaImportTokenTree,
-  };
-})();
-/* === END GENERATED shared/figma-dtcg-mapping === */
-
-function snapshotCollections(collections) {
-  const out = [];
-  for (let i = 0; i < collections.length; i++) {
-    const c = collections[i];
-    out.push({
-      id: c.id,
-      name: c.name,
-      modes: (c.modes || []).map(function (m) {
-        return { modeId: m.modeId, name: m.name };
-      }),
-      variableIds: Array.isArray(c.variableIds) ? c.variableIds.slice() : [],
-    });
-  }
-  return out;
-}
-
-function snapshotVariables(variables) {
-  const out = [];
-  for (let i = 0; i < variables.length; i++) {
-    const v = variables[i];
-    out.push({
-      id: v.id,
-      name: v.name,
-      resolvedType: v.resolvedType,
-      scopes: Array.isArray(v.scopes) ? v.scopes.slice() : [],
-      valuesByMode: v.valuesByMode,
-      variableCollectionId: v.variableCollectionId,
-    });
-  }
-  return out;
-}
-
-function figmaVariablesToDtcg() {
-  const collections = figma.variables.getLocalVariableCollections();
-  const variables = figma.variables.getLocalVariables();
-
-  const collectionSnapshots = snapshotCollections(collections);
-  const variableSnapshots = snapshotVariables(variables);
-
-  console.log(
-    "RAW VARIABLES (PLAIN):",
-    JSON.stringify(variableSnapshots, null, 2),
-  );
-
-  const result = FigmaDtcgMapping.figmaVariablesToDtcgDocument(
-    collectionSnapshots,
-    variableSnapshots,
-  );
-
-  console.log("[Plugin] DTCG tokens:", result.tokens);
-  console.log("[Plugin] DTCG modifiers:", result.modifiers);
-  console.log("[Plugin] importReport:", result.importReport);
-
-  return result;
-}
-
-function notifyImportReport(report) {
-  if (!report) {
-    figma.notify("Tokens synced to Token Manager ✓");
-    return;
-  }
-  const summary = FigmaDtcgMapping.formatImportReportSummary(report);
-  console.log("[Plugin] Import report summary:\n" + summary);
-
-  const counts = FigmaDtcgMapping.countImportedByType(report);
-  const importedTotal = (report.imported || []).length;
-  const skippedTotal = (report.skipped || []).length;
-
-  const parts = [];
-  parts.push(importedTotal + " imported");
-  if (skippedTotal) parts.push(skippedTotal + " skipped");
-  figma.notify(parts.join(", "), { timeout: 6000 });
-}
-
-async function resolveDesignSystemName(settings) {
-  if (!settings.jwt || !settings.designSystemId || !settings.apiUrl) {
-    return settings.designSystemId || "";
-  }
-  try {
-    const base = settings.apiUrl.replace(/\/$/, "");
-    const res = await fetch(base + "/api/design-systems", {
-      headers: { Authorization: "Bearer " + settings.jwt },
-    });
-    const data = await res.json().catch(function () {
-      return null;
-    });
-    if (!res.ok) return settings.designSystemId;
-    const items = Array.isArray(data)
-      ? data
-      : data && data.items
-        ? data.items
-        : [];
-    for (let i = 0; i < items.length; i++) {
-      const id = items[i] && (items[i]._id || items[i].id);
-      if (id === settings.designSystemId) {
-        return items[i].name || items[i].title || settings.designSystemId;
-      }
-    }
-  } catch (_) {}
-  return settings.designSystemId;
-}
-
-async function openSyncUI() {
-  const settings = await getSettingsForCurrentFile();
-  const ready = !!(settings.apiUrl && settings.designSystemId && settings.jwt);
-  const designSystemName = await resolveDesignSystemName(settings);
-
-  figma.showUI(__html__, { width: 420, height: 460 });
-  figma.ui.postMessage({
-    type: "init-sync",
-    ready: ready,
-    designSystemId: settings.designSystemId || "",
-    designSystemName: designSystemName || settings.designSystemId || "—",
-  });
-}
-
-async function performSyncAndReport() {
-  const settings = await getSettingsForCurrentFile();
-  console.log("[Sync] fileKey =", getCurrentFileKey());
-  console.log("[Sync] settings =", settings);
-
-  const apiUrl = settings.apiUrl;
-  const designSystemId = settings.designSystemId;
-  const jwt = settings.jwt;
-
-  if (!apiUrl || !designSystemId || !jwt) {
-    figma.ui.postMessage({
-      type: "sync-result",
-      ok: false,
-      message:
-        "Token Manager settings missing for this Figma file. Open Settings first.",
-    });
-    return;
-  }
-
-  figma.ui.postMessage({ type: "sync-started" });
-
-  const dtcg = figmaVariablesToDtcg();
-  const tokens = dtcg.tokens;
-  const modifiers = dtcg.modifiers || {};
-  const importReport = dtcg.importReport || {
-    imported: [],
-    skipped: [],
-    warnings: [],
-  };
-
-  console.log("[Plugin] figmaVariablesToDtcg result:", {
-    tokensSample: JSON.stringify(tokens, null, 2).slice(0, 500),
-    modifiers,
-    importReport,
-  });
-
-  const base = apiUrl.replace(/\/$/, "");
-  const url =
-    base +
-    "/api/tokens/figma-sync?designSystemId=" +
-    encodeURIComponent(designSystemId);
-
-  const payload = {
-    tokens: tokens,
-    importReport: importReport,
-  };
-  if (modifiers && Object.keys(modifiers).length > 0) {
-    payload.modifiers = modifiers;
-  }
-
-  console.log(
-    "[Plugin] Sync payload:",
-    JSON.stringify(payload, null, 2).slice(0, 500),
-  );
-
-  const response = await fetch(url, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      Authorization: "Bearer " + jwt,
-    },
-    body: JSON.stringify(payload),
-  });
-
-  if (!response.ok) {
-    const text = await response.text();
-    figma.notify("Sync failed: " + response.status);
-    figma.ui.postMessage({
-      type: "sync-result",
-      ok: false,
-      message: "Sync failed: " + response.status + " " + text,
-    });
-    return;
-  }
-
-  const resJson = await response.json().catch(function () {
-    return null;
-  });
-  console.log("Sync OK:", resJson || {});
-  const report = (resJson && resJson.importReport) || importReport;
-  notifyImportReport(report);
-  figma.ui.postMessage({
-    type: "sync-result",
-    ok: true,
-    importReport: report,
-  });
-}
-
-async function openSettingsUI() {
-  const { apiUrl, designSystemId, jwt } = await getSettingsForCurrentFile();
-
-  figma.showUI(__html__, { width: 420, height: 520 });
-
-  figma.ui.postMessage({
-    type: "init-settings",
-    apiUrl: apiUrl || DEFAULT_API_URL,
-    designSystemId: designSystemId || "",
-    hasJwt: !!jwt,
-  });
-
-  const settings = await getSettingsForCurrentFile();
-  if (settings.jwt) {
-    try {
-      const base = settings.apiUrl.replace(/\/$/, "");
-      const res = await fetch(base + "/api/design-systems", {
-        headers: { Authorization: "Bearer " + settings.jwt },
-      });
-
-      const data = await res.json().catch(() => null);
-      if (res.ok) {
-        figma.ui.postMessage({
-          type: "design-systems",
-          items: Array.isArray(data)
-            ? data
-            : data && data.items
-              ? data.items
-              : [],
-        });
-      } else {
-        figma.ui.postMessage({
-          type: "design-systems-error",
-          message:
-            (data && (data.message || data.error)) ||
-            "Failed to load design systems.",
-        });
-      }
-    } catch (e) {
-      figma.ui.postMessage({
-        type: "design-systems-error",
-        message: e && e.message ? e.message : String(e),
-      });
-    }
-  }
-}
-
-figma.ui.onmessage = async (msg) => {
-  if (msg.type === "close-plugin") {
-    figma.closePlugin();
-    return;
-  }
-
-  if (msg.type === "run-sync") {
-    try {
-      await performSyncAndReport();
-    } catch (err) {
-      console.error(err);
-      figma.notify("Error: " + err.message);
-      figma.ui.postMessage({
-        type: "sync-result",
-        ok: false,
-        message: err && err.message ? err.message : String(err),
-      });
-    }
-    return;
-  }
-
-  if (msg.type === "open-settings") {
-    await openSettingsUI();
-    return;
-  }
-
-  if (msg.type === "login-success") {
-    const jwt = (msg.jwt || "").trim();
-    if (!jwt) {
-      figma.notify("Login failed (empty token).");
-      return;
-    }
-
-    await figma.clientStorage.setAsync(STORAGE_KEYS.jwt, jwt);
-
-    const apiUrl =
-      (await figma.clientStorage.getAsync(STORAGE_KEYS.apiUrl)) ||
-      DEFAULT_API_URL;
-    const base = String(apiUrl).replace(/\/$/, "");
-    const res = await fetch(base + "/api/design-systems", {
-      headers: { Authorization: "Bearer " + jwt },
-    });
-    const data = await res.json().catch(() => null);
-
-    figma.ui.postMessage({
-      type: "design-systems",
-      items: Array.isArray(data) ? data : data && data.items ? data.items : [],
-    });
-
-    figma.notify("Logged in ✓");
-    return;
-  }
-
-  if (msg.type === "save-settings") {
-    const fileKey = getCurrentFileKey();
-
-    const apiUrl =
-      (msg.apiUrl || "").trim().replace(/\/$/, "") || DEFAULT_API_URL;
-
-    const designSystemId = (msg.designSystemId || "").trim();
-
-    if (!designSystemId) {
-      figma.notify("Please select a Design System.");
-      return;
-    }
-
-    let fileConfig =
-      (await figma.clientStorage.getAsync(STORAGE_KEYS.fileConfig)) || {};
-
-    if (typeof fileConfig !== "object") fileConfig = {};
-
-    fileConfig[fileKey] = { designSystemId };
-
-    await Promise.all([
-      figma.clientStorage.setAsync(STORAGE_KEYS.apiUrl, apiUrl),
-      figma.clientStorage.setAsync(STORAGE_KEYS.fileConfig, fileConfig),
-    ]);
-
-    console.log("Saved TokenManager settings", {
-      fileKey,
-      apiUrl,
-      designSystemId,
-      fileConfig,
-    });
-
-    figma.notify("Token Manager settings saved for this Figma file ✓");
-    figma.closePlugin();
-  }
-};
-
-if (figma.command === "sync") {
-  openSyncUI();
-} else if (figma.command === "settings") {
-  openSettingsUI();
-} else {
-  openSyncUI();
 }

@@ -13,7 +13,7 @@
   },
 
   "menu": [
-    { "name": "Sync variables to Token Manager", "command": "sync" },
+    { "name": "Sync Figma Variables", "command": "sync" },
     { "name": "Token Manager settings", "command": "settings" }
   ]
 }

@@ -7,6 +7,7 @@
  */
 
 import type { TokenTypeDefinition, TokenValueValidationResult } from '../types'
+import { formatDisplayNumber } from '../../formatDisplayNumber'
 
 const AliasPattern = /^\{[^}]+\}$/
 
@@ -88,7 +89,7 @@ export function formatDimensionForDisplay(
     return { primary: value }
   }
   if (isJsonObject(value) && typeof value.value === 'number' && isDimensionUnit(value.unit)) {
-    return { primary: `${value.value}${value.unit}` }
+    return { primary: `${formatDisplayNumber(value.value)}${value.unit}` }
   }
   try {
     return { primary: JSON.stringify(value) }

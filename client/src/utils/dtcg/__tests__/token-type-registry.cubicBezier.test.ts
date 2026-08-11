@@ -53,6 +53,11 @@ describe('token-type registry (cubicBezier)', () => {
       'cubic-bezier(0.25, 0.1, 0.25, 1)',
     )
     expect(formatCubicBezierForDisplay('{motion.ease}').primary).toBe('{motion.ease}')
+    expect(
+      formatCubicBezierForDisplay([
+        0.4000000059604645, 0, 0.20000000298023224, 1,
+      ]).primary,
+    ).toBe('cubic-bezier(0.4, 0, 0.2, 1)')
   })
 
   it('parseCubicBezierFromEditor accepts CSS, JSON, lists, aliases', () => {
