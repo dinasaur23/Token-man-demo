@@ -7,6 +7,7 @@
  */
 
 import type { TokenTypeDefinition, TokenValueValidationResult } from '../types'
+import { formatDisplayNumber } from '../../formatDisplayNumber'
 
 const AliasPattern = /^\{[^}]+\}$/
 
@@ -85,7 +86,7 @@ export function formatDurationForDisplay(
     return { primary: value }
   }
   if (isJsonObject(value) && typeof value.value === 'number' && isDurationUnit(value.unit)) {
-    return { primary: `${value.value}${value.unit}` }
+    return { primary: `${formatDisplayNumber(value.value)}${value.unit}` }
   }
   try {
     return { primary: JSON.stringify(value) }

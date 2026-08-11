@@ -7,6 +7,7 @@
  */
 
 import type { TokenTypeDefinition, TokenValueValidationResult } from '../types'
+import { formatDisplayNumber } from '../../formatDisplayNumber'
 
 const AliasPattern = /^\{[^}]+\}$/
 
@@ -86,7 +87,9 @@ export function formatCubicBezierForDisplay(
     return { primary: value }
   }
   if (isCubicBezierArray(value)) {
-    return { primary: `cubic-bezier(${value.join(', ')})` }
+    return {
+      primary: `cubic-bezier(${value.map(formatDisplayNumber).join(', ')})`,
+    }
   }
   try {
     return { primary: JSON.stringify(value) }

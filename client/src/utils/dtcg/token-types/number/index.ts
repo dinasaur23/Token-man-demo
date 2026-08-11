@@ -9,6 +9,7 @@
 
 import { isJsonPointerRef } from '../../reference-resolver'
 import type { TokenTypeDefinition, TokenValueValidationResult } from '../types'
+import { formatDisplayNumber } from '../../formatDisplayNumber'
 
 const AliasPattern = /^\{[^}]+\}$/
 
@@ -56,7 +57,7 @@ export function formatNumberForDisplay(
   value: unknown,
 ): { primary: string; secondary?: string } {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return { primary: String(value) }
+    return { primary: formatDisplayNumber(value) }
   }
   if (typeof value === 'string' && AliasPattern.test(value)) {
     return { primary: value }

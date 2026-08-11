@@ -7,6 +7,7 @@
  */
 
 import type { TokenTypeDefinition, TokenValueValidationResult } from '../types'
+import { formatDisplayNumber } from '../../formatDisplayNumber'
 
 const AliasPattern = /^\{[^}]+\}$/
 
@@ -94,7 +95,7 @@ export function formatFontWeightForDisplay(
   value: unknown,
 ): { primary: string; secondary?: string } {
   if (typeof value === 'number' && Number.isFinite(value)) {
-    return { primary: String(value) }
+    return { primary: formatDisplayNumber(value) }
   }
   if (typeof value === 'string') {
     return { primary: value }
