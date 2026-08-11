@@ -11,26 +11,16 @@ import AuthRoutes from "../src/routes/AuthRoutes.js";
 import DesignSystemRoutes from "../src/routes/DesignSystemRoutes.js";
 import { requireAuth } from "../src/middleware/authMiddleware.js";
 import { resolveTokensFromResolverFile } from "../src/tokens/resolver.js";
+import { corsOriginDelegate } from "../src/utils/corsOrigin.js";
 dotenv.config();
 
 const app = express();
 await connectDB();
 app.use(morgan("combined"));
 app.use(bodyParser.json());
-// app.use(cors());
 app.use(
   cors({
-    origin: (origin, callback) => {
-      if (
-        !origin ||
-        origin === "http://localhost:5173" ||
-        origin.endsWith(".vercel.app")
-      ) {
-        callback(null, true);
-      } else {
-        callback(new Error("Not allowed by CORS"));
-      }
-    },
+    origin: corsOriginDelegate,
     credentials: true,
     exposedHeaders: ["Content-Disposition"],
   }),
