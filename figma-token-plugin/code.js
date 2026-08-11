@@ -1120,108 +1120,147 @@ function notifyImportReport(report) {
   const counts = FigmaDtcgMapping.countImportedByType(report);
   const importedTotal = (report.imported || []).length;
   const skippedTotal = (report.skipped || []).length;
-  const warningTotal = (report.warnings || []).length;
 
   const parts = [];
-  parts.push("Imported " + importedTotal);
-  const typeBits = [];
-  if (counts.color) typeBits.push(counts.color + " color");
-  if (counts.dimension) typeBits.push(counts.dimension + " dim");
-  if (counts.number) typeBits.push(counts.number + " num");
-  if (counts.fontFamily) typeBits.push(counts.fontFamily + " fontFamily");
-  if (counts.fontWeight) typeBits.push(counts.fontWeight + " fontWeight");
-  if (typeBits.length) parts.push("(" + typeBits.join(", ") + ")");
-  if (skippedTotal) parts.push("skipped " + skippedTotal);
-  if (warningTotal) parts.push("warnings " + warningTotal);
-
-  figma.notify(parts.join(" · "), { timeout: 8000 });
+  parts.push(importedTotal + " imported");
+  if (skippedTotal) parts.push(skippedTotal + " skipped");
+  figma.notify(parts.join(", "), { timeout: 6000 });
 }
 
-async function syncToTokenManager() {
-  try {
-    const settings = await getSettingsForCurrentFile();
-    console.log("[Sync] fileKey =", getCurrentFileKey());
-    console.log("[Sync] settings =", settings);
-
-    const apiUrl = settings.apiUrl;
-    const designSystemId = settings.designSystemId;
-    const jwt = settings.jwt;
-
-    if (!apiUrl || !designSystemId || !jwt) {
-      figma.notify(
-        "Token Manager settings missing for this Figma file. Please run Settings first.",
-      );
-      figma.closePlugin();
-      return;
-    }
-
-    const dtcg = figmaVariablesToDtcg();
-    const tokens = dtcg.tokens;
-    const modifiers = dtcg.modifiers || {};
-    const importReport = dtcg.importReport || {
-      imported: [],
-      skipped: [],
-      warnings: [],
-    };
-
-    console.log("[Plugin] figmaVariablesToDtcg result:", {
-      tokensSample: JSON.stringify(tokens, null, 2).slice(0, 500),
-      modifiers,
-      importReport,
-    });
-
-    const base = apiUrl.replace(/\/$/, "");
-    const url =
-      base +
-      "/api/tokens/figma-sync?designSystemId=" +
-      encodeURIComponent(designSystemId);
-
-    const payload = {
-      tokens: tokens,
-      importReport: importReport,
-    };
-    if (modifiers && Object.keys(modifiers).length > 0) {
-      payload.modifiers = modifiers;
-    }
-
-    console.log(
-      "[Plugin] Sync payload:",
-      JSON.stringify(payload, null, 2).slice(0, 500),
-    );
-
-    const response = await fetch(url, {
-      method: "POST",
-      headers: {
-        "Content-Type": "application/json",
-        Authorization: "Bearer " + jwt,
-      },
-      body: JSON.stringify(payload),
-    });
-
-    if (!response.ok) {
-      const text = await response.text();
-      figma.notify("Sync failed: " + response.status + " " + text);
-    } else {
-      const resJson = await response.json().catch(function () {
-        return null;
-      });
-      console.log("Sync OK:", resJson || {});
-      notifyImportReport(
-        (resJson && resJson.importReport) || importReport,
-      );
-    }
-  } catch (err) {
-    console.error(err);
-    figma.notify("Error: " + err.message);
-  } finally {
-    figma.closePlugin();
+async function resolveDesignSystemName(settings) {
+  if (!settings.jwt || !settings.designSystemId || !settings.apiUrl) {
+    return settings.designSystemId || "";
   }
+  try {
+    const base = settings.apiUrl.replace(/\/$/, "");
+    const res = await fetch(base + "/api/design-systems", {
+      headers: { Authorization: "Bearer " + settings.jwt },
+    });
+    const data = await res.json().catch(function () {
+      return null;
+    });
+    if (!res.ok) return settings.designSystemId;
+    const items = Array.isArray(data)
+      ? data
+      : data && data.items
+        ? data.items
+        : [];
+    for (let i = 0; i < items.length; i++) {
+      const id = items[i] && (items[i]._id || items[i].id);
+      if (id === settings.designSystemId) {
+        return items[i].name || items[i].title || settings.designSystemId;
+      }
+    }
+  } catch (_) {}
+  return settings.designSystemId;
+}
+
+async function openSyncUI() {
+  const settings = await getSettingsForCurrentFile();
+  const ready = !!(settings.apiUrl && settings.designSystemId && settings.jwt);
+  const designSystemName = await resolveDesignSystemName(settings);
+
+  figma.showUI(__html__, { width: 420, height: 460 });
+  figma.ui.postMessage({
+    type: "init-sync",
+    ready: ready,
+    designSystemId: settings.designSystemId || "",
+    designSystemName: designSystemName || settings.designSystemId || "—",
+  });
+}
+
+async function performSyncAndReport() {
+  const settings = await getSettingsForCurrentFile();
+  console.log("[Sync] fileKey =", getCurrentFileKey());
+  console.log("[Sync] settings =", settings);
+
+  const apiUrl = settings.apiUrl;
+  const designSystemId = settings.designSystemId;
+  const jwt = settings.jwt;
+
+  if (!apiUrl || !designSystemId || !jwt) {
+    figma.ui.postMessage({
+      type: "sync-result",
+      ok: false,
+      message:
+        "Token Manager settings missing for this Figma file. Open Settings first.",
+    });
+    return;
+  }
+
+  figma.ui.postMessage({ type: "sync-started" });
+
+  const dtcg = figmaVariablesToDtcg();
+  const tokens = dtcg.tokens;
+  const modifiers = dtcg.modifiers || {};
+  const importReport = dtcg.importReport || {
+    imported: [],
+    skipped: [],
+    warnings: [],
+  };
+
+  console.log("[Plugin] figmaVariablesToDtcg result:", {
+    tokensSample: JSON.stringify(tokens, null, 2).slice(0, 500),
+    modifiers,
+    importReport,
+  });
+
+  const base = apiUrl.replace(/\/$/, "");
+  const url =
+    base +
+    "/api/tokens/figma-sync?designSystemId=" +
+    encodeURIComponent(designSystemId);
+
+  const payload = {
+    tokens: tokens,
+    importReport: importReport,
+  };
+  if (modifiers && Object.keys(modifiers).length > 0) {
+    payload.modifiers = modifiers;
+  }
+
+  console.log(
+    "[Plugin] Sync payload:",
+    JSON.stringify(payload, null, 2).slice(0, 500),
+  );
+
+  const response = await fetch(url, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Authorization: "Bearer " + jwt,
+    },
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) {
+    const text = await response.text();
+    figma.notify("Sync failed: " + response.status);
+    figma.ui.postMessage({
+      type: "sync-result",
+      ok: false,
+      message: "Sync failed: " + response.status + " " + text,
+    });
+    return;
+  }
+
+  const resJson = await response.json().catch(function () {
+    return null;
+  });
+  console.log("Sync OK:", resJson || {});
+  const report = (resJson && resJson.importReport) || importReport;
+  notifyImportReport(report);
+  figma.ui.postMessage({
+    type: "sync-result",
+    ok: true,
+    importReport: report,
+  });
 }
 
 async function openSettingsUI() {
   const { apiUrl, designSystemId, jwt } = await getSettingsForCurrentFile();
 
-  figma.showUI(__html__, { width: 420, height: 320 });
+  figma.showUI(__html__, { width: 420, height: 520 });
 
   figma.ui.postMessage({
     type: "init-settings",
@@ -1266,6 +1305,31 @@ async function openSettingsUI() {
 }
 
 figma.ui.onmessage = async (msg) => {
+  if (msg.type === "close-plugin") {
+    figma.closePlugin();
+    return;
+  }
+
+  if (msg.type === "run-sync") {
+    try {
+      await performSyncAndReport();
+    } catch (err) {
+      console.error(err);
+      figma.notify("Error: " + err.message);
+      figma.ui.postMessage({
+        type: "sync-result",
+        ok: false,
+        message: err && err.message ? err.message : String(err),
+      });
+    }
+    return;
+  }
+
+  if (msg.type === "open-settings") {
+    await openSettingsUI();
+    return;
+  }
+
   if (msg.type === "login-success") {
     const jwt = (msg.jwt || "").trim();
     if (!jwt) {
@@ -1331,9 +1395,9 @@ figma.ui.onmessage = async (msg) => {
 };
 
 if (figma.command === "sync") {
-  syncToTokenManager();
+  openSyncUI();
 } else if (figma.command === "settings") {
   openSettingsUI();
 } else {
-  syncToTokenManager();
+  openSyncUI();
 }

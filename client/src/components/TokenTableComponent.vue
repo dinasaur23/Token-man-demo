@@ -5,24 +5,34 @@
       <v-alert type="info" variant="tonal" class="mb-4">
         <div class="font-weight-medium mb-1">No token set selected</div>
         <div>
-          Import a DTCG JSON file or create a new token set to get started.
+          Import a DTCG JSON file, sync variables from Figma, or create a new
+          token set to get started.
         </div>
       </v-alert>
+      <div class="text-subtitle-2 mb-2">Import tokens</div>
       <div class="empty-state-actions d-flex align-center flex-wrap">
         <v-file-input
           accept=".json, application/json"
-          label="File input"
+          label="DTCG JSON file"
           variant="outlined"
           multiple
           density="comfortable"
           hide-details
           v-model="files"
           class="empty-state-file-input"
+          data-testid="empty-state-json-input"
           @update:model-value="onFileChange"
         />
-        <v-btn color="white" variant="flat" class="empty-state-btn" @click="openNewTokenSetDialog">
+        <v-btn
+          color="white"
+          variant="flat"
+          class="empty-state-btn"
+          data-testid="empty-state-new-token-set"
+          @click="openNewTokenSetDialog"
+        >
           New token set
         </v-btn>
+        <FigmaImportHelpDialog button-class="empty-state-btn" />
       </div>
     </v-col>
   </v-row>
@@ -48,9 +58,17 @@
           </v-chip>
         </div>
 
-        <v-btn color="white" variant="flat" class="global-toolbar-btn" @click="openNewTokenSetDialog">
+        <v-btn
+          color="white"
+          variant="flat"
+          class="global-toolbar-btn"
+          data-testid="global-new-token-set"
+          @click="openNewTokenSetDialog"
+        >
           New token set
         </v-btn>
+
+        <FigmaImportHelpDialog button-class="global-toolbar-btn" />
 
         <div class="global-toolbar-export">
           <TokenExportDialog :can-export="hasAnyTokens" />
@@ -425,6 +443,7 @@ import type { GetRowIdParams, GridApi, GridReadyEvent } from 'ag-grid-community'
 import { AgGridVue } from 'ag-grid-vue3'
 import { themeQuartz } from 'ag-grid-community'
 import TokenExportDialog from './TokenExportDialog.vue'
+import FigmaImportHelpDialog from './FigmaImportHelpDialog.vue'
 import { useTokenGridColumns } from '@/composables/useTokenGridColumns'
 import { useTokenTableComponent } from '@/composables/useTokenTableComponent'
 import { useTokenWorkspaceStore } from '@/stores/TokenWorkspace'
