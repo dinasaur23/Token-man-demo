@@ -3,7 +3,10 @@ import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
-const manifestPath = join(__dirname, '../../../../shared/dtcg-basic-token-types.json')
+const manifestPath = join(
+  __dirname,
+  'shared-manifest/dtcg-basic-token-types.json',
+)
 
 const manifest = JSON.parse(readFileSync(manifestPath, 'utf8'))
 
