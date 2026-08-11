@@ -143,7 +143,7 @@ const dialogStubs = {
 }
 
 describe('FigmaImportHelpDialog', () => {
-  it('lists supported and deferred types with dimension px note', async () => {
+  it('lists supported types including Duration and Cubic Bézier', async () => {
     const wrapper = mount(FigmaImportHelpDialog, {
       global: { stubs: dialogStubs },
     })
@@ -160,13 +160,16 @@ describe('FigmaImportHelpDialog', () => {
     expect(supported).toContain('Number')
     expect(supported).toContain('Font Family')
     expect(supported).toContain('Font Weight')
+    expect(supported).toContain('Duration')
+    expect(supported).toContain('Cubic Bézier')
 
     const unsupported = wrapper
       .find('[data-testid="figma-unsupported-types"]')
       .text()
-    expect(unsupported).toContain('Duration')
-    expect(unsupported).toContain('Cubic Bézier')
     expect(unsupported).toContain('Boolean')
+    expect(unsupported).toContain('Spring easing')
+    expect(unsupported).toContain('Easing presets')
+    expect(unsupported).not.toContain('Duration')
 
     expect(wrapper.find('[data-testid="figma-dimension-px-note"]').text()).toContain(
       'imported as px',

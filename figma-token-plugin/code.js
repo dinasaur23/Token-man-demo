@@ -55,10 +55,10 @@ async function getSettingsForCurrentFile() {
 }
 
 /* === BEGIN GENERATED shared/figma-dtcg-mapping === */
-// Generated from shared/figma-dtcg-mapping/index.js (sha256:d704b69a168dd690)
+// Generated from shared/figma-dtcg-mapping/index.js (sha256:8d495d0722f90cc3)
 // Run: node scripts/embed-figma-dtcg-mapping.js
 var FigmaDtcgMapping = (function () {
-/** @typedef {'COLOR'|'FLOAT'|'STRING'|'BOOLEAN'|string} FigmaResolvedType */
+/** @typedef {'COLOR'|'FLOAT'|'STRING'|'BOOLEAN'|'TIMING'|'EASING'|string} FigmaResolvedType */
 /** @typedef {string} FigmaVariableScope */
 
 /**
@@ -113,6 +113,8 @@ const FIGMA_IMPORTABLE_DTCG_TYPES = Object.freeze([
   'number',
   'fontFamily',
   'fontWeight',
+  'duration',
+  'cubicBezier',
 ])
 
 const SKIP_REASON = Object.freeze({
@@ -215,6 +217,24 @@ function classifyFigmaVariable(variable) {
       status: 'unsupported',
       mappingReason: SKIP_REASON.UNSUPPORTED_FIGMA_MAPPING,
       skipDetail: 'BOOLEAN has no supported DTCG basic mapping',
+    }
+  }
+
+  // Figma Motion variables (Update 133+). Concrete value conversion decides
+  // whether an EASING kind exposes lossless cubic-bezier control points.
+  if (resolvedType === 'TIMING') {
+    return {
+      status: 'supported',
+      dtcgType: 'duration',
+      mappingReason: 'TIMING',
+    }
+  }
+
+  if (resolvedType === 'EASING') {
+    return {
+      status: 'supported',
+      dtcgType: 'cubicBezier',
+      mappingReason: 'EASING',
     }
   }
 
@@ -380,6 +400,43 @@ function validateFigmaImportDtcgValue(dtcgType, value) {
     }
   }
 
+  if (dtcgType === 'duration') {
+    if (!value || typeof value !== 'object' || Array.isArray(value)) {
+      return { ok: false, message: 'duration must be { value, unit }' }
+    }
+    if (typeof value.value !== 'number' || !Number.isFinite(value.value)) {
+      return { ok: false, message: 'duration.value must be a finite number' }
+    }
+    if (value.unit !== 'ms' && value.unit !== 's') {
+      return { ok: false, message: 'duration.unit must be "ms" or "s"' }
+    }
+    return { ok: true }
+  }
+
+  if (dtcgType === 'cubicBezier') {
+    if (!Array.isArray(value) || value.length !== 4) {
+      return {
+        ok: false,
+        message: 'cubicBezier must be [P1x, P1y, P2x, P2y]',
+      }
+    }
+    for (let i = 0; i < 4; i++) {
+      if (typeof value[i] !== 'number' || !Number.isFinite(value[i])) {
+        return {
+          ok: false,
+          message: 'cubicBezier components must be finite numbers',
+        }
+      }
+    }
+    if (value[0] < 0 || value[0] > 1) {
+      return { ok: false, message: 'cubicBezier P1x must be in [0, 1]' }
+    }
+    if (value[2] < 0 || value[2] > 1) {
+      return { ok: false, message: 'cubicBezier P2x must be in [0, 1]' }
+    }
+    return { ok: true }
+  }
+
   return {
     ok: false,
     message: `Unsupported Figma import DTCG type: ${dtcgType}`,
@@ -474,11 +531,93 @@ function convertFigmaValueToDtcg(variable, raw, classification) {
     return { ok: true, value: raw }
   }
 
+  if (dtcgType === 'duration') {
+    return figmaTimingToDtcg(raw)
+  }
+
+  if (dtcgType === 'cubicBezier') {
+    return figmaEasingToDtcg(raw)
+  }
+
   return {
     ok: false,
     reason: SKIP_REASON.UNSUPPORTED_FIGMA_MAPPING,
     message: `No converter for ${dtcgType}`,
   }
+}
+
+/**
+ * TIMING mode values are numbers in seconds (Figma Motion / Plugin API).
+ * Preserve unit "s" — do not invent ms conversion.
+ *
+ * @param {unknown} raw
+ */
+function figmaTimingToDtcg(raw) {
+  if (typeof raw !== 'number' || !Number.isFinite(raw)) {
+    return {
+      ok: false,
+      reason: SKIP_REASON.INVALID_VALUE,
+      message: 'TIMING value must be a finite number (seconds)',
+    }
+  }
+  const value = { value: raw, unit: 's' }
+  const check = validateFigmaImportDtcgValue('duration', value)
+  if (!check.ok) {
+    return {
+      ok: false,
+      reason: SKIP_REASON.INVALID_VALUE,
+      message: check.message,
+    }
+  }
+  return { ok: true, value }
+}
+
+/**
+ * EASING → cubicBezier only when explicit control points are present.
+ * Never invent points from named presets; never convert springs/HOLD.
+ *
+ * @param {unknown} raw
+ */
+function figmaEasingToDtcg(raw) {
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) {
+    return {
+      ok: false,
+      reason: SKIP_REASON.INVALID_VALUE,
+      message: 'EASING value must be a MotionEasing object',
+    }
+  }
+
+  const easingType =
+    typeof raw.type === 'string' && raw.type.length > 0 ? raw.type : 'unknown'
+  const bezier = raw.easingFunctionCubicBezier
+
+  const hasExplicitBezier =
+    bezier &&
+    typeof bezier === 'object' &&
+    !Array.isArray(bezier) &&
+    typeof bezier.x1 === 'number' &&
+    typeof bezier.y1 === 'number' &&
+    typeof bezier.x2 === 'number' &&
+    typeof bezier.y2 === 'number'
+
+  if (!hasExplicitBezier) {
+    return {
+      ok: false,
+      reason: SKIP_REASON.UNSUPPORTED_FIGMA_MAPPING,
+      message: `Figma easing '${easingType}' does not expose cubic-bezier control points and cannot be losslessly mapped to DTCG cubicBezier.`,
+    }
+  }
+
+  const value = [bezier.x1, bezier.y1, bezier.x2, bezier.y2]
+  const check = validateFigmaImportDtcgValue('cubicBezier', value)
+  if (!check.ok) {
+    return {
+      ok: false,
+      reason: SKIP_REASON.INVALID_VALUE,
+      message: check.message,
+    }
+  }
+  return { ok: true, value }
 }
 
 function slugify(name) {
@@ -588,7 +727,15 @@ function formatImportReportSummary(report) {
   }
 
   const lines = ['Imported from Figma:']
-  const order = ['color', 'dimension', 'number', 'fontFamily', 'fontWeight']
+  const order = [
+    'color',
+    'dimension',
+    'number',
+    'fontFamily',
+    'fontWeight',
+    'duration',
+    'cubicBezier',
+  ]
   for (const t of order) {
     if (counts[t]) {
       const label =
@@ -596,7 +743,11 @@ function formatImportReportSummary(report) {
           ? 'Font Family'
           : t === 'fontWeight'
             ? 'Font Weight'
-            : t.charAt(0).toUpperCase() + t.slice(1)
+            : t === 'cubicBezier'
+              ? 'Cubic Bézier'
+              : t === 'duration'
+                ? 'Duration'
+                : t.charAt(0).toUpperCase() + t.slice(1)
       lines.push(`- ${counts[t]} ${label}`)
     }
   }

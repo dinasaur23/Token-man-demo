@@ -27,6 +27,20 @@ export function convertFigmaValueToDtcg(
   warning?: string
 }
 
+export function figmaTimingToDtcg(raw: unknown): {
+  ok: boolean
+  value?: unknown
+  reason?: string
+  message?: string
+}
+
+export function figmaEasingToDtcg(raw: unknown): {
+  ok: boolean
+  value?: unknown
+  reason?: string
+  message?: string
+}
+
 export function figmaVariablesToDtcgDocument(
   collections: unknown[],
   variables: unknown[],

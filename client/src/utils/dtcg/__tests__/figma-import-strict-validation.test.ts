@@ -142,4 +142,56 @@ describe('Figma import → client strict validation', () => {
     expect(motion.easing).toBeUndefined()
     expect(await validateTokensStrict(tokens)).toEqual({ ok: true })
   })
+
+  it('TIMING and CUSTOM_CUBIC_BEZIER pass validateTokensStrict', async () => {
+    const mode = 'm1'
+    const { tokens, importReport } = figmaVariablesToDtcgDocument(
+      [
+        {
+          id: 'c1',
+          name: 'Motion',
+          modes: [{ modeId: mode, name: 'Default' }],
+          variableIds: ['timing', 'easing', 'preset'],
+        },
+      ],
+      [
+        {
+          id: 'timing',
+          name: 'duration/fast',
+          resolvedType: 'TIMING',
+          scopes: [],
+          variableCollectionId: 'c1',
+          valuesByMode: { [mode]: 0.25 },
+        },
+        {
+          id: 'easing',
+          name: 'easing/custom',
+          resolvedType: 'EASING',
+          scopes: [],
+          variableCollectionId: 'c1',
+          valuesByMode: {
+            [mode]: {
+              type: 'CUSTOM_CUBIC_BEZIER',
+              easingFunctionCubicBezier: { x1: 0.4, y1: 0, x2: 0.2, y2: 1 },
+            },
+          },
+        },
+        {
+          id: 'preset',
+          name: 'easing/ease-out',
+          resolvedType: 'EASING',
+          scopes: [],
+          variableCollectionId: 'c1',
+          valuesByMode: { [mode]: { type: 'EASE_OUT' } },
+        },
+      ],
+    )
+
+    expect(countImportedByType(importReport)).toEqual({
+      duration: 1,
+      cubicBezier: 1,
+    })
+    expect(importReport.skipped).toHaveLength(1)
+    expect(await validateTokensStrict(tokens)).toEqual({ ok: true })
+  })
 })

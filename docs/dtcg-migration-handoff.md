@@ -22,7 +22,7 @@ Spec references:
 | In-app creation | Done | NEW TOKEN SET / TOKEN / GROUP |
 | Type-scoped groups | Done | Group-level `$type` + typed-empty fallback |
 | Global token-set UX | Done | Merged to `main` via PR #23 |
-| Figma multi-type import | Done | color, dimension, number, fontFamily, fontWeight |
+| Figma multi-type import | Done | color, dimension, number, fontFamily, fontWeight, duration, cubicBezier |
 | **Figma import UX** | **Done (this branch)** | Empty/global Import from Figma help + plugin sync report UI |
 
 ---
@@ -59,16 +59,21 @@ Mapping priority, validators, aliases, mode persistence, CRUD, export, routes.
 | `FLOAT` | scope includes `FONT_WEIGHT` | `fontWeight` |
 | `FLOAT` | dimensional scope | `dimension` with **unit `px`** |
 | `FLOAT` | otherwise (e.g. `OPACITY`, `ALL_SCOPES`) | `number` |
+| `TIMING` | number (seconds) | `duration` with **unit `s`** |
+| `EASING` | explicit `easingFunctionCubicBezier` | `cubicBezier` `[x1,y1,x2,y2]` |
 
 **FLOAT classification priority:** `FONT_WEIGHT` → dimensional scopes → `number`.
 
 **Dimensional scopes:** `WIDTH_HEIGHT`, `GAP`, `CORNER_RADIUS`, `FONT_SIZE`, `LINE_HEIGHT`, `LETTER_SPACING`, `PARAGRAPH_SPACING`, `PARAGRAPH_INDENT`, `STROKE_FLOAT`, `EFFECT_FLOAT`.
 
 **Importer policy:** Figma dimensional variables are normalized to DTCG `px` on import.
+Timing (`TIMING`) → DTCG `duration` with unit `"s"`. Easing (`EASING`) → DTCG
+`cubicBezier` only when `easingFunctionCubicBezier` control points are present.
 
-### Intentionally skipped / deferred
-- Skip: `BOOLEAN`; `STRING` without `FONT_FAMILY`
-- Deferred: `duration`, `cubicBezier`
+### Intentionally skipped
+- `BOOLEAN`; `STRING` without `FONT_FAMILY`
+- Easing presets / springs / `HOLD` **without** explicit cubic-bezier control points
+  (never invent points from names)
 
 ### Architecture
 ```
@@ -89,7 +94,6 @@ Embed: `node scripts/embed-figma-dtcg-mapping.js` (`--check` contract).
 ### Follow-ups
 1. Optional: surface last Figma import report in the web app after workspace reload (store report on workspace).
 2. Optional: client resolver applies concrete `valuesByMode` values (not only string aliases).
-3. Do not invent duration/cubicBezier Figma conventions unless specified.
 
 ---
 

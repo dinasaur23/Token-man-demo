@@ -192,12 +192,13 @@
         <li>Number</li>
         <li>Font Family</li>
         <li>Font Weight</li>
+        <li>Duration (Timing → seconds)</li>
+        <li>Cubic Bézier (custom cubic-bezier easing)</li>
       </ul>
       <h2>Not auto-mapped</h2>
       <ul class="list skip">
-        <li>Duration</li>
-        <li>Cubic Bézier</li>
         <li>Boolean / other strings</li>
+        <li>Spring easing and easing presets without control points</li>
       </ul>
     </div>
 
@@ -213,11 +214,14 @@
 
       <h2>Supported</h2>
       <ul class="list plain">
-        <li>Color, Dimension, Number, Font Family, Font Weight</li>
+        <li>
+          Color, Dimension, Number, Font Family, Font Weight, Duration, Cubic
+          Bézier (custom)
+        </li>
       </ul>
       <h2>Not auto-mapped</h2>
       <ul class="list skip">
-        <li>Duration, Cubic Bézier</li>
+        <li>Boolean / other strings; spring &amp; preset easing without points</li>
       </ul>
 
       <div class="actions">
@@ -333,6 +337,8 @@
           ["number", "Number"],
           ["fontFamily", "Font Family"],
           ["fontWeight", "Font Weight"],
+          ["duration", "Duration"],
+          ["cubicBezier", "Cubic Bézier"],
         ];
         const parts = [];
         for (const [key, label] of order) {

@@ -45,9 +45,13 @@
           <li>Number</li>
           <li>Font Family</li>
           <li>Font Weight</li>
+          <li>Duration</li>
+          <li>Cubic Bézier (custom cubic-bezier easing)</li>
         </ul>
         <p class="text-caption text-medium-emphasis mb-4" data-testid="figma-dimension-px-note">
-          Figma dimensional numeric values are imported as px.
+          Figma dimensional numeric values are imported as px. Timing values are
+          imported as duration in seconds. Only easing values with explicit
+          cubic-bezier control points become Cubic Bézier.
         </p>
 
         <div class="text-subtitle-2 mb-2">Not automatically mapped</div>
@@ -55,14 +59,14 @@
           class="figma-help-list unsupported mb-2"
           data-testid="figma-unsupported-types"
         >
-          <li>Duration</li>
-          <li>Cubic Bézier</li>
           <li>Boolean</li>
           <li>Other strings</li>
+          <li>Spring easing</li>
+          <li>Easing presets without control points</li>
         </ul>
         <p class="text-caption text-medium-emphasis mb-4">
-          Figma does not expose enough semantic information to safely map these
-          types.
+          Named easing presets and springs are skipped unless Figma exposes
+          explicit cubic-bezier control points — we never invent them.
         </p>
 
         <v-expansion-panels variant="accordion" class="figma-help-notes">
