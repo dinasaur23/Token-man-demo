@@ -859,6 +859,23 @@ describe('plugin embed contract', () => {
     }
   })
 
+  it('server vendor copy matches shared source hash', () => {
+    const shared = readFileSync(
+      join(root, 'shared/figma-dtcg-mapping/index.js'),
+      'utf8',
+    )
+    const vendor = readFileSync(
+      join(root, 'server/src/utils/figma-dtcg-mapping/index.js'),
+      'utf8',
+    )
+    const hash = createHash('sha256').update(shared).digest('hex').slice(0, 16)
+    assert.ok(
+      vendor.includes(`Source sha256:${hash}`),
+      'server vendor missing current shared mapping hash — run node scripts/embed-figma-dtcg-mapping.js',
+    )
+    assert.ok(vendor.includes('export function classifyFigmaVariable'))
+  })
+
   it('plugin does not contain dormant string/boolean DTCG type maps', () => {
     const plugin = readFileSync(join(root, 'figma-token-plugin/code.js'), 'utf8')
     assert.equal(plugin.includes('if (t === "STRING") return "string"'), false)

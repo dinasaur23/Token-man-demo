@@ -22,7 +22,7 @@ import {
 } from "../utils/dtcg/allowedTokenTypes.js";
 import {
   validateFigmaImportTokenTree,
-} from "../../../shared/figma-dtcg-mapping/index.js";
+} from "../utils/figma-dtcg-mapping/index.js";
 import archiver from "archiver";
 
 function getTokensRoot(root) {
