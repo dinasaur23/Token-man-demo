@@ -8,7 +8,7 @@ import type { TokenTypeId } from '@/utils/dtcg/token-types'
 import {
   applyGroupNameOverrides,
   buildGroupTreeWithTypeFallback,
-  collectGroupTreeIds,
+  reconcileActiveGroupSelection,
   filterRowsByTokenType,
 } from '@/utils/dtcg/grouping'
 
@@ -57,6 +57,7 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     onModifierChange,
     updateTokenValueAny,
     toDisplayTokenPath,
+    isPersisting,
   } = useTokenWorkspaceTable()
 
   /** All workspace rows of the active type (effective type on each row). */
@@ -101,20 +102,24 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     return applyGroupNameOverrides(base, overrides)
   })
 
-  // Keep active selection inside the type-filtered tree when the type changes.
+  // Keep active selection inside the type-filtered tree.
+  // Skips while persist is in flight (tree may be mid-rebuild). Watching
+  // isPersisting ensures reconciliation runs once against the FINAL tree when
+  // persistUploadedDocsAndReload flips it back to false — do not rely on
+  // another dependency happening to change.
   watch(
-    [tokenTypeRef, groupTreeItems],
+    [tokenTypeRef, groupTreeItems, isPersisting],
     () => {
-      const items = groupTreeItems.value
-      if (!items.length) {
-        if (activeNodeIds.value.length) activeNodeIds.value = []
+      if (isPersisting.value) return
+      const next = reconcileActiveGroupSelection(
+        groupTreeItems.value,
+        activeNodeIds.value[0] ?? null,
+      )
+      const current = activeNodeIds.value
+      if (current.length === next.length && current.every((id, i) => id === next[i])) {
         return
       }
-      const ids = collectGroupTreeIds(items)
-      const current = activeNodeIds.value[0]
-      if (!current || !ids.has(current)) {
-        activeNodeIds.value = [items[0]!.id]
-      }
+      activeNodeIds.value = next
     },
     { immediate: true },
   )
