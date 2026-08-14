@@ -21,7 +21,7 @@ const colorValue = {
   hex: '#FF0000',
 }
 
-function colorLeaf(name = 'ink'): JsonRecord {
+function colorLeaf(): JsonRecord {
   return { $type: 'color', $value: { ...colorValue } }
 }
 
@@ -131,7 +131,7 @@ describe('renameGroupForTokenType', () => {
   })
 
   it('nested mixed hierarchy splits only as deep as needed and preserves metadata', () => {
-    const accent = colorLeaf('accent')
+    const accent = colorLeaf()
     const fast = { $type: 'duration', $value: { value: 100, unit: 'ms' } }
     const root: JsonRecord = {
       theme: {
