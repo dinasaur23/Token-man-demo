@@ -1,0 +1,110 @@
+{
+  "brand": {
+    "brand": {
+      "primary": {
+        "$type": "color",
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [0.188, 0.475, 0.69],
+          "alpha": 1,
+          "hex": "#3079b0"
+        },
+        "$extensions": {
+          "figma": {
+            "collection": "brand",
+            "variableId": "v-color",
+            "order": 0
+          }
+        }
+      }
+    },
+    "spacing": {
+      "md": {
+        "$type": "dimension",
+        "$value": {
+          "value": 16,
+          "unit": "px"
+        },
+        "$extensions": {
+          "figma": {
+            "collection": "brand",
+            "variableId": "v-gap",
+            "order": 1
+          }
+        }
+      }
+    },
+    "opacity": {
+      "disabled": {
+        "$type": "number",
+        "$value": 0.8,
+        "$extensions": {
+          "figma": {
+            "collection": "brand",
+            "variableId": "v-opacity",
+            "order": 2
+          }
+        }
+      }
+    },
+    "typography": {
+      "family": {
+        "body": {
+          "$type": "fontFamily",
+          "$value": "Inter",
+          "$extensions": {
+            "figma": {
+              "collection": "brand",
+              "variableId": "v-family",
+              "order": 3
+            }
+          }
+        }
+      },
+      "weight": {
+        "bold": {
+          "$type": "fontWeight",
+          "$value": 700,
+          "$extensions": {
+            "figma": {
+              "collection": "brand",
+              "variableId": "v-weight",
+              "order": 4
+            }
+          }
+        }
+      }
+    },
+    "motion": {
+      "duration": {
+        "fast": {
+          "$type": "duration",
+          "$value": {
+            "value": 0.25,
+            "unit": "s"
+          },
+          "$extensions": {
+            "figma": {
+              "collection": "brand",
+              "variableId": "v-timing",
+              "order": 5
+            }
+          }
+        }
+      },
+      "easing": {
+        "custom": {
+          "$type": "cubicBezier",
+          "$value": [0.4, 0, 0.2, 1],
+          "$extensions": {
+            "figma": {
+              "collection": "brand",
+              "variableId": "v-ease",
+              "order": 6
+            }
+          }
+        }
+      }
+    }
+  }
+}

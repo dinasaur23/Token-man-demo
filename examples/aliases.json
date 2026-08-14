@@ -1,0 +1,34 @@
+{
+  "color": {
+    "$type": "color",
+    "$root": {
+      "$value": {
+        "colorSpace": "srgb",
+        "components": [0.188, 0.475, 0.69],
+        "alpha": 1,
+        "hex": "#3079B0"
+      }
+    },
+    "primary": {
+      "$value": "{color.$root}"
+    }
+  },
+  "spacing": {
+    "$type": "dimension",
+    "md": {
+      "$value": {
+        "value": 16,
+        "unit": "px"
+      }
+    },
+    "lg": {
+      "$value": "{spacing.md}"
+    }
+  },
+  "semantic": {
+    "$type": "color",
+    "brand": {
+      "$value": "{color.primary}"
+    }
+  }
+}
