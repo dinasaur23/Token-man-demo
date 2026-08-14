@@ -46,6 +46,7 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
     clearTokenAlias,
     setTokenAlias,
     addGroup,
+    renameGroupForTokenType,
     deleteGroupFromSource,
     insertTokenInGroup,
     addRowBelowToken,
@@ -198,10 +199,14 @@ export function useTokenTableComponent(tokenType: Ref<TokenTypeId> | TokenTypeId
       return
     }
 
-    wsStore.groupNameOverrides[id] = name
-    await wsStore.saveToServer()
+    const groupPath = id.split('.')
+    const result = await renameGroupForTokenType(groupPath, name, tokenTypeRef.value)
 
     editingGroupId.value = null
+
+    if (result.ok && result.newGroupPath) {
+      activeNodeIds.value = [result.newGroupPath.join('.')]
+    }
   }
 
   function cancelRenameGroup(): void {
