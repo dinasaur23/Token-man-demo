@@ -3,7 +3,6 @@
  */
 import { describe, expect, it } from 'vitest'
 import {
-  buildGroupTreeForTokenType,
   buildGroupTreeWithTypeFallback,
   collectGroupTreeIds,
 } from '../grouping'
@@ -29,10 +28,63 @@ const mixedWorkspace = [
 ]
 
 describe('group tree type fallback', () => {
-  it('uses type-filtered tree when matches exist', () => {
-    const tree = buildGroupTreeWithTypeFallback(mixedWorkspace, 'color', {})
-    const filtered = buildGroupTreeForTokenType(mixedWorkspace, 'color')
-    expect(tree).toEqual(filtered)
+  it('shows typed-empty color groups beside existing color token groups', () => {
+    const docs = {
+      'draft.json': {
+        primary: {
+          ink: {
+            $type: 'color',
+            $value: { colorSpace: 'srgb', components: [0, 0, 0], hex: '#000000' },
+          },
+        },
+        'new-group': { $type: 'color' },
+      },
+    }
+    const rows = [row('primary.ink', 'color', ['primary'])]
+    const colorTree = buildGroupTreeWithTypeFallback(rows, 'color', docs)
+    const ids = collectGroupTreeIds(colorTree)
+
+    expect(ids.has('primary')).toBe(true)
+    expect(ids.has('new-group')).toBe(true)
+
+    const dimensionTree = buildGroupTreeWithTypeFallback(rows, 'dimension', docs)
+    expect(collectGroupTreeIds(dimensionTree).has('new-group')).toBe(false)
+  })
+
+  it('shows typed-empty dimension groups beside existing dimension token groups', () => {
+    const docs = {
+      'draft.json': {
+        spacing: {
+          md: { $type: 'dimension', $value: { value: 8, unit: 'px' } },
+        },
+        'new-space': { $type: 'dimension' },
+      },
+    }
+    const rows = [row('spacing.md', 'dimension', ['spacing'])]
+    const tree = buildGroupTreeWithTypeFallback(rows, 'dimension', docs)
+    expect(collectGroupTreeIds(tree).has('spacing')).toBe(true)
+    expect(collectGroupTreeIds(tree).has('new-space')).toBe(true)
+    expect(
+      collectGroupTreeIds(buildGroupTreeWithTypeFallback(rows, 'color', docs)).has('new-space'),
+    ).toBe(false)
+  })
+
+  it('shows nested typed-empty child groups under an existing parent', () => {
+    const docs = {
+      'draft.json': {
+        primary: {
+          ink: {
+            $type: 'color',
+            $value: { colorSpace: 'srgb', components: [0, 0, 0], hex: '#000000' },
+          },
+          nested: { $type: 'color' },
+        },
+      },
+    }
+    const rows = [row('primary.ink', 'color', ['primary'])]
+    const tree = buildGroupTreeWithTypeFallback(rows, 'color', docs)
+    expect(collectGroupTreeIds(tree).has('primary')).toBe(true)
+    expect(collectGroupTreeIds(tree).has('primary.nested')).toBe(true)
   })
 
   it('hides color-only groups with color tokens on dimension pages', () => {

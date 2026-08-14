@@ -26,6 +26,10 @@ import { requireTokenTypeDefinition } from '@/utils/dtcg/token-types'
 import {
   setSourceTokenValueAtPath,
 } from '@/utils/dtcg/source-document'
+import {
+  clearGroupNameOverridesForPath,
+  renameGroupForTokenType as renameGroupForTokenTypeInSource,
+} from '@/utils/dtcg/rename-group-for-token-type'
 
 type WorkspaceStore = ReturnType<typeof useTokenWorkspaceStore>
 
@@ -1361,12 +1365,99 @@ export function useTokenCrud({
     }
 
     const doc = rawDoc as JsonRecord
-    const groupNode = ensurePath(doc, [...parentGroupPath, trimmed])
-    if (!Object.prototype.hasOwnProperty.call(groupNode, '$type')) {
-      groupNode.$type = tokenType
+    const fullPath = [...parentGroupPath, trimmed]
+    const existing = getAtPath(doc, fullPath)
+
+    if (existing !== undefined) {
+      if (!isJsonRecord(existing) || Object.prototype.hasOwnProperty.call(existing, '$value')) {
+        console.warn('addGroup: path already exists and is not an empty group', fullPath.join('.'))
+        return
+      }
+      const hasChildren = Object.keys(existing).some((k) => !k.startsWith('$'))
+      if (hasChildren) {
+        // Do not stamp $type onto a shared/mixed Figma group.
+        console.warn('addGroup: group already exists with children', fullPath.join('.'))
+        return
+      }
+      // Claimable empty container — set type only if missing.
+      if (!Object.prototype.hasOwnProperty.call(existing, '$type')) {
+        existing.$type = tokenType
+      } else if (existing.$type !== tokenType) {
+        console.warn(
+          'addGroup: empty group already typed as',
+          existing.$type,
+          'not',
+          tokenType,
+        )
+        return
+      }
+    } else {
+      const groupNode = ensurePath(doc, fullPath)
+      if (!Object.prototype.hasOwnProperty.call(groupNode, '$type')) {
+        groupNode.$type = tokenType
+      }
     }
+
     uploadedDocs.value[fileName] = doc
     await persistUploadedDocsAndReload()
+  }
+
+  async function renameGroupForTokenType(
+    groupPath: string[],
+    newName: string,
+    tokenType: TokenType,
+  ): Promise<{ ok: boolean; newGroupPath?: string[]; reason?: string }> {
+    const trimmed = newName.trim()
+    if (!trimmed) {
+      console.warn('renameGroupForTokenType: empty group name')
+      return { ok: false, reason: 'empty group name' }
+    }
+
+    if (groupPath.length === 0) {
+      console.warn('renameGroupForTokenType: empty group path')
+      return { ok: false, reason: 'empty group path' }
+    }
+
+    const found = findPathInWorkspace(groupPath)
+    if (!found || !isJsonRecord(found.token)) {
+      console.warn('renameGroupForTokenType: group not found', groupPath.join('.'))
+      return { ok: false, reason: 'group not found' }
+    }
+
+    const { fileName, doc } = found
+    const result = renameGroupForTokenTypeInSource({
+      root: doc,
+      groupPath,
+      newName: trimmed,
+      tokenType,
+    })
+
+    if (!result.ok) {
+      console.warn('renameGroupForTokenType:', result.reason)
+      return { ok: false, reason: result.reason }
+    }
+
+    if (result.mode === 'noop') {
+      return { ok: true, newGroupPath: result.newGroupPath }
+    }
+
+    for (const { from, to } of result.movedLeafPaths) {
+      updateAliasReferencesInDocs(uploadedDocs.value, from, to)
+      renameRefsInWorkspaceStore(workspaceStore, from, to)
+      if (workspaceStore.nameOverrides?.[from]) {
+        workspaceStore.nameOverrides[to] = workspaceStore.nameOverrides[from]
+        delete workspaceStore.nameOverrides[from]
+      }
+    }
+
+    const oldId = groupPath.join('.')
+    if (workspaceStore.groupNameOverrides) {
+      clearGroupNameOverridesForPath(workspaceStore.groupNameOverrides, oldId)
+    }
+
+    uploadedDocs.value[fileName] = doc
+    await persistUploadedDocsAndReload()
+    return { ok: true, newGroupPath: result.newGroupPath }
   }
 
   async function deleteGroupFromSource(groupPath: string[]): Promise<void> {
@@ -1732,6 +1823,7 @@ export function useTokenCrud({
     insertTokenInGroup,
     addTokenToGroup,
     addGroup,
+    renameGroupForTokenType,
     deleteGroupFromSource,
     addGroupWithToken,
     addSiblingGroupWithToken,

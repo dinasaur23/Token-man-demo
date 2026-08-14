@@ -150,9 +150,12 @@ function collectEmptyTypedGroupPathsFromSourceDocuments(
 }
 
 /**
- * Type-filtered tree when token rows match; otherwise empty source groups whose
- * effective group `$type` matches `tokenType` (typed empty workspaces only).
- * Does not expose groups from other token types as creation destinations.
+ * Type-filtered tree from matching token rows, unioned with empty source groups
+ * whose effective group `$type` matches `tokenType`.
+ *
+ * Merging typed-empty paths into a non-empty row tree is required so NEW GROUP /
+ * CHILD GROUP (typed empty containers) remain visible after the first token of
+ * that type exists. Does not expose untyped empties or other token types.
  * Pure — never mutates source data.
  */
 export function buildGroupTreeWithTypeFallback(
@@ -160,15 +163,19 @@ export function buildGroupTreeWithTypeFallback(
   tokenType: string,
   docs: Record<string, JsonValue>,
 ): GroupNode[] {
-  const filtered = buildGroupTreeForTokenType(rows, tokenType)
-  if (filtered.length > 0) return filtered
+  const byId = new Map<string, string[]>()
 
-  const fallbackRows: GroupPathRow[] = collectEmptyTypedGroupPathsFromSourceDocuments(
-    docs,
-    tokenType,
-  ).map((groupPath) => ({ groupPath }))
+  for (const row of filterRowsByTokenType(rows, tokenType)) {
+    if (!row.groupPath.length) continue
+    byId.set(row.groupPath.join('.'), row.groupPath)
+  }
 
-  return pruneEmptyChildren(buildGroupTree(fallbackRows))
+  for (const segments of collectEmptyTypedGroupPathsFromSourceDocuments(docs, tokenType)) {
+    byId.set(segments.join('.'), segments)
+  }
+
+  const mergedRows: GroupPathRow[] = [...byId.values()].map((groupPath) => ({ groupPath }))
+  return pruneEmptyChildren(buildGroupTree(mergedRows))
 }
 
 /** Apply display-name overrides without mutating the input tree. */
