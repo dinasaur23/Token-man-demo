@@ -70,18 +70,69 @@ Switching shows only that file’s groups and tokens. Resolution does not mix fi
 
 Groups are nested objects in the DTCG JSON (everything that is not a token leaf).
 
+Group actions in the UI are scoped to the **currently selected token type** (the Category page you are on). Mixed token sets — especially after Figma sync — can show the same path on several pages:
+
+```text
+Color
+└── primary
+
+Cubic Bézier
+└── primary
+```
+
+That does **not** mean a Color rename or create also changes Cubic Bézier or Dimension. Those pages can share an underlying source path when the group contains multiple types; operations still apply only to the active type.
+
 Once a token set exists:
 
 | Action | Where | What it does |
 | --- | --- | --- |
-| **New group** | Toolbar | Creates a **root** group. Dialog title **Add group**, parent `— root —`. |
-| **Child group** | Toolbar (needs a selected group) or tree **Add child group** | Creates a nested group under the selected/target group. |
-| **Rename group** | Tree menu or double-click the title | Display name only (JSON keys stay the same). |
+| **New group** | Toolbar | Creates a **root** group for the current page type. Dialog title **Add group**, parent `— root —`. |
+| **Child group** | Toolbar (a parent group must be selected) or tree **Add child group** | Creates a nested group under that parent, for the current page type. |
+| **Rename group** | Tree menu or double-click the title | Renames the group for the **current token type** in the source JSON. Other types that shared the path keep their original name. |
 | **Delete group** | Tree menu | Deletes the group and all tokens inside it. |
 
-New groups get `$type` equal to the **current page** (Color page → color group, and so on). They start empty — no token is created automatically.
+### New group
 
-The group tree is **type-scoped**:
+**New group** creates a group for the currently selected token type:
+
+```text
+Color page      → Color group
+Dimension page  → Dimension group
+```
+
+The group appears immediately on that page and persists after reload. It starts empty (group-level `$type` matches the page; no token is created automatically). A typed empty group does **not** appear as an empty group on unrelated pages (Dimension, Cubic Bézier, and so on) until those pages actually have tokens in it.
+
+### Child group
+
+1. Select a parent group (required).
+2. Click **Child group**.
+
+That creates a nested group under the parent, using the active token type:
+
+```text
+primary
+└── new-group
+```
+
+If no parent is selected, **Child group** stays disabled and does not create a group in the wrong place.
+
+### Rename group
+
+Renaming is **not** a global rename across all token types.
+
+If Color and Cubic Bézier both show `primary`, renaming `primary` → `primary1` on Color yields:
+
+```text
+Color
+└── primary1
+
+Cubic Bézier
+└── primary
+```
+
+The Color slice is updated in the source document. Mixed / Figma-created groups are split so other types stay on the original path.
+
+### Type-scoped tree
 
 - groups that contain tokens of the current page type are shown;
 - empty groups whose group `$type` matches the page are shown;

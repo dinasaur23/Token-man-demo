@@ -77,6 +77,17 @@ User
 
 `files[].name` is the token-set filename (`Brand.json`, `figma-sync.json`). `content` is the source JSON object.
 
-The workspace document also stores UI/session fields (modifiers, name/group overrides, row order, last Figma payload). Those are not DTCG source.
+The workspace document also stores UI/session fields (modifiers, token name display overrides, leftover `groupNameOverrides` from older sessions, row order, last Figma payload). Those are not DTCG source.
 
 **Active token set** is client-only (`activeSourceFileName`). It is not a Mongo field. Export still walks every file in `files[]`.
+
+## Type-scoped groups
+
+The group tree on `/tokens/:tokenType` is filtered to the route type: matching token rows plus typed-empty source groups whose group `$type` equals that type.
+
+A Figma collection can produce **one physical source path** that holds several types (for example `primary` with color, dimension, and cubicBezier children). Each type page may show that path. Mutations still use the **active route type**:
+
+- **New group / Child group** write an empty container with `$type` equal to the current page, in the active token set. They are visible only on that type until other types receive tokens there.
+- **Rename** mutates source. If the group is exclusive to the current type, the JSON key is renamed in place. If it is mixed, only the current-type slice moves to the new key; other types remain on the original path. Aliases for moved leaves are updated. A successful rename also drops leftover `groupNameOverrides` for that path so a stale display overlay cannot globally rename other types on export.
+
+Do not treat UI group names as a type-blind overlay. Persistence is source JSON.
