@@ -295,6 +295,8 @@ export function useTokenWorkspaceTable() {
   const hasAnyTokens = computed(() => countTokenLeavesInDocs(uploadedDocs.value) > 0)
   const groupScopedModifierName = ref<string | null>(null)
   const groupScopedModeOptions = ref<Record<string, string[]>>({})
+  /** True while persistUploadedDocsAndReload is rewriting files + repopulating rows. */
+  const isPersisting = ref(false)
 
   function debugAliasResolution(
     label: string,
@@ -617,6 +619,13 @@ export function useTokenWorkspaceTable() {
         return
       }
 
+      // Persist already rewrites uploadedDocs and calls resolveAndPopulateActiveSource.
+      // Clearing rows here would drop token-backed groups from the type-filtered tree
+      // and snap the selection watcher to the first remaining group.
+      if (isPersisting.value) {
+        return
+      }
+
       rows.value = []
       errorMessage.value = null
 
@@ -684,7 +693,6 @@ export function useTokenWorkspaceTable() {
     return nameOvFixed[p] ?? afterGroup
   }
 
-  const isPersisting = ref(false)
   async function persistUploadedDocsAndReload(): Promise<void> {
     performance.clearMarks()
     performance.clearMeasures()
@@ -1426,6 +1434,7 @@ export function useTokenWorkspaceTable() {
     visibleModifiers,
     groupHasModes,
     uiSelectedModifiers,
+    isPersisting,
 
     onFileChange,
     onModifierChange,

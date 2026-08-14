@@ -212,6 +212,25 @@ export function collectGroupTreeIds(nodes: GroupNode[]): Set<string> {
   return ids
 }
 
+/**
+ * Reconcile the active group selection against a (re)built type-filtered tree.
+ *
+ * - Empty tree → clear selection
+ * - Current id still present → keep it
+ * - Otherwise → first root id (initial load, type switch, deleted group)
+ */
+export function reconcileActiveGroupSelection(
+  treeItems: GroupNode[],
+  currentId: string | null | undefined,
+): string[] {
+  if (!treeItems.length) return []
+  if (currentId) {
+    const ids = collectGroupTreeIds(treeItems)
+    if (ids.has(currentId)) return [currentId]
+  }
+  return [treeItems[0]!.id]
+}
+
 export function extractGroupPath(path: string): string[] {
   const dot = path.indexOf('.')
   if (dot === -1) return []
