@@ -1,78 +1,128 @@
-# Token Manager Prototype
+# Token Manager
 
-## 1. Project Overview
+Token Manager is a web app for creating, editing, and exporting **DTCG design tokens** (W3C Design Tokens Format, 2025.10 basic types).
 
-This web application is developed for a bachelor thesis. It is used to evaluate the interoperability of DTCG format and efficiency of manual and automated design-to-development workflows.
+You can **import DTCG JSON** or **create token sets in the app**. From there you can:
 
-## 2. Prerequisites
+- create and edit tokens (CRUD)
+- organize tokens into **groups**
+- use **aliases** (references)
+- keep multiple **token sets** in one Design System
+- export **canonical DTCG JSON**
+- export platform files (CSS, Tailwind, Swift, Android)
+- **sync Figma Variables** into Token Manager via a development plugin
 
-VS code, Figma desktop, and Node.js are already installed
+## Documentation
 
-## 3. Enter the directory
+| Guide | Who it is for |
+| --- | --- |
+| [Getting Started](docs/getting-started.md) | Run the app locally |
+| [User Guide](docs/user-guide.md) | Use the Token Manager web app |
+| [DTCG Import](docs/dtcg-import.md) | Import DTCG JSON |
+| [Figma Plugin](docs/figma-plugin.md) | Sync Figma Variables |
+| [Exporting](docs/exporting.md) | Canonical JSON and platform export |
+| [Architecture](docs/architecture.md) | Source vs resolved DTCG model |
+| [Internal API](docs/api.md) | Application HTTP routes (not a public API) |
+| [Examples](examples/README.md) | Importable sample JSON |
+
+## Supported token types
+
+Token Manager treats these DTCG **basic types** as first-class application types:
+
+| Type | `$type` |
+| --- | --- |
+| Color | `color` |
+| Dimension | `dimension` |
+| Number | `number` |
+| Duration | `duration` |
+| Font Family | `fontFamily` |
+| Font Weight | `fontWeight` |
+| Cubic Bézier | `cubicBezier` |
+
+**Boolean** and generic **String** are intentionally not application token types. Valid DTCG composite types (typography, shadow, and similar) are also outside the current app scope. See [DTCG Import](docs/dtcg-import.md).
+
+## Screenshots
+
+<!-- Add screenshot: Token Manager main UI -->
+
+<!-- Add screenshot: Token set and group tree -->
+
+<!-- Add screenshot: Color token table -->
+
+<!-- Add screenshot: Export dialog -->
+
+<!-- Add screenshot: Figma plugin settings -->
+
+## Tech stack
+
+**Frontend** ([`client/`](client/))
+
+- Vue 3, TypeScript, Vite
+- Vuetify, AG Grid, Pinia, Vue Router
+
+**Backend** ([`server/`](server/))
+
+- Node.js, Express
+- MongoDB (Mongoose)
+- JWT session cookies (plus Bearer tokens for the Figma plugin)
+
+**Token tooling**
+
+- DTCG (W3C Design Tokens Format 2025.10 basic types)
+- Style Dictionary (platform export)
+
+**Integration**
+
+- Figma Plugin API
+- Figma Variables API
+
+**Deployment**
+
+- Vercel (web client and API)
+
+## Repository structure
+
+```text
+client/                 Vue 3 web app (Vite)
+server/                 Express API and MongoDB persistence
+figma-token-plugin/     Figma development plugin (Token Manager Sync)
+shared/                 Shared DTCG type manifest and Figma → DTCG mapping
+docs/                   User and contributor documentation
+examples/               Importable DTCG JSON samples
+scripts/                Generates/embeds the Figma mapping into plugin and server
+testing/                Export fixture packages used in validation tests
+```
+
+- **`client/`** — UI, token table, client-side DTCG validation, and workspace editing.
+- **`server/`** — Auth, Design Systems, workspace persistence, Figma sync, and platform export.
+- **`figma-token-plugin/`** — Reads local Figma Variables and posts mapped DTCG to the API.
+- **`shared/`** — Source of truth for supported types and Figma mapping (copied into plugin/server).
+- **`docs/`** — How to run, use, import, sync, and export. Engineering history lives in [`docs/dtcg-migration-handoff.md`](docs/dtcg-migration-handoff.md).
+- **`examples/`** — Small JSON files you can import in the empty-workspace file picker.
+- **`scripts/`** — `embed-figma-dtcg-mapping.js` keeps plugin and server copies in sync with `shared/`.
+- **`testing/`** — Per-platform fixture packages (CSS, DTCG, Swift, Tailwind, XML) used by tests.
+
+## Quick start
 
 ```bash
+git clone https://github.com/dinasaur23/Token-man-demo.git
 cd Token-man-demo
 ```
 
-## 4. Dependencies installation
+Then follow **[Getting Started](docs/getting-started.md)** to install dependencies, set environment variables, and run the client and server.
 
-This step requires two separate terminals, one for client and one for server.
+Local URLs after a default setup:
 
-### client:
+- Web app: `http://localhost:5173`
+- API: `http://localhost:8081`
 
-```bash
-cd client
-npm install
-```
+## Documentation index
 
-### server:
-
-```bash
-cd server
-npm install
-```
-
-## 5. Running the application
-
-### client:
-
-In the client directory, run this command:
-
-```bash
-npm run dev
-```
-
-### server:
-
-In the server directory, run this command:
-
-```bash
-npm start
-```
-
-After running both client and server, open the localhost on the client side.
-
-> [!NOTE]
-> Example JSON files for testing the upload feature are located in `/client/src/tokens`.
-
-## 6. Using the Figma plugin
-
-1. Open the Figma desktop application.
-
-2. Go to the main menu.
-
-3. Go to "Plugin" and click "Development."
-
-4. Choose the "Import plugin from manifest."
-
-5. Then choose the manifest.json file from the figma-token-plugin folder.
-
-6. You need to configure the plugin setting first before using it by logging into the plugin using the same email and password as the web app.
-
-7. After login, choose the workspace you want to synchronise the tokens to (you should have already created the workspace in the web app).
-
-8. Then save the setting, and you can now sync the tokens (syncing and setting are separated).
-
----
-
-**P.S.** The server must be running before importing the plugin.
+- [Getting Started](docs/getting-started.md)
+- [User Guide](docs/user-guide.md)
+- [DTCG Import](docs/dtcg-import.md)
+- [Figma Plugin](docs/figma-plugin.md)
+- [Exporting](docs/exporting.md)
+- [Architecture](docs/architecture.md)
+- [Internal API](docs/api.md)
+- [Examples](examples/README.md)

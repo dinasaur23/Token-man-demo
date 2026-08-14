@@ -1,0 +1,43 @@
+{
+  "color": {
+    "$type": "color",
+    "palette": {
+      "blue": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [0.188, 0.475, 0.69],
+          "alpha": 1,
+          "hex": "#3079B0"
+        }
+      },
+      "navy": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [0.05, 0.15, 0.3],
+          "alpha": 1
+        }
+      },
+      "white": {
+        "$value": {
+          "colorSpace": "srgb",
+          "components": [1, 1, 1],
+          "alpha": 1,
+          "hex": "#FFFFFF"
+        }
+      }
+    },
+    "text": {
+      "on-light": {
+        "$value": "{color.palette.navy}"
+      },
+      "on-brand": {
+        "$value": "{color.palette.white}"
+      }
+    },
+    "background": {
+      "brand": {
+        "$value": "{color.palette.blue}"
+      }
+    }
+  }
+}
